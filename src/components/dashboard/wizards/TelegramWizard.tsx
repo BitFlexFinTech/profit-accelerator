@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { MessageCircle, ExternalLink, Check, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { MessageCircle, ExternalLink, Check, Loader2, Send } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { supabase } from '@/integrations/supabase/client';
 
 interface TelegramWizardProps {
   open: boolean;
@@ -17,22 +18,101 @@ interface TelegramWizardProps {
 export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
   const [step, setStep] = useState(1);
   const [botToken, setBotToken] = useState('');
+  const [botUsername, setBotUsername] = useState('');
+  const [chatId, setChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isPolling, setIsPolling] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleConnect = async () => {
+  // Poll for /start command when on step 3
+  useEffect(() => {
+    if (step !== 3 || !botToken || chatId) return;
+
+    setIsPolling(true);
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('telegram-bot', {
+          body: { action: 'get-updates', botToken }
+        });
+
+        if (data?.chatId) {
+          setChatId(data.chatId);
+          setIsPolling(false);
+          clearInterval(pollInterval);
+          // Auto-advance to step 4
+          handleSaveConfig(data.chatId);
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [step, botToken, chatId]);
+
+  const handleValidateToken = async () => {
+    if (!botToken.trim()) {
+      setError('Please enter a bot token');
+      return;
+    }
+
     setIsLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setIsConnected(true);
-    setIsLoading(false);
-    setStep(3);
+    setError('');
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('telegram-bot', {
+        body: { action: 'validate', botToken }
+      });
+
+      if (fnError || !data?.success) {
+        setError(data?.error || 'Invalid bot token');
+        setIsLoading(false);
+        return;
+      }
+
+      setBotUsername(data.bot.username);
+      setStep(3);
+    } catch (err) {
+      setError('Failed to validate token');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveConfig = async (detectedChatId: string) => {
+    setIsLoading(true);
+    
+    try {
+      // Save config
+      await supabase.functions.invoke('telegram-bot', {
+        body: { action: 'save-config', botToken, chatId: detectedChatId }
+      });
+
+      // Send test message
+      await supabase.functions.invoke('telegram-bot', {
+        body: { 
+          action: 'send-message', 
+          message: '✅ <b>Telegram Bot Connected!</b>\n\nYour trading notifications are now active.\n\nAvailable commands:\n/kill - Emergency stop\n/pnl - Today\'s P&L\n/status - Trading status',
+          botToken,
+          chatId: detectedChatId
+        }
+      });
+
+      setStep(4);
+    } catch (err) {
+      setError('Failed to save configuration');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const resetAndClose = () => {
     setStep(1);
     setBotToken('');
-    setIsConnected(false);
+    setBotUsername('');
+    setChatId(null);
+    setError('');
+    setIsPolling(false);
     onOpenChange(false);
   };
 
@@ -46,7 +126,7 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
             </div>
             <div>
               <DialogTitle>Telegram Bot Setup</DialogTitle>
-              <p className="text-sm text-muted-foreground">Step {step} of 3</p>
+              <p className="text-sm text-muted-foreground">Step {step} of 4</p>
             </div>
           </div>
         </DialogHeader>
@@ -98,22 +178,26 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
                 className="font-mono bg-secondary/50"
               />
 
+              {error && (
+                <p className="text-destructive text-sm">{error}</p>
+              )}
+
               <div className="flex gap-3">
                 <Button variant="outline" onClick={() => setStep(1)}>
                   ← Back
                 </Button>
                 <Button
                   className="flex-1"
-                  onClick={handleConnect}
+                  onClick={handleValidateToken}
                   disabled={!botToken || isLoading}
                 >
                   {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Connecting...
+                      Validating...
                     </>
                   ) : (
-                    'Connect Bot'
+                    'Validate Token'
                   )}
                 </Button>
               </div>
@@ -121,6 +205,38 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
           )}
 
           {step === 3 && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="p-4 rounded-lg bg-secondary/30">
+                <h4 className="font-medium mb-2">Step 3: Start Your Bot</h4>
+                <p className="text-sm text-muted-foreground">
+                  Open your bot and send <code className="bg-background px-1 rounded">/start</code> to connect
+                </p>
+              </div>
+
+              <Button
+                className="w-full gap-2"
+                onClick={() => window.open(`https://t.me/${botUsername}`, '_blank')}
+              >
+                <Send className="w-4 h-4" />
+                Open @{botUsername}
+              </Button>
+
+              <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Waiting for /start command...</span>
+              </div>
+
+              {error && (
+                <p className="text-destructive text-sm text-center">{error}</p>
+              )}
+
+              <Button variant="outline" className="w-full" onClick={() => setStep(2)}>
+                ← Back
+              </Button>
+            </div>
+          )}
+
+          {step === 4 && (
             <div className="space-y-4 animate-fade-in text-center">
               <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center mx-auto">
                 <Check className="w-8 h-8 text-success" />
@@ -136,10 +252,18 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
               <div className="p-4 rounded-lg bg-secondary/30 text-left">
                 <h5 className="font-medium mb-2">Available Commands:</h5>
                 <ul className="text-sm text-muted-foreground space-y-1 font-mono">
+                  <li>/kill - Emergency kill switch ⚠️</li>
+                  <li>/pnl - Today's P&L summary</li>
                   <li>/status - Check trading status</li>
-                  <li>/balance - View balances</li>
-                  <li>/kill - Emergency kill switch</li>
-                  <li>/pnl - Today's P&L</li>
+                </ul>
+              </div>
+
+              <div className="p-4 rounded-lg bg-success/10 border border-success/30 text-left">
+                <h5 className="font-medium text-success mb-1">Notifications Active:</h5>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>✓ Real-time trade alerts</li>
+                  <li>✓ Daily P&L summaries</li>
+                  <li>✓ Error notifications</li>
                 </ul>
               </div>
 
@@ -152,7 +276,7 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
 
         {/* Progress indicator */}
         <div className="flex justify-center gap-2">
-          {[1, 2, 3].map((s) => (
+          {[1, 2, 3, 4].map((s) => (
             <div
               key={s}
               className={`w-2 h-2 rounded-full transition-all ${
