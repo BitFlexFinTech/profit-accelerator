@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Lock, Eye, EyeOff, Shield, Loader2, Database, CheckCircle2 } from 'lucide-react';
+import { Lock, Eye, EyeOff, Shield, Loader2, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,8 +8,6 @@ interface MasterPasswordGateProps {
   onUnlock: () => void;
 }
 
-type SetupPhase = 'checking' | 'ready' | 'password';
-
 export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -17,8 +15,8 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
   const [error, setError] = useState('');
   const [needsSetup, setNeedsSetup] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [setupPhase, setSetupPhase] = useState<SetupPhase>('checking');
-  const [setupMessage, setSetupMessage] = useState('Connecting to Tokyo database...');
+  const [isChecking, setIsChecking] = useState(true);
+  const [statusMessage, setStatusMessage] = useState('Connecting to Tokyo database...');
 
   useEffect(() => {
     // Check session on mount
@@ -27,60 +25,42 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
       return;
     }
     
-    initializeDatabase();
+    checkPasswordExists();
   }, []);
 
-  const initializeDatabase = async () => {
+  const checkPasswordExists = async () => {
     try {
-      setSetupMessage('Checking database connection...');
+      setStatusMessage('Checking database connection...');
       
-      // Try to call setup-database function to ensure tables exist and are seeded
-      const { data, error: setupError } = await supabase.functions.invoke('setup-database', {
-        body: {}
+      // Check if password already exists via edge function
+      const { data, error: fnError } = await supabase.functions.invoke('verify-password', {
+        body: { action: 'check' },
       });
 
-      if (setupError) {
-        console.log('Setup function error:', setupError);
-        // Function might not exist yet, but that's okay - try direct table access
+      if (fnError) {
+        console.error('Check error:', fnError);
+        setStatusMessage('Database ready. Create your master password.');
+        setNeedsSetup(true);
+        setIsChecking(false);
+        return;
       }
 
-      setSetupMessage('Verifying tables...');
+      setStatusMessage('Database ready!');
       
-      // Check if master_password table exists and has data
-      const { data: pwData, error: pwError } = await supabase
-        .from('master_password')
-        .select('id')
-        .limit(1);
-
-      if (pwError) {
-        console.log('Table check error:', pwError);
-        // Tables might not exist - show message to run migrations
-        if (pwError.code === '42P01') {
-          setSetupMessage('Database tables need to be created. Please wait...');
-          setSetupPhase('ready');
-          return;
-        }
-      }
-
-      setSetupMessage('Database ready!');
-      
-      // Small delay to show success message
       setTimeout(() => {
-        if (pwData && pwData.length > 0) {
-          // Password already set
-          setSetupPhase('password');
+        if (data?.hasPassword) {
           setNeedsSetup(false);
         } else {
-          // First time - need to set password
-          setSetupPhase('password');
           setNeedsSetup(true);
         }
-      }, 500);
+        setIsChecking(false);
+      }, 300);
 
     } catch (err) {
       console.error('Init error:', err);
-      setSetupPhase('ready');
-      setSetupMessage('Connection established. Ready to proceed.');
+      setStatusMessage('Ready to set up.');
+      setNeedsSetup(true);
+      setIsChecking(false);
     }
   };
 
@@ -167,14 +147,10 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
           <div className="flex justify-center mb-6">
             <div className="relative">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center glow-primary">
-                {setupPhase === 'checking' ? (
-                  <Database className="w-10 h-10 text-primary-foreground animate-pulse" />
-                ) : (
-                  <Shield className="w-10 h-10 text-primary-foreground" />
-                )}
+                <Shield className="w-10 h-10 text-primary-foreground" />
               </div>
               <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-accent flex items-center justify-center">
-                {setupPhase === 'checking' ? (
+                {isChecking ? (
                   <Loader2 className="w-3 h-3 text-accent-foreground animate-spin" />
                 ) : (
                   <Lock className="w-3 h-3 text-accent-foreground" />
@@ -189,9 +165,8 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
               Tokyo HFT Command Center
             </h1>
             <p className="text-muted-foreground text-sm">
-              {setupPhase === 'checking' && setupMessage}
-              {setupPhase === 'ready' && 'Database initialized. Create your master password.'}
-              {setupPhase === 'password' && (
+              {isChecking && statusMessage}
+              {!isChecking && (
                 needsSetup
                   ? 'Create your master password to secure the command center'
                   : 'Enter your master password to unlock'
@@ -200,7 +175,7 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
           </div>
 
           {/* Setup Phase Indicator */}
-          {setupPhase === 'checking' && (
+          {isChecking && (
             <div className="space-y-4 mb-6">
               <div className="flex items-center gap-3 text-sm">
                 <CheckCircle2 className="w-4 h-4 text-accent" />
@@ -208,19 +183,19 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Loader2 className="w-4 h-4 text-primary animate-spin" />
-                <span className="text-foreground">{setupMessage}</span>
+                <span className="text-foreground">{statusMessage}</span>
               </div>
             </div>
           )}
 
           {/* Form - only show when ready */}
-          {(setupPhase === 'password' || setupPhase === 'ready') && (
+          {!isChecking && (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder={needsSetup || setupPhase === 'ready' ? 'Create master password' : 'Enter master password'}
+                  placeholder={needsSetup ? 'Create master password' : 'Enter master password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 pr-10 bg-secondary/50 border-border/50 focus:border-primary h-12"
@@ -235,7 +210,7 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
                 </button>
               </div>
 
-              {(needsSetup || setupPhase === 'ready') && (
+              {needsSetup && (
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -262,12 +237,12 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {needsSetup || setupPhase === 'ready' ? 'Setting up...' : 'Verifying...'}
+                    {needsSetup ? 'Setting up...' : 'Verifying...'}
                   </>
                 ) : (
                   <>
                     <Lock className="w-4 h-4 mr-2" />
-                    {needsSetup || setupPhase === 'ready' ? 'Create Password & Enter' : 'Unlock Command Center'}
+                    {needsSetup ? 'Create Password & Enter' : 'Unlock Command Center'}
                   </>
                 )}
               </Button>
@@ -276,7 +251,7 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
 
           {/* Region indicator */}
           <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-            <div className="status-online" />
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span>Tokyo Region (ap-northeast-1)</span>
           </div>
         </div>
