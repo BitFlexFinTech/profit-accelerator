@@ -4,8 +4,12 @@ import { ExchangePingPanel } from '../panels/ExchangePingPanel';
 import { PnLPanel } from '../panels/PnLPanel';
 import { RecentTradesPanel } from '../panels/RecentTradesPanel';
 import { QuickActionsPanel } from '../panels/QuickActionsPanel';
+import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 
 export function LiveDashboard() {
+  // Subscribe to real-time trade notifications
+  useTradeNotifications();
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top Row - Key Metrics */}

@@ -9,6 +9,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface KillSwitchDialogProps {
   open: boolean;
@@ -30,14 +32,20 @@ export function KillSwitchDialog({ open, onOpenChange }: KillSwitchDialogProps) 
     setError('');
 
     try {
-      // In production, this would call the kill-switch edge function
-      console.log('Kill switch activated with code:', code);
+      const { data, error: fnError } = await supabase.functions.invoke('telegram-bot', {
+        body: { action: 'kill-switch' }
+      });
+
+      if (fnError || !data?.success) {
+        setError(data?.error || 'Failed to activate kill switch');
+        setIsLoading(false);
+        return;
+      }
+
+      toast.error('🚨 KILL SWITCH ACTIVATED - All trading stopped', {
+        duration: 10000,
+      });
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Close all positions, stop all trading
-      alert('🚨 KILL SWITCH ACTIVATED - All trading stopped');
       onOpenChange(false);
       setCode('');
     } catch (err) {

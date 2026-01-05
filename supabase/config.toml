@@ -1,8 +1,5 @@
 project_id = "iibdlazwkossyelyroap"
 
-[functions.verify-password]
-verify_jwt = false
-
 [api]
 enabled = true
 port = 54321
@@ -24,8 +21,8 @@ verify_jwt = false
 [functions.test-exchange]
 verify_jwt = false
 
-[functions.telegram-setup]
+[functions.telegram-bot]
 verify_jwt = false
 
-[functions.kill-switch]
+[functions.daily-summary]
 verify_jwt = false

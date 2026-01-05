@@ -440,6 +440,7 @@ export type Database = {
       vps_config: {
         Row: {
           created_at: string | null
+          emergency_stopped_at: string | null
           id: string
           instance_type: string | null
           provider: string | null
@@ -449,6 +450,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          emergency_stopped_at?: string | null
           id?: string
           instance_type?: string | null
           provider?: string | null
@@ -458,6 +460,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          emergency_stopped_at?: string | null
           id?: string
           instance_type?: string | null
           provider?: string | null
