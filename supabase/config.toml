@@ -1,0 +1,28 @@
+project_id = "iibdlazwkossyelyroap"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[functions.verify-password]
+verify_jwt = false
+
+[functions.test-exchange]
+verify_jwt = false
+
+[functions.telegram-setup]
+verify_jwt = false
+
+[functions.kill-switch]
+verify_jwt = false
