@@ -1,5 +1,11 @@
 project_id = "iibdlazwkossyelyroap"
 
+[functions.verify-password]
+verify_jwt = false
+
+[functions.setup-database]
+verify_jwt = false
+
 [api]
 enabled = true
 port = 54321
