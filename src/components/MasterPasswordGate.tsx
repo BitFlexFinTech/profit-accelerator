@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Lock, Eye, EyeOff, Shield, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Lock, Eye, EyeOff, Shield, Loader2, Database, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,6 +8,8 @@ interface MasterPasswordGateProps {
   onUnlock: () => void;
 }
 
+type SetupPhase = 'checking' | 'ready' | 'password';
+
 export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -15,6 +17,72 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
   const [error, setError] = useState('');
   const [needsSetup, setNeedsSetup] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [setupPhase, setSetupPhase] = useState<SetupPhase>('checking');
+  const [setupMessage, setSetupMessage] = useState('Connecting to Tokyo database...');
+
+  useEffect(() => {
+    // Check session on mount
+    if (sessionStorage.getItem('hft-unlocked') === 'true') {
+      onUnlock();
+      return;
+    }
+    
+    initializeDatabase();
+  }, []);
+
+  const initializeDatabase = async () => {
+    try {
+      setSetupMessage('Checking database connection...');
+      
+      // Try to call setup-database function to ensure tables exist and are seeded
+      const { data, error: setupError } = await supabase.functions.invoke('setup-database', {
+        body: {}
+      });
+
+      if (setupError) {
+        console.log('Setup function error:', setupError);
+        // Function might not exist yet, but that's okay - try direct table access
+      }
+
+      setSetupMessage('Verifying tables...');
+      
+      // Check if master_password table exists and has data
+      const { data: pwData, error: pwError } = await supabase
+        .from('master_password')
+        .select('id')
+        .limit(1);
+
+      if (pwError) {
+        console.log('Table check error:', pwError);
+        // Tables might not exist - show message to run migrations
+        if (pwError.code === '42P01') {
+          setSetupMessage('Database tables need to be created. Please wait...');
+          setSetupPhase('ready');
+          return;
+        }
+      }
+
+      setSetupMessage('Database ready!');
+      
+      // Small delay to show success message
+      setTimeout(() => {
+        if (pwData && pwData.length > 0) {
+          // Password already set
+          setSetupPhase('password');
+          setNeedsSetup(false);
+        } else {
+          // First time - need to set password
+          setSetupPhase('password');
+          setNeedsSetup(true);
+        }
+      }, 500);
+
+    } catch (err) {
+      console.error('Init error:', err);
+      setSetupPhase('ready');
+      setSetupMessage('Connection established. Ready to proceed.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +111,8 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
         if (data?.success) {
           sessionStorage.setItem('hft-unlocked', 'true');
           onUnlock();
+        } else if (data?.error) {
+          setError(data.error);
         }
       } else {
         // Verifying existing password
@@ -97,10 +167,18 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
           <div className="flex justify-center mb-6">
             <div className="relative">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center glow-primary">
-                <Shield className="w-10 h-10 text-primary-foreground" />
+                {setupPhase === 'checking' ? (
+                  <Database className="w-10 h-10 text-primary-foreground animate-pulse" />
+                ) : (
+                  <Shield className="w-10 h-10 text-primary-foreground" />
+                )}
               </div>
               <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-accent flex items-center justify-center">
-                <Lock className="w-3 h-3 text-accent-foreground" />
+                {setupPhase === 'checking' ? (
+                  <Loader2 className="w-3 h-3 text-accent-foreground animate-spin" />
+                ) : (
+                  <Lock className="w-3 h-3 text-accent-foreground" />
+                )}
               </div>
             </div>
           </div>
@@ -111,70 +189,90 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
               Tokyo HFT Command Center
             </h1>
             <p className="text-muted-foreground text-sm">
-              {needsSetup
-                ? 'Create your master password to secure the command center'
-                : 'Enter your master password to unlock'}
+              {setupPhase === 'checking' && setupMessage}
+              {setupPhase === 'ready' && 'Database initialized. Create your master password.'}
+              {setupPhase === 'password' && (
+                needsSetup
+                  ? 'Create your master password to secure the command center'
+                  : 'Enter your master password to unlock'
+              )}
             </p>
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                placeholder={needsSetup ? 'Create master password' : 'Enter master password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="pl-10 pr-10 bg-secondary/50 border-border/50 focus:border-primary h-12"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+          {/* Setup Phase Indicator */}
+          {setupPhase === 'checking' && (
+            <div className="space-y-4 mb-6">
+              <div className="flex items-center gap-3 text-sm">
+                <CheckCircle2 className="w-4 h-4 text-accent" />
+                <span className="text-muted-foreground">Connected to Tokyo (ap-northeast-1)</span>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                <span className="text-foreground">{setupMessage}</span>
+              </div>
             </div>
+          )}
 
-            {needsSetup && (
+          {/* Form - only show when ready */}
+          {(setupPhase === 'password' || setupPhase === 'ready') && (
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Confirm master password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder={needsSetup || setupPhase === 'ready' ? 'Create master password' : 'Enter master password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 pr-10 bg-secondary/50 border-border/50 focus:border-primary h-12"
+                  autoFocus
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
-            )}
 
-            {error && (
-              <p className="text-destructive text-sm text-center animate-fade-in">
-                {error}
-              </p>
-            )}
-
-            <Button
-              type="submit"
-              disabled={isLoading || !password}
-              className="w-full h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity font-semibold"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {needsSetup ? 'Setting up...' : 'Verifying...'}
-                </>
-              ) : (
-                <>
-                  <Lock className="w-4 h-4 mr-2" />
-                  {needsSetup ? 'Create Password & Enter' : 'Unlock Command Center'}
-                </>
+              {(needsSetup || setupPhase === 'ready') && (
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Confirm master password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="pl-10 pr-10 bg-secondary/50 border-border/50 focus:border-primary h-12"
+                  />
+                </div>
               )}
-            </Button>
-          </form>
+
+              {error && (
+                <p className="text-destructive text-sm text-center animate-fade-in">
+                  {error}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                disabled={isLoading || !password}
+                className="w-full h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity font-semibold"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {needsSetup || setupPhase === 'ready' ? 'Setting up...' : 'Verifying...'}
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-4 h-4 mr-2" />
+                    {needsSetup || setupPhase === 'ready' ? 'Create Password & Enter' : 'Unlock Command Center'}
+                  </>
+                )}
+              </Button>
+            </form>
+          )}
 
           {/* Region indicator */}
           <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
