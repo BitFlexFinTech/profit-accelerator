@@ -143,6 +143,42 @@ export type Database = {
         }
         Relationships: []
       }
+      api_request_logs: {
+        Row: {
+          endpoint: string
+          error_message: string | null
+          exchange_name: string
+          id: string
+          latency_ms: number | null
+          method: string | null
+          request_time: string | null
+          status_code: number | null
+          success: boolean | null
+        }
+        Insert: {
+          endpoint: string
+          error_message?: string | null
+          exchange_name: string
+          id?: string
+          latency_ms?: number | null
+          method?: string | null
+          request_time?: string | null
+          status_code?: number | null
+          success?: boolean | null
+        }
+        Update: {
+          endpoint?: string
+          error_message?: string | null
+          exchange_name?: string
+          id?: string
+          latency_ms?: number | null
+          method?: string | null
+          request_time?: string | null
+          status_code?: number | null
+          success?: boolean | null
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -251,6 +287,30 @@ export type Database = {
           next_run_at?: string | null
           provider?: string
           retention_days?: number | null
+        }
+        Relationships: []
+      }
+      balance_history: {
+        Row: {
+          created_at: string | null
+          exchange_breakdown: Json | null
+          id: string
+          snapshot_time: string | null
+          total_balance: number
+        }
+        Insert: {
+          created_at?: string | null
+          exchange_breakdown?: Json | null
+          id?: string
+          snapshot_time?: string | null
+          total_balance?: number
+        }
+        Update: {
+          created_at?: string | null
+          exchange_breakdown?: Json | null
+          id?: string
+          snapshot_time?: string | null
+          total_balance?: number
         }
         Relationships: []
       }

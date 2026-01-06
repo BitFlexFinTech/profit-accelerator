@@ -11,6 +11,8 @@ import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
 import { TradeLogPanel } from '../panels/TradeLogPanel';
 import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
 import { BotControlPanel } from '../BotControlPanel';
+import { EquityChartPanel } from '../panels/EquityChartPanel';
+import { APIDiagnosticsPanel } from '../panels/APIDiagnosticsPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 
@@ -33,6 +35,9 @@ export function LiveDashboard() {
 
       {/* Cloud Status Panel - Shows your Vultr server at 167.179.83.239 */}
       <CloudStatusPanel />
+
+      {/* Equity Chart - Full Width */}
+      <EquityChartPanel />
 
       {/* Top Row - Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -57,6 +62,7 @@ export function LiveDashboard() {
         {/* Right Column */}
         <div className="space-y-6">
           <ExchangePingPanel />
+          <APIDiagnosticsPanel />
           <TradeCopierPanel />
         </div>
       </div>
