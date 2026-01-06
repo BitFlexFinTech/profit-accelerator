@@ -9,33 +9,50 @@ import {
   Zap,
   Lock,
   Check,
-  Loader2
+  Loader2,
+  Brain,
+  Cloud
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { TelegramWizard } from '../wizards/TelegramWizard';
 import { ExchangeWizard } from '../wizards/ExchangeWizard';
 import { TradeCopierWizard } from '../wizards/TradeCopierWizard';
+import { GroqWizard } from '../wizards/GroqWizard';
+import { CloudWizard } from '../wizards/CloudWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
 import { useHFTSettings } from '@/hooks/useHFTSettings';
+import { useAIConfig } from '@/hooks/useAIConfig';
+import { useCloudConfig } from '@/hooks/useCloudConfig';
 import { toast } from 'sonner';
 
 export function SettingsTab() {
   const [activeWizard, setActiveWizard] = useState<string | null>(null);
+  const [cloudProvider, setCloudProvider] = useState<'digitalocean' | 'aws' | 'gcp' | null>(null);
   const telegramStatus = useTelegramStatus();
   const exchangeStatus = useExchangeStatus();
   const { settings, setSettings, isLoading, isSaving, saveSettings } = useHFTSettings();
+  const { config: aiConfig, isActive: aiIsActive } = useAIConfig();
+  const { configs: cloudConfigs, updateFreeTierPreference } = useCloudConfig();
 
   // Local state for form values
   const [localSettings, setLocalSettings] = useState(settings);
+  const [useFreeTier, setUseFreeTier] = useState(true);
 
   useEffect(() => {
     setLocalSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    if (cloudConfigs.length > 0) {
+      setUseFreeTier(cloudConfigs[0]?.use_free_tier ?? true);
+    }
+  }, [cloudConfigs]);
 
   const handleSaveRiskSettings = async () => {
     await saveSettings({
@@ -55,6 +72,16 @@ export function SettingsTab() {
     });
   };
 
+  const handleFreeTierChange = async (checked: boolean) => {
+    setUseFreeTier(checked);
+    await updateFreeTierPreference(checked);
+  };
+
+  const getCloudProviderStatus = (provider: string) => {
+    const config = cloudConfigs.find(c => c.provider === provider);
+    return config?.status === 'configured';
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -62,7 +89,7 @@ export function SettingsTab() {
       </div>
 
       {/* One-Click Wizards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           onClick={() => setActiveWizard('telegram')}
           className="glass-card-hover p-6 text-left group"
@@ -84,7 +111,7 @@ export function SettingsTab() {
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Get trade alerts, use /kill, /status, /balance commands
+            Get trade alerts, /analyze, /kill commands
           </p>
         </button>
 
@@ -98,18 +125,18 @@ export function SettingsTab() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold">Exchange Connections</h3>
+                <h3 className="font-semibold">Exchanges</h3>
                 {exchangeStatus.connectedCount > 0 && (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">
                     {exchangeStatus.connectedCount}/11
                   </span>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">Connect 11 exchanges</p>
+              <p className="text-sm text-muted-foreground">11 exchanges</p>
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Bybit, OKX, Bitget, KuCoin, Hyperliquid, Kraken, Nexo...
+            Bybit, OKX, KuCoin, Hyperliquid...
           </p>
         </button>
 
@@ -127,9 +154,148 @@ export function SettingsTab() {
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Copy trades from master to mirror exchanges automatically
+            Copy trades between exchanges
           </p>
         </button>
+
+        <button
+          onClick={() => setActiveWizard('groq')}
+          className="glass-card-hover p-6 text-left group"
+        >
+          <div className="flex items-center gap-4 mb-3">
+            <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Brain className="w-6 h-6 text-purple-500" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">AI (Groq)</h3>
+                {aiIsActive && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Active
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">Trade analysis</p>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            AI-powered sentiment via Telegram
+          </p>
+        </button>
+      </div>
+
+      {/* AI Analysis Engine Section */}
+      <div className="glass-card p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+            <Brain className="w-5 h-5 text-purple-500" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold">AI Analysis Engine (Groq)</h3>
+            <p className="text-sm text-muted-foreground">Get AI-powered trade sentiment analysis via Telegram</p>
+          </div>
+          {aiIsActive ? (
+            <span className="px-3 py-1 rounded-full bg-success/20 text-success text-sm font-medium flex items-center gap-2">
+              <Check className="w-4 h-4" /> AI Analysis Active
+            </span>
+          ) : (
+            <Button onClick={() => setActiveWizard('groq')} size="sm">
+              Configure
+            </Button>
+          )}
+        </div>
+
+        {aiIsActive && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-lg bg-secondary/30">
+              <p className="text-muted-foreground text-sm">Provider</p>
+              <p className="font-medium">Groq</p>
+            </div>
+            <div className="p-4 rounded-lg bg-secondary/30">
+              <p className="text-muted-foreground text-sm">Model</p>
+              <p className="font-medium font-mono text-sm">{aiConfig?.model || 'llama-3.3-70b-versatile'}</p>
+            </div>
+            <div className="p-4 rounded-lg bg-secondary/30">
+              <p className="text-muted-foreground text-sm">Telegram Commands</p>
+              <p className="font-medium font-mono text-sm">/analyze BTC, /analyze ETH</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Cloud Infrastructure Section */}
+      <div className="glass-card p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-lg bg-sky-500/20 flex items-center justify-center">
+            <Cloud className="w-5 h-5 text-sky-500" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold">Cloud Infrastructure</h3>
+            <p className="text-sm text-muted-foreground">One-click VPS setup for HFT deployment</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <button
+            onClick={() => { setCloudProvider('digitalocean'); setActiveWizard('cloud'); }}
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl">🌊</span>
+              {getCloudProviderStatus('digitalocean') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium">DigitalOcean</p>
+            <p className="text-xs text-muted-foreground">Singapore (sgp1)</p>
+          </button>
+
+          <button
+            onClick={() => { setCloudProvider('aws'); setActiveWizard('cloud'); }}
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl">☁️</span>
+              {getCloudProviderStatus('aws') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium">AWS</p>
+            <p className="text-xs text-muted-foreground">Tokyo (ap-northeast-1)</p>
+          </button>
+
+          <button
+            onClick={() => { setCloudProvider('gcp'); setActiveWizard('cloud'); }}
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl">🔷</span>
+              {getCloudProviderStatus('gcp') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium">Google Cloud</p>
+            <p className="text-xs text-muted-foreground">Tokyo (asia-northeast1)</p>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
+          <div className="flex items-center gap-3">
+            <Checkbox 
+              id="freeTier" 
+              checked={useFreeTier}
+              onCheckedChange={handleFreeTierChange}
+            />
+            <div>
+              <label htmlFor="freeTier" className="font-medium cursor-pointer">Use Free Tier eligible instances</label>
+              <p className="text-xs text-muted-foreground">t4g.micro (AWS), e2-micro (GCP), $4 Droplet (DO)</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Lock className="w-4 h-4" />
+            <span>Region locked to Tokyo</span>
+          </div>
+        </div>
       </div>
 
       {/* HFT Cockpit - Risk Management */}
@@ -411,6 +577,15 @@ export function SettingsTab() {
       <TradeCopierWizard 
         open={activeWizard === 'copier'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <GroqWizard 
+        open={activeWizard === 'groq'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <CloudWizard 
+        open={activeWizard === 'cloud'} 
+        onOpenChange={(open) => { if (!open) { setActiveWizard(null); setCloudProvider(null); } }}
+        provider={cloudProvider}
       />
     </div>
   );

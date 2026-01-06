@@ -348,6 +348,146 @@ ${balanceLines}
           );
         }
 
+        // Handle /analyze command
+        if (command.startsWith('/analyze')) {
+          console.log('[telegram-bot] Processing /analyze command');
+          
+          const parts = command.split(' ');
+          const symbol = parts[1]?.toUpperCase() || 'BTC';
+          
+          // Check if AI is configured
+          const { data: aiConfig } = await supabase
+            .from('ai_config')
+            .select('api_key, model, is_active')
+            .eq('provider', 'groq')
+            .single();
+
+          if (!aiConfig?.api_key || !aiConfig.is_active) {
+            await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: config.chat_id,
+                text: '❌ <b>AI Analysis Not Configured</b>\n\nPlease set up Groq AI in the Settings tab first.',
+                parse_mode: 'HTML'
+              })
+            });
+
+            return new Response(
+              JSON.stringify({ success: false, error: 'AI not configured' }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          // Send "analyzing" message
+          await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: config.chat_id,
+              text: `🔄 Analyzing ${symbol}/USDT...`,
+              parse_mode: 'HTML'
+            })
+          });
+
+          // Call Groq API for analysis
+          const analysisPrompt = `You are an expert cryptocurrency trader. Analyze ${symbol}/USDT and provide a concise trading sentiment report.
+
+Provide your analysis in this exact format:
+📊 Sentiment: [BULLISH/BEARISH/NEUTRAL] ([confidence]%)
+📈 Trend: [brief trend description]
+
+💡 Key Levels:
+   • Support: $[price]
+   • Resistance: $[price]
+
+🔮 Short-term Outlook:
+[2-3 sentences about price action and what to watch for]
+
+📌 Trade Idea: [One actionable suggestion]
+
+⚠️ Risk: [One key risk factor]
+
+Be professional and concise.`;
+
+          const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${aiConfig.api_key}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: aiConfig.model || 'llama-3.3-70b-versatile',
+              messages: [
+                { role: 'system', content: 'You are a professional crypto trading analyst.' },
+                { role: 'user', content: analysisPrompt }
+              ],
+              max_tokens: 500,
+              temperature: 0.7,
+            }),
+          });
+
+          if (!groqResponse.ok) {
+            const errorText = await groqResponse.text();
+            console.error('[telegram-bot] Groq API error:', errorText);
+            
+            await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: config.chat_id,
+                text: '❌ <b>AI Analysis Failed</b>\n\nPlease try again later.',
+                parse_mode: 'HTML'
+              })
+            });
+
+            return new Response(
+              JSON.stringify({ success: false, error: 'Groq API error' }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          const groqData = await groqResponse.json();
+          const analysis = groqData.choices?.[0]?.message?.content || 'Analysis unavailable';
+
+          // Update last_used_at
+          await supabase
+            .from('ai_config')
+            .update({ last_used_at: new Date().toISOString() })
+            .eq('provider', 'groq');
+
+          // Log to audit
+          await supabase.from('audit_logs').insert({
+            action: 'ai_analysis_telegram',
+            entity_type: 'ai',
+            entity_id: symbol,
+            new_value: { symbol, model: aiConfig.model, source: 'telegram' }
+          });
+
+          // Send analysis
+          const analysisMessage = `🤖 <b>AI ANALYSIS: ${symbol}/USDT</b>
+
+${analysis}
+
+<i>Powered by Groq AI (${aiConfig.model})</i>`;
+
+          await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: config.chat_id,
+              text: analysisMessage,
+              parse_mode: 'HTML'
+            })
+          });
+
+          console.log(`[telegram-bot] AI analysis sent for ${symbol}`);
+          return new Response(
+            JSON.stringify({ success: true, action: 'analysis_sent', symbol }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
         return new Response(
           JSON.stringify({ success: false, error: 'Unknown command' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
