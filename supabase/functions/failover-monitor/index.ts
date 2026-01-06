@@ -179,43 +179,68 @@ serve(async (req) => {
 });
 
 async function checkHealth(config: { provider: string; health_check_url: string | null; timeout_ms: number | null }): Promise<HealthCheckResult> {
-  const timeout = config.timeout_ms || 5000;
-  const url = config.health_check_url || `https://api.${config.provider}.com/v1/health`;
+  const timeout = config.timeout_ms || 10000;
+  const url = config.health_check_url;
+
+  // If no health check URL configured, skip real check
+  if (!url) {
+    console.log(`No health check URL configured for ${config.provider}, skipping`);
+    return {
+      provider: config.provider,
+      status: 'healthy',
+      latency: 0,
+    };
+  }
 
   const start = Date.now();
+  console.log(`Checking health for ${config.provider} at ${url}`);
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    // For demo, simulate health check
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 10));
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
     
     clearTimeout(timeoutId);
-    
     const latency = Date.now() - start;
 
-    // Randomly simulate issues (5% chance)
-    if (Math.random() < 0.05) {
+    if (!response.ok) {
+      console.log(`Health check for ${config.provider} returned HTTP ${response.status}`);
       return {
         provider: config.provider,
         status: 'down',
         latency,
-        error: 'Connection timeout'
+        error: `HTTP ${response.status}`
       };
     }
 
+    const data = await response.json();
+    console.log(`Health check for ${config.provider} successful: ${JSON.stringify(data)}`);
+
+    // Check if response indicates healthy status
+    const isHealthy = data.status === 'ok' || data.status === 'healthy';
+
     return {
       provider: config.provider,
-      status: latency < 100 ? 'healthy' : latency < 300 ? 'warning' : 'down',
+      status: isHealthy ? (latency < 100 ? 'healthy' : latency < 300 ? 'warning' : 'down') : 'down',
       latency
     };
   } catch (error) {
+    const latency = Date.now() - start;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Health check for ${config.provider} failed: ${errorMessage}`);
+    
     return {
       provider: config.provider,
       status: 'down',
-      latency: Date.now() - start,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      latency,
+      error: errorMessage.includes('abort') ? 'Connection timeout' : errorMessage
     };
   }
 }
