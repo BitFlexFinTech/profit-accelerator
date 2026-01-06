@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.failover-monitor]
 verify_jwt = false
+
+[functions.install-hft-bot]
+verify_jwt = false
