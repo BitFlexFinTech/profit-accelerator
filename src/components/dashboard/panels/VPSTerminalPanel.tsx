@@ -7,7 +7,8 @@ import {
   PlugZap,
   Server,
   Command,
-  Loader2
+  Loader2,
+  Rocket
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -274,6 +275,14 @@ export function VPSTerminalPanel({
           <span className="text-xs text-muted-foreground flex items-center gap-1">
             <Command className="w-3 h-3" /> Quick:
           </span>
+          <Button 
+            size="sm" 
+            className="text-xs h-7 bg-success/20 text-success hover:bg-success/30 border-success/30"
+            onClick={() => sendQuickCommand('curl -sSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash')}
+          >
+            <Rocket className="w-3 h-3 mr-1" />
+            Install HFT Bot
+          </Button>
           {[
             { label: 'docker ps', cmd: 'docker ps' },
             { label: 'logs', cmd: 'docker logs hft-bot --tail 5' },
@@ -281,7 +290,7 @@ export function VPSTerminalPanel({
             { label: 'htop', cmd: 'htop' },
             { label: 'status', cmd: 'systemctl status hft-bot' },
           ].map(({ label, cmd }) => (
-            <Button 
+            <Button
               key={cmd} 
               size="sm" 
               variant="outline" 
