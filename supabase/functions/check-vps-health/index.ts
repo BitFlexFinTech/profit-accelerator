@@ -23,9 +23,10 @@ Deno.serve(async (req) => {
 
     if (vpsError || !vpsConfig?.outbound_ip) {
       console.log('[check-vps-health] No VPS configured');
+      // Return 200 with healthy: false instead of 404 to avoid frontend errors
       return new Response(
-        JSON.stringify({ success: false, error: 'No VPS configured', healthy: false }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
+        JSON.stringify({ success: true, healthy: false, error: 'No VPS configured', ip: null, provider: null }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       );
     }
 
