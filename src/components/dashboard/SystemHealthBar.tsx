@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Brain, Activity, Server, Loader2 } from 'lucide-react';
+import { Brain, Activity, Server, Loader2, RefreshCw } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { cn } from '@/lib/utils';
@@ -9,7 +9,8 @@ interface SystemHealthBarProps {
 }
 
 export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) {
-  const status = useSystemStatus();
+  const { checkHealth, isLoading: statusLoading, ...status } = useSystemStatus();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [flashingIndicators, setFlashingIndicators] = useState<Set<string>>(new Set());
   const prevStatusRef = useRef(status);
 
@@ -77,7 +78,13 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
     },
   ];
 
-  if (status.isLoading) {
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await checkHealth();
+    setIsRefreshing(false);
+  };
+
+  if (statusLoading) {
     return (
       <div className="flex items-center gap-1.5">
         {[1, 2, 3].map((i) => (
@@ -139,6 +146,25 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
             </Tooltip>
           );
         })}
+        
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className={cn(
+                'flex items-center justify-center h-7 w-7 rounded-full text-xs transition-all',
+                'border hover:scale-105 active:scale-95',
+                'bg-muted/50 border-border text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <RefreshCw className={cn('h-3 w-3', isRefreshing && 'animate-spin')} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Refresh health status
+          </TooltipContent>
+        </Tooltip>
       </div>
     </TooltipProvider>
   );

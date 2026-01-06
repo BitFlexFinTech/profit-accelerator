@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface SystemStatus {
@@ -10,7 +10,7 @@ interface SystemStatus {
 }
 
 export function useSystemStatus() {
-const [status, setStatus] = useState<SystemStatus>({
+  const [status, setStatus] = useState<SystemStatus>({
     ai: { isActive: false, model: null },
     exchanges: { connected: 0, total: 11, balanceUsdt: 0 },
     vps: { status: 'inactive', region: 'ap-northeast-1', ip: null, provider: null },
@@ -18,7 +18,7 @@ const [status, setStatus] = useState<SystemStatus>({
     isLoading: true,
   });
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const [aiResult, exchangeResult, vpsResult] = await Promise.all([
         supabase.from('ai_config').select('is_active, model').eq('provider', 'groq').single(),
@@ -55,10 +55,33 @@ const [status, setStatus] = useState<SystemStatus>({
       console.error('[useSystemStatus] Error fetching:', err);
       setStatus(prev => ({ ...prev, isLoading: false }));
     }
-  };
+  }, []);
+
+  const checkVpsHealth = useCallback(async () => {
+    try {
+      console.log('[useSystemStatus] Triggering VPS health check...');
+      const { data, error } = await supabase.functions.invoke('check-vps-health');
+      if (error) {
+        console.error('[useSystemStatus] Health check error:', error);
+      } else {
+        console.log('[useSystemStatus] Health check result:', data);
+      }
+      // Refetch status after health check updates the DB
+      await fetchStatus();
+    } catch (err) {
+      console.error('[useSystemStatus] Health check failed:', err);
+    }
+  }, [fetchStatus]);
 
   useEffect(() => {
+    // Initial fetch
     fetchStatus();
+    
+    // Run health check on mount
+    checkVpsHealth();
+
+    // Auto-refresh health every 30 seconds
+    const healthInterval = setInterval(checkVpsHealth, 30000);
 
     // Subscribe to realtime changes on all critical tables
     const channel = supabase
@@ -66,12 +89,14 @@ const [status, setStatus] = useState<SystemStatus>({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_config' }, fetchStatus)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, fetchStatus)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, fetchStatus)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_metrics' }, fetchStatus)
       .subscribe();
 
     return () => {
+      clearInterval(healthInterval);
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [fetchStatus, checkVpsHealth]);
 
-  return status;
+  return { ...status, refetch: fetchStatus, checkHealth: checkVpsHealth };
 }
