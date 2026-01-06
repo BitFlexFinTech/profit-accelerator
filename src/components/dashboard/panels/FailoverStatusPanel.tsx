@@ -7,12 +7,14 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Activity
+  Activity,
+  Stethoscope
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { VPSHealthDisplay } from './VPSHealthDisplay';
 
 interface FailoverConfig {
   id: string;
@@ -40,12 +42,37 @@ interface HealthStatus {
   lastCheck: Date;
 }
 
+interface VPSMetrics {
+  uptime?: number;
+  memory?: {
+    total: number;
+    free: number;
+    used: number;
+    percent: number;
+  };
+  cpu?: number[];
+  hostname?: string;
+  platform?: string;
+  version?: string;
+}
+
+interface HealthTestResult {
+  success: boolean;
+  status: 'ok' | 'error' | 'down' | 'checking';
+  latency: number;
+  metrics?: VPSMetrics;
+  error?: string;
+  hint?: string;
+}
+
 export function FailoverStatusPanel() {
   const [configs, setConfigs] = useState<FailoverConfig[]>([]);
   const [events, setEvents] = useState<FailoverEvent[]>([]);
   const [healthStatuses, setHealthStatuses] = useState<Map<string, HealthStatus>>(new Map());
   const [isChecking, setIsChecking] = useState(false);
   const [lastCheck, setLastCheck] = useState<Date | null>(null);
+  const [healthTestResult, setHealthTestResult] = useState<HealthTestResult | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
 
   const fetchData = async () => {
     const [configRes, eventRes] = await Promise.all([
@@ -103,6 +130,64 @@ export function FailoverStatusPanel() {
     setHealthStatuses(newStatuses);
     setLastCheck(new Date());
     setIsChecking(false);
+  };
+
+  const testHealthEndpoint = async () => {
+    setIsTesting(true);
+    setHealthTestResult({ success: false, status: 'checking', latency: 0 });
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('health-check-test', {
+        body: { url: 'http://167.179.83.239:8080/health', timeout: 10000 }
+      });
+
+      if (error) {
+        setHealthTestResult({
+          success: false,
+          status: 'error',
+          latency: 0,
+          error: error.message
+        });
+        toast.error('Health check failed');
+        return;
+      }
+
+      setHealthTestResult({
+        success: data.success,
+        status: data.success ? 'ok' : 'down',
+        latency: data.latency || 0,
+        metrics: data.metrics,
+        error: data.error,
+        hint: data.hint
+      });
+
+      if (data.success) {
+        toast.success(`HFT Bot is online (${data.latency}ms)`);
+        // Update vultr status with real data
+        setHealthStatuses(prev => {
+          const newMap = new Map(prev);
+          newMap.set('vultr', {
+            provider: 'vultr',
+            status: data.latency < 100 ? 'healthy' : data.latency < 300 ? 'warning' : 'down',
+            latency: data.latency,
+            lastCheck: new Date()
+          });
+          return newMap;
+        });
+      } else {
+        toast.error(data.error || 'Health endpoint unreachable');
+      }
+    } catch (err) {
+      setHealthTestResult({
+        success: false,
+        status: 'error',
+        latency: 0,
+        error: err instanceof Error ? err.message : 'Unknown error'
+      });
+      toast.error('Failed to test health endpoint');
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const handleManualSwitch = async (toProvider: string) => {
@@ -204,9 +289,32 @@ export function FailoverStatusPanel() {
             <p className="text-xs text-muted-foreground">latency</p>
           </div>
         </div>
+        
+        {/* Test Health Button */}
+        <div className="mt-3 pt-3 border-t border-primary/20">
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="w-full"
+            onClick={testHealthEndpoint}
+            disabled={isTesting}
+          >
+            <Stethoscope className={`w-4 h-4 mr-2 ${isTesting ? 'animate-pulse' : ''}`} />
+            {isTesting ? 'Testing Health Endpoint...' : 'Test HFT Bot Health'}
+          </Button>
+        </div>
       </div>
 
-      {/* Backup Servers */}
+      {/* Health Test Result */}
+      {healthTestResult && (
+        <VPSHealthDisplay 
+          status={healthTestResult.status}
+          latency={healthTestResult.latency}
+          metrics={healthTestResult.metrics}
+          error={healthTestResult.error}
+          hint={healthTestResult.hint}
+        />
+      )}
       <div className="space-y-2">
         <p className="text-xs text-muted-foreground font-medium">BACKUP SERVERS</p>
         

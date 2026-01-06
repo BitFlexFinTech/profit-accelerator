@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.install-hft-bot]
 verify_jwt = false
+
+[functions.health-check-test]
+verify_jwt = false
