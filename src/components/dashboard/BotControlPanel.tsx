@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, AlertTriangle, Loader2, FlaskConical } from 'lucide-react';
+import { Play, Square, AlertTriangle, Loader2, FlaskConical, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 
 type BotStatus = 'idle' | 'running' | 'stopped';
 
@@ -20,6 +21,21 @@ export function BotControlPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  
+  const { sync } = useExchangeWebSocket();
+
+  const handleSyncBalances = async () => {
+    setIsSyncing(true);
+    try {
+      await sync();
+      toast.success('Balance sync triggered');
+    } catch (error) {
+      toast.error('Failed to sync balances');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -203,6 +219,18 @@ export function BotControlPanel() {
 
         {/* Controls Section */}
         <div className="flex items-center gap-4">
+          {/* Sync Balances Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncBalances}
+            disabled={isSyncing}
+            className="gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            Sync
+          </Button>
+          
           {/* Test Mode Toggle */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Test Mode:</span>

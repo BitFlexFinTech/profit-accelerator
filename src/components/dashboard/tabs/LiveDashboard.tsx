@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { SentimentPanel } from '../panels/SentimentPanel';
 import { TradeCopierPanel } from '../panels/TradeCopierPanel';
 import { ExchangePingPanel } from '../panels/ExchangePingPanel';
@@ -11,10 +12,19 @@ import { TradeLogPanel } from '../panels/TradeLogPanel';
 import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
 import { BotControlPanel } from '../BotControlPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
+import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 
 export function LiveDashboard() {
   // Subscribe to real-time trade notifications
   useTradeNotifications();
+  
+  // Get sync function from WebSocket hook
+  const { sync } = useExchangeWebSocket();
+  
+  // Force immediate balance sync on mount
+  useEffect(() => {
+    sync();
+  }, [sync]);
 
   return (
     <div className="space-y-6 animate-fade-in">
