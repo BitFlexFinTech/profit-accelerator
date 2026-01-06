@@ -13,10 +13,25 @@ serve(async (req) => {
   }
 
   try {
-    const { action, apiKey, sshPublicKey, specs } = await req.json();
+    const body = await req.json();
+    const { action, sshPublicKey, specs, instanceId, ipAddress } = body;
+    
+    // Use provided API key or fall back to stored secret
+    const apiKey = body.apiKey || Deno.env.get('VULTR_API_KEY');
+    
+    if (!apiKey) {
+      console.error('No API key provided or found in secrets');
+      return new Response(
+        JSON.stringify({ error: 'API key required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`Vultr action: ${action}`);
 
     switch (action) {
       case 'validate-api-key': {
+        console.log('Validating API key...');
         const response = await fetch(`${VULTR_API_BASE}/account`, {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -25,11 +40,13 @@ serve(async (req) => {
 
         if (response.ok) {
           const data = await response.json();
+          console.log('API key valid, balance:', data.account?.balance);
           return new Response(
             JSON.stringify({ valid: true, balance: data.account?.balance }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         } else {
+          console.log('API key invalid, status:', response.status);
           return new Response(
             JSON.stringify({ valid: false }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -37,7 +54,58 @@ serve(async (req) => {
         }
       }
 
+      case 'get-instance-by-ip': {
+        console.log('Looking up instance by IP:', ipAddress);
+        
+        const response = await fetch(`${VULTR_API_BASE}/instances`, {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+          },
+        });
+
+        if (!response.ok) {
+          console.error('Failed to fetch instances:', response.status);
+          return new Response(
+            JSON.stringify({ error: 'Failed to fetch instances', found: false }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const data = await response.json();
+        const instances = data.instances || [];
+        
+        console.log(`Found ${instances.length} instances, searching for IP ${ipAddress}`);
+        
+        const matchingInstance = instances.find((inst: any) => 
+          inst.main_ip === ipAddress || inst.v6_main_ip === ipAddress
+        );
+
+        if (matchingInstance) {
+          console.log('Found matching instance:', matchingInstance.id);
+          return new Response(
+            JSON.stringify({ 
+              found: true,
+              instanceId: matchingInstance.id,
+              status: matchingInstance.status,
+              region: matchingInstance.region,
+              plan: matchingInstance.plan,
+              label: matchingInstance.label,
+              publicIp: matchingInstance.main_ip,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        } else {
+          console.log('No instance found with IP:', ipAddress);
+          return new Response(
+            JSON.stringify({ found: false, message: 'No instance found with that IP' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
       case 'deploy-instance': {
+        console.log('Deploying new instance...');
+        
         // Step 1: Add SSH key
         const sshKeyResponse = await fetch(`${VULTR_API_BASE}/ssh-keys`, {
           method: 'POST',
@@ -55,6 +123,9 @@ serve(async (req) => {
         if (sshKeyResponse.ok) {
           const sshData = await sshKeyResponse.json();
           sshKeyId = sshData.ssh_key?.id;
+          console.log('SSH key created:', sshKeyId);
+        } else {
+          console.log('SSH key creation failed, continuing without:', sshKeyResponse.status);
         }
 
         // Step 2: Create instance
@@ -86,7 +157,8 @@ serve(async (req) => {
         }
 
         const instanceData = await instanceResponse.json();
-        const instanceId = instanceData.instance?.id;
+        const newInstanceId = instanceData.instance?.id;
+        console.log('Instance created:', newInstanceId);
 
         // Step 3: Poll for running status and IP
         let publicIp = '';
@@ -96,7 +168,7 @@ serve(async (req) => {
         while (attempts < maxAttempts && !publicIp) {
           await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s
           
-          const statusResponse = await fetch(`${VULTR_API_BASE}/instances/${instanceId}`, {
+          const statusResponse = await fetch(`${VULTR_API_BASE}/instances/${newInstanceId}`, {
             headers: {
               'Authorization': `Bearer ${apiKey}`,
             },
@@ -106,6 +178,7 @@ serve(async (req) => {
             const statusData = await statusResponse.json();
             if (statusData.instance?.status === 'active' && statusData.instance?.main_ip !== '0.0.0.0') {
               publicIp = statusData.instance.main_ip;
+              console.log('Instance active with IP:', publicIp);
             }
           }
           attempts++;
@@ -114,7 +187,7 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({ 
             success: true, 
-            instanceId, 
+            instanceId: newInstanceId, 
             publicIp: publicIp || 'Pending...',
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -122,7 +195,7 @@ serve(async (req) => {
       }
 
       case 'get-instance-status': {
-        const { instanceId } = await req.json();
+        console.log('Getting instance status:', instanceId);
         
         const response = await fetch(`${VULTR_API_BASE}/instances/${instanceId}`, {
           headers: {
@@ -148,7 +221,7 @@ serve(async (req) => {
       }
 
       case 'stop-instance': {
-        const { instanceId } = await req.json();
+        console.log('Stopping instance:', instanceId);
         
         const response = await fetch(`${VULTR_API_BASE}/instances/${instanceId}/halt`, {
           method: 'POST',
@@ -164,7 +237,7 @@ serve(async (req) => {
       }
 
       case 'start-instance': {
-        const { instanceId } = await req.json();
+        console.log('Starting instance:', instanceId);
         
         const response = await fetch(`${VULTR_API_BASE}/instances/${instanceId}/start`, {
           method: 'POST',
@@ -180,7 +253,7 @@ serve(async (req) => {
       }
 
       case 'destroy-instance': {
-        const { instanceId } = await req.json();
+        console.log('Destroying instance:', instanceId);
         
         const response = await fetch(`${VULTR_API_BASE}/instances/${instanceId}`, {
           method: 'DELETE',
@@ -196,6 +269,7 @@ serve(async (req) => {
       }
 
       default:
+        console.error('Unknown action:', action);
         return new Response(
           JSON.stringify({ error: 'Unknown action' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
