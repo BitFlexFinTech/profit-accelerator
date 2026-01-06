@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Wallet, Check, Loader2, AlertCircle } from 'lucide-react';
+import { Wallet, Check, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,10 @@ interface Exchange {
   color: string;
   needsPassphrase?: boolean;
   isHyperliquid?: boolean;
+}
+
+interface IPWhitelistStatus {
+  [provider: string]: boolean;
 }
 
 const exchanges: Exchange[] = [
@@ -50,6 +54,7 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; balance?: string; error?: string } | null>(null);
   const [connectedExchanges, setConnectedExchanges] = useState<string[]>([]);
+  const [ipWhitelistStatus, setIpWhitelistStatus] = useState<IPWhitelistStatus>({});
 
   const selectedExchangeData = exchanges.find(e => e.id === selectedExchange);
 
@@ -74,6 +79,7 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
   useEffect(() => {
     if (open) {
       fetchConnectedExchanges();
+      fetchIPWhitelistStatus();
     }
   }, [open]);
 
@@ -85,6 +91,21 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
 
     if (data) {
       setConnectedExchanges(data.map(e => e.exchange_name.toLowerCase()));
+    }
+  };
+
+  const fetchIPWhitelistStatus = async () => {
+    const { data } = await supabase
+      .from('credential_permissions')
+      .select('provider, ip_restricted')
+      .eq('ip_restricted', true);
+
+    if (data) {
+      const statusMap: IPWhitelistStatus = {};
+      data.forEach(item => {
+        statusMap[item.provider.toLowerCase()] = true;
+      });
+      setIpWhitelistStatus(statusMap);
     }
   };
 
@@ -222,9 +243,17 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
                       <span className="text-xs text-accent">Wallet Auth</span>
                     )}
                     {isConnected && (
-                      <div className="flex items-center justify-center gap-1 mt-1">
-                        <Check className="w-3 h-3 text-success" />
-                        <span className="text-xs text-success">Connected</span>
+                      <div className="flex flex-col items-center gap-0.5 mt-1">
+                        <div className="flex items-center gap-1">
+                          <Check className="w-3 h-3 text-success" />
+                          <span className="text-xs text-success">Connected</span>
+                        </div>
+                        {ipWhitelistStatus[exchange.id] && (
+                          <div className="flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-primary" />
+                            <span className="text-xs text-primary">IP Whitelisted</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </button>
