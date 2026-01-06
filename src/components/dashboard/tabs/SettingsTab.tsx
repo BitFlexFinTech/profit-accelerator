@@ -12,8 +12,12 @@ import {
   Loader2,
   Brain,
   Cloud,
-  Globe
+  Globe,
+  ArrowLeftRight,
+  ArrowRight,
+  ArrowLeft
 } from 'lucide-react';
+import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
@@ -39,6 +43,157 @@ import { useHFTSettings } from '@/hooks/useHFTSettings';
 import { useAIConfig } from '@/hooks/useAIConfig';
 import { useCloudConfig } from '@/hooks/useCloudConfig';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+
+// VPS Status Section Component
+function VPSStatusSection() {
+  const { vps } = useSystemStatus();
+  
+  const isConnected = vps.status === 'running' || vps.status === 'idle';
+  const statusText = vps.status === 'running' ? 'Running' : 
+                     vps.status === 'idle' ? 'Connected (Idle)' : 
+                     vps.status === 'deploying' ? 'Deploying...' : 'Inactive';
+  const statusClass = vps.status === 'running' ? 'text-success' : 
+                      vps.status === 'idle' ? 'text-primary' : 
+                      vps.status === 'deploying' ? 'text-warning' : 'text-muted-foreground';
+  
+  return (
+    <div className="glass-card p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <Server className="w-5 h-5 text-primary" />
+        <h3 className="font-semibold">VPS Configuration</h3>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="p-4 rounded-lg bg-secondary/30">
+          <p className="text-muted-foreground text-sm">Region</p>
+          <p className="font-medium text-accent">Tokyo ({vps.region || 'nrt'})</p>
+        </div>
+        <div className="p-4 rounded-lg bg-secondary/30">
+          <p className="text-muted-foreground text-sm">Status</p>
+          <div className="flex items-center gap-2">
+            <div className={isConnected ? 'status-online' : 'status-offline'} />
+            <span className={`font-medium ${statusClass}`}>{statusText}</span>
+          </div>
+        </div>
+        <div className="p-4 rounded-lg bg-secondary/30">
+          <p className="text-muted-foreground text-sm">IP Address</p>
+          <p className="font-medium font-mono text-sm">{vps.ip || 'Not configured'}</p>
+        </div>
+        <div className="p-4 rounded-lg bg-secondary/30">
+          <p className="text-muted-foreground text-sm">Provider</p>
+          <p className="font-medium">{vps.provider ? vps.provider.charAt(0).toUpperCase() + vps.provider.slice(1) : 'Not set'}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Wallet Transfer Section Component  
+function WalletTransferSection() {
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [transferAmount, setTransferAmount] = useState('');
+  const [selectedExchange, setSelectedExchange] = useState<'Binance' | 'OKX'>('Binance');
+  const exchangeStatus = useExchangeStatus();
+
+  const handleTransfer = async (from: 'spot' | 'futures', to: 'spot' | 'futures') => {
+    if (!transferAmount || parseFloat(transferAmount) <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    setIsTransferring(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('trade-engine', {
+        body: {
+          action: 'wallet-transfer',
+          exchange: selectedExchange,
+          from,
+          to,
+          amount: parseFloat(transferAmount),
+          asset: 'USDT'
+        }
+      });
+
+      if (error) throw error;
+      
+      toast.success(`Transferred ${transferAmount} USDT from ${from} to ${to}`);
+      setTransferAmount('');
+    } catch (err: any) {
+      toast.error(`Transfer failed: ${err.message}`);
+    } finally {
+      setIsTransferring(false);
+    }
+  };
+
+  return (
+    <div className="glass-card p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <ArrowLeftRight className="w-5 h-5 text-accent" />
+        <h3 className="font-semibold">Wallet Transfers</h3>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        Move funds between Spot and Futures wallets
+      </p>
+      
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSelectedExchange('Binance')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              selectedExchange === 'Binance' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'bg-secondary/50 hover:bg-secondary'
+            }`}
+          >
+            Binance
+          </button>
+          <button
+            onClick={() => setSelectedExchange('OKX')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              selectedExchange === 'OKX' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'bg-secondary/50 hover:bg-secondary'
+            }`}
+          >
+            OKX
+          </button>
+        </div>
+        
+        <div className="flex gap-2 items-center">
+          <Input
+            type="number"
+            placeholder="Amount USDT"
+            value={transferAmount}
+            onChange={(e) => setTransferAmount(e.target.value)}
+            className="max-w-[150px]"
+          />
+          <span className="text-sm text-muted-foreground">USDT</span>
+        </div>
+        
+        <div className="flex gap-2">
+          <Button
+            onClick={() => handleTransfer('spot', 'futures')}
+            disabled={isTransferring}
+            variant="outline"
+            className="flex-1"
+          >
+            {isTransferring ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-2" />}
+            Move to Futures
+          </Button>
+          <Button
+            onClick={() => handleTransfer('futures', 'spot')}
+            disabled={isTransferring}
+            variant="outline"
+            className="flex-1"
+          >
+            {isTransferring ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowLeft className="w-4 h-4 mr-2" />}
+            Move to Spot
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function SettingsTab() {
   const [activeWizard, setActiveWizard] = useState<string | null>(null);
@@ -624,32 +779,11 @@ export function SettingsTab() {
         <IPWhitelistCard />
       </div>
 
-      {/* VPS Status */}
-      <div className="glass-card p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Server className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold">VPS Configuration</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 rounded-lg bg-secondary/30">
-            <p className="text-muted-foreground text-sm">Region</p>
-            <p className="font-medium text-accent">Tokyo (ap-northeast-1)</p>
-          </div>
-          <div className="p-4 rounded-lg bg-secondary/30">
-            <p className="text-muted-foreground text-sm">Status</p>
-            <div className="flex items-center gap-2">
-              <div className="status-online" />
-              <span className="text-success font-medium">Running</span>
-            </div>
-          </div>
-          <div className="p-4 rounded-lg bg-secondary/30">
-            <p className="text-muted-foreground text-sm">Provider</p>
-            <p className="font-medium">Supabase Edge</p>
-          </div>
-        </div>
-      </div>
+      {/* VPS Status - Dynamic */}
+      <VPSStatusSection />
 
-      {/* Wizards */}
+      {/* Wallet Transfers */}
+      <WalletTransferSection />
       <TelegramWizard 
         open={activeWizard === 'telegram'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 

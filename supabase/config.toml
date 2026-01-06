@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.check-vps-health]
 verify_jwt = false
+
+[functions.exchange-websocket]
+verify_jwt = false
