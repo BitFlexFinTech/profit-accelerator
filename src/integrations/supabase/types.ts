@@ -405,6 +405,7 @@ export type Database = {
           required_scopes: string[] | null
           risk_level: string | null
           security_score: number | null
+          whitelisted_range: string | null
         }
         Insert: {
           can_trade?: boolean | null
@@ -424,6 +425,7 @@ export type Database = {
           required_scopes?: string[] | null
           risk_level?: string | null
           security_score?: number | null
+          whitelisted_range?: string | null
         }
         Update: {
           can_trade?: boolean | null
@@ -443,6 +445,7 @@ export type Database = {
           required_scopes?: string[] | null
           risk_level?: string | null
           security_score?: number | null
+          whitelisted_range?: string | null
         }
         Relationships: [
           {

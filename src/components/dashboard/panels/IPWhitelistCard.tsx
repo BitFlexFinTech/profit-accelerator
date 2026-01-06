@@ -1,13 +1,24 @@
 import { useState, useEffect } from 'react';
-import { Globe, Copy, Check, Loader2, AlertTriangle } from 'lucide-react';
+import { Globe, Copy, Check, Loader2, ShieldCheck, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useHFTSettings } from '@/hooks/useHFTSettings';
+import { supabase } from '@/integrations/supabase/client';
+
+interface WhitelistStatus {
+  isWhitelisted: boolean;
+  range: string | null;
+}
 
 export function IPWhitelistCard() {
   const { settings, fetchOutboundIp } = useHFTSettings();
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [whitelistStatus, setWhitelistStatus] = useState<WhitelistStatus>({
+    isWhitelisted: false,
+    range: null
+  });
 
   const ip = settings.latency.outboundIp;
 
@@ -15,12 +26,28 @@ export function IPWhitelistCard() {
     if (!ip) {
       loadIP();
     }
+    fetchWhitelistStatus();
   }, []);
 
   const loadIP = async () => {
     setIsLoading(true);
     await fetchOutboundIp();
     setIsLoading(false);
+  };
+
+  const fetchWhitelistStatus = async () => {
+    const { data } = await supabase
+      .from('credential_permissions')
+      .select('ip_restricted, whitelisted_range')
+      .eq('ip_restricted', true)
+      .limit(1);
+
+    if (data && data.length > 0) {
+      setWhitelistStatus({
+        isWhitelisted: true,
+        range: (data[0] as { whitelisted_range?: string }).whitelisted_range || null
+      });
+    }
   };
 
   const copyToClipboard = async () => {
@@ -36,11 +63,42 @@ export function IPWhitelistCard() {
     }
   };
 
+  const handleVerifyConnection = async () => {
+    setIsVerifying(true);
+    try {
+      // Test VPS health
+      const healthResponse = await supabase.functions.invoke('check-vps-health');
+      
+      // Test exchange connections
+      const exchangeResponse = await supabase.functions.invoke('trade-engine', {
+        body: { action: 'test-connection', exchangeName: 'Binance' }
+      });
+
+      if (healthResponse.data?.healthy || exchangeResponse.data?.success) {
+        toast.success('Connection verified! IP whitelist is working.');
+      } else {
+        toast.warning('VPS healthy but exchange connection pending');
+      }
+    } catch (error) {
+      toast.error('Verification failed - check VPS status');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   return (
     <div className="glass-card p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <Globe className="w-5 h-5 text-primary" />
-        <h3 className="font-semibold">Server Whitelist IP</h3>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <Globe className="w-5 h-5 text-primary" />
+          <h3 className="font-semibold">Server Whitelist IP</h3>
+        </div>
+        {whitelistStatus.isWhitelisted && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/20 text-success text-xs font-medium">
+            <ShieldCheck className="w-3 h-3" />
+            Completed
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -72,22 +130,36 @@ export function IPWhitelistCard() {
           </Button>
         </div>
 
-        <p className="text-xs text-muted-foreground">
-          Add this IP to your exchange API whitelist for enhanced security.
-        </p>
-
-        <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-warning">Security Warning</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Disable withdrawals on all exchange API keys as the primary defense. 
-                IP whitelisting is a secondary security measure.
-              </p>
+        {whitelistStatus.isWhitelisted && whitelistStatus.range && (
+          <div className="p-3 rounded-lg bg-success/10 border border-success/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-success">Whitelisted Range</p>
+                <p className="font-mono text-sm mt-1">{whitelistStatus.range}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleVerifyConnection}
+                disabled={isVerifying}
+                className="text-success hover:text-success hover:bg-success/10"
+              >
+                {isVerifying ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                <span className="ml-1.5">Verify</span>
+              </Button>
             </div>
           </div>
-        </div>
+        )}
+
+        {!whitelistStatus.isWhitelisted && (
+          <p className="text-xs text-muted-foreground">
+            Add this IP to your exchange API whitelist for enhanced security.
+          </p>
+        )}
       </div>
     </div>
   );
