@@ -167,7 +167,7 @@ serve(async (req) => {
       }
 
       case 'process-command': {
-        // Process incoming Telegram commands (like /kill)
+        // Process incoming Telegram commands
         const { command, chatId: incomingChatId } = params;
         
         // Verify the chat_id matches our saved config
@@ -184,6 +184,119 @@ serve(async (req) => {
           );
         }
 
+        // Handle /status command
+        if (command === '/status') {
+          console.log('[telegram-bot] Processing /status command');
+          
+          // Get trading config
+          const { data: tradingConfig } = await supabase
+            .from('trading_config')
+            .select('trading_enabled, global_kill_switch_enabled')
+            .single();
+
+          // Get VPS config
+          const { data: vpsConfig } = await supabase
+            .from('vps_config')
+            .select('region, status')
+            .single();
+
+          // Get exchange connections
+          const { data: exchanges } = await supabase
+            .from('exchange_connections')
+            .select('exchange_name, is_connected, balance_usdt');
+
+          const connectedCount = exchanges?.filter(e => e.is_connected).length || 0;
+          const totalExchanges = exchanges?.length || 0;
+          const totalBalance = exchanges?.reduce((sum, e) => sum + (e.balance_usdt || 0), 0) || 0;
+
+          // Get active trades
+          const { data: openTrades } = await supabase
+            .from('trading_journal')
+            .select('id')
+            .eq('status', 'open');
+
+          const statusMessage = `📊 <b>SYSTEM STATUS</b>
+
+🖥️ <b>VPS:</b> ${vpsConfig?.status === 'running' ? '✅ Running' : '⚠️ ' + (vpsConfig?.status || 'Unknown')} (${vpsConfig?.region || 'Tokyo'})
+📈 <b>Trading:</b> ${tradingConfig?.trading_enabled ? '✅ ENABLED' : '❌ DISABLED'}
+🛑 <b>Kill Switch:</b> ${tradingConfig?.global_kill_switch_enabled ? '🔴 ACTIVE' : '🟢 OFF'}
+🔄 <b>Active Positions:</b> ${openTrades?.length || 0}
+
+<b>Exchanges Online:</b> ${connectedCount}/${totalExchanges}
+💰 <b>Total Balance:</b> $${totalBalance.toLocaleString()} USDT`;
+
+          await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: config.chat_id,
+              text: statusMessage,
+              parse_mode: 'HTML'
+            })
+          });
+
+          return new Response(
+            JSON.stringify({ success: true, action: 'status_sent' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Handle /balance command
+        if (command === '/balance') {
+          console.log('[telegram-bot] Processing /balance command');
+          
+          const { data: exchanges } = await supabase
+            .from('exchange_connections')
+            .select('exchange_name, balance_usdt, is_connected')
+            .eq('is_connected', true)
+            .order('balance_usdt', { ascending: false });
+
+          if (!exchanges?.length) {
+            await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: config.chat_id,
+                text: '💰 <b>PORTFOLIO BALANCE</b>\n\nNo exchanges connected.',
+                parse_mode: 'HTML'
+              })
+            });
+
+            return new Response(
+              JSON.stringify({ success: true, action: 'balance_sent' }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          const totalBalance = exchanges.reduce((sum, e) => sum + (e.balance_usdt || 0), 0);
+          const balanceLines = exchanges.map(e => 
+            `${e.exchange_name}: $${(e.balance_usdt || 0).toLocaleString()}`
+          ).join('\n');
+
+          const balanceMessage = `💰 <b>PORTFOLIO BALANCE</b>
+
+${balanceLines}
+
+━━━━━━━━━━━━━━━━━━━━━
+📊 <b>Total:</b> $${totalBalance.toLocaleString()} USDT`;
+
+          await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: config.chat_id,
+              text: balanceMessage,
+              parse_mode: 'HTML'
+            })
+          });
+
+          return new Response(
+            JSON.stringify({ success: true, action: 'balance_sent' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Handle /kill command
         if (command === '/kill') {
           console.log('[telegram-bot] Processing /kill command');
           
@@ -196,11 +309,22 @@ serve(async (req) => {
             })
             .neq('id', '00000000-0000-0000-0000-000000000000');
 
-          // Disable trading
+          // Disable trading and enable kill switch
           const { error: tradingError } = await supabase
             .from('trading_config')
-            .update({ trading_enabled: false })
+            .update({ 
+              trading_enabled: false,
+              global_kill_switch_enabled: true
+            })
             .neq('id', '00000000-0000-0000-0000-000000000000');
+
+          // Log to audit
+          await supabase.from('audit_logs').insert({
+            action: 'kill_switch_activated',
+            entity_type: 'system',
+            entity_id: 'telegram',
+            new_value: { source: 'telegram_command', timestamp: new Date().toISOString() }
+          });
 
           if (vpsError || tradingError) {
             console.error('[telegram-bot] Kill switch error:', vpsError || tradingError);
@@ -212,7 +336,7 @@ serve(async (req) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               chat_id: config.chat_id,
-              text: '⚠️ EMERGENCY KILL-SWITCH ACTIVATED. ALL TRADING HALTED.',
+              text: '🚨 <b>EMERGENCY KILL-SWITCH ACTIVATED</b>\n\n⛔ All trading halted immediately.\n🔒 Global kill switch enabled.\n\nUse the dashboard to resume trading.',
               parse_mode: 'HTML'
             })
           });
@@ -249,11 +373,22 @@ serve(async (req) => {
           })
           .neq('id', '00000000-0000-0000-0000-000000000000');
 
-        // Disable trading
+        // Disable trading and enable kill switch
         const { error: tradingError } = await supabase
           .from('trading_config')
-          .update({ trading_enabled: false })
+          .update({ 
+            trading_enabled: false,
+            global_kill_switch_enabled: true
+          })
           .neq('id', '00000000-0000-0000-0000-000000000000');
+
+        // Log to audit
+        await supabase.from('audit_logs').insert({
+          action: 'kill_switch_activated',
+          entity_type: 'system',
+          entity_id: 'dashboard',
+          new_value: { source: 'dashboard_ui', timestamp: new Date().toISOString() }
+        });
 
         if (vpsError || tradingError) {
           console.error('[telegram-bot] Kill switch error:', vpsError || tradingError);
@@ -270,7 +405,7 @@ serve(async (req) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               chat_id: config.chat_id,
-              text: '⚠️ EMERGENCY KILL-SWITCH ACTIVATED. ALL TRADING HALTED.',
+              text: '🚨 <b>EMERGENCY KILL-SWITCH ACTIVATED</b>\n\n⛔ All trading halted from dashboard.\n🔒 Global kill switch enabled.',
               parse_mode: 'HTML'
             })
           });
@@ -308,7 +443,7 @@ serve(async (req) => {
 ${sideEmoji} <b>Side:</b> ${trade.side.toUpperCase()}
 
 🤖 <b>AI Reasoning:</b>
-${trade.ai_reasoning || 'No reasoning provided'}`;
+${trade.ai_reasoning || 'Manual trade from dashboard'}`;
 
         await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
           method: 'POST',

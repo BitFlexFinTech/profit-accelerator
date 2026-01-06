@@ -44,6 +44,42 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+          new_value: Json | null
+          old_value: Json | null
+          principal_after: number | null
+          principal_before: number | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          new_value?: Json | null
+          old_value?: Json | null
+          principal_after?: number | null
+          principal_before?: number | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          new_value?: Json | null
+          old_value?: Json | null
+          principal_after?: number | null
+          principal_before?: number | null
+        }
+        Relationships: []
+      }
       backtest_results: {
         Row: {
           created_at: string | null
@@ -88,8 +124,12 @@ export type Database = {
       }
       exchange_connections: {
         Row: {
+          agent_private_key: string | null
           api_key: string | null
+          api_passphrase: string | null
           api_secret: string | null
+          balance_updated_at: string | null
+          balance_usdt: number | null
           created_at: string | null
           exchange_name: string
           id: string
@@ -97,10 +137,15 @@ export type Database = {
           last_ping_at: string | null
           last_ping_ms: number | null
           updated_at: string | null
+          wallet_address: string | null
         }
         Insert: {
+          agent_private_key?: string | null
           api_key?: string | null
+          api_passphrase?: string | null
           api_secret?: string | null
+          balance_updated_at?: string | null
+          balance_usdt?: number | null
           created_at?: string | null
           exchange_name: string
           id?: string
@@ -108,10 +153,15 @@ export type Database = {
           last_ping_at?: string | null
           last_ping_ms?: number | null
           updated_at?: string | null
+          wallet_address?: string | null
         }
         Update: {
+          agent_private_key?: string | null
           api_key?: string | null
+          api_passphrase?: string | null
           api_secret?: string | null
+          balance_updated_at?: string | null
+          balance_usdt?: number | null
           created_at?: string | null
           exchange_name?: string
           id?: string
@@ -119,6 +169,7 @@ export type Database = {
           last_ping_at?: string | null
           last_ping_ms?: number | null
           updated_at?: string | null
+          wallet_address?: string | null
         }
         Relationships: []
       }
@@ -151,18 +202,21 @@ export type Database = {
           created_at: string | null
           id: string
           password_hash: string
+          session_timeout_minutes: number | null
           updated_at: string | null
         }
         Insert: {
           created_at?: string | null
           id?: string
           password_hash: string
+          session_timeout_minutes?: number | null
           updated_at?: string | null
         }
         Update: {
           created_at?: string | null
           id?: string
           password_hash?: string
+          session_timeout_minutes?: number | null
           updated_at?: string | null
         }
         Relationships: []
@@ -359,8 +413,11 @@ export type Database = {
       trading_config: {
         Row: {
           created_at: string | null
+          global_kill_switch_enabled: boolean | null
           id: string
+          max_daily_drawdown_percent: number | null
           max_daily_trades: number | null
+          max_position_size: number | null
           order_size: number | null
           stop_loss: number | null
           take_profit_1: number | null
@@ -370,8 +427,11 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          global_kill_switch_enabled?: boolean | null
           id?: string
+          max_daily_drawdown_percent?: number | null
           max_daily_trades?: number | null
+          max_position_size?: number | null
           order_size?: number | null
           stop_loss?: number | null
           take_profit_1?: number | null
@@ -381,8 +441,11 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          global_kill_switch_enabled?: boolean | null
           id?: string
+          max_daily_drawdown_percent?: number | null
           max_daily_trades?: number | null
+          max_position_size?: number | null
           order_size?: number | null
           stop_loss?: number | null
           take_profit_1?: number | null
@@ -439,30 +502,39 @@ export type Database = {
       }
       vps_config: {
         Row: {
+          cors_proxy_enabled: boolean | null
           created_at: string | null
           emergency_stopped_at: string | null
+          execution_buffer_ms: number | null
           id: string
           instance_type: string | null
+          outbound_ip: string | null
           provider: string | null
           region: string
           status: string | null
           updated_at: string | null
         }
         Insert: {
+          cors_proxy_enabled?: boolean | null
           created_at?: string | null
           emergency_stopped_at?: string | null
+          execution_buffer_ms?: number | null
           id?: string
           instance_type?: string | null
+          outbound_ip?: string | null
           provider?: string | null
           region?: string
           status?: string | null
           updated_at?: string | null
         }
         Update: {
+          cors_proxy_enabled?: boolean | null
           created_at?: string | null
           emergency_stopped_at?: string | null
+          execution_buffer_ms?: number | null
           id?: string
           instance_type?: string | null
+          outbound_ip?: string | null
           provider?: string | null
           region?: string
           status?: string | null
