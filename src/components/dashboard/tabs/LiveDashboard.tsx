@@ -6,6 +6,9 @@ import { RecentTradesPanel } from '../panels/RecentTradesPanel';
 import { QuickActionsPanel } from '../panels/QuickActionsPanel';
 import { MarketWatchPanel } from '../panels/MarketWatchPanel';
 import { CloudStatusPanel } from '../panels/CloudStatusPanel';
+import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
+import { TradeLogPanel } from '../panels/TradeLogPanel';
+import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 
 export function LiveDashboard() {
@@ -28,12 +31,13 @@ export function LiveDashboard() {
         <div className="space-y-6">
           <MarketWatchPanel />
           <QuickActionsPanel />
+          <FailoverStatusPanel />
         </div>
 
         {/* Center Column */}
         <div className="lg:col-span-1 space-y-6">
           <SentimentPanel />
-          <RecentTradesPanel />
+          <TradeLogPanel />
         </div>
 
         {/* Right Column */}
@@ -42,6 +46,12 @@ export function LiveDashboard() {
           <TradeCopierPanel />
         </div>
       </div>
+
+      {/* Full Width Terminal */}
+      <VPSTerminalPanel 
+        serverIp="167.179.83.239" 
+        serverName="Vultr Tokyo" 
+      />
     </div>
   );
 }

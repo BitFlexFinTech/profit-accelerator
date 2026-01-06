@@ -358,22 +358,6 @@ export function SecurityHardeningWizard({ open, onOpenChange }: SecurityHardenin
                             Skip
                           </Button>
                         </div>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => window.open(fix.externalUrl, '_blank')}
-                          >
-                            Manual Fix
-                            <ExternalLink className="w-3 h-3 ml-1" />
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="ghost"
-                            onClick={() => handleSkipIssue(fix.id)}
-                          >
-                            Skip
-                          </Button>
-                        </div>
                       </>
                     )}
                   </div>

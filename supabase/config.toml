@@ -62,3 +62,9 @@ verify_jwt = false
 
 [functions.bitlaunch-cloud]
 verify_jwt = false
+
+[functions.ssh-terminal]
+verify_jwt = false
+
+[functions.failover-monitor]
+verify_jwt = false

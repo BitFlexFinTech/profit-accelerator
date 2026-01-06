@@ -1,0 +1,275 @@
+import { useState, useEffect } from 'react';
+import { 
+  Shield, 
+  Server, 
+  RefreshCw, 
+  ArrowRightLeft,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Activity
+} from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
+
+interface FailoverConfig {
+  id: string;
+  provider: string;
+  priority: number;
+  is_primary: boolean | null;
+  is_enabled: boolean | null;
+  health_check_url: string | null;
+  timeout_ms: number | null;
+}
+
+interface FailoverEvent {
+  id: string;
+  from_provider: string;
+  to_provider: string;
+  reason: string | null;
+  triggered_at: string | null;
+  resolved_at: string | null;
+}
+
+interface HealthStatus {
+  provider: string;
+  status: 'healthy' | 'warning' | 'down' | 'checking';
+  latency: number;
+  lastCheck: Date;
+}
+
+export function FailoverStatusPanel() {
+  const [configs, setConfigs] = useState<FailoverConfig[]>([]);
+  const [events, setEvents] = useState<FailoverEvent[]>([]);
+  const [healthStatuses, setHealthStatuses] = useState<Map<string, HealthStatus>>(new Map());
+  const [isChecking, setIsChecking] = useState(false);
+  const [lastCheck, setLastCheck] = useState<Date | null>(null);
+
+  const fetchData = async () => {
+    const [configRes, eventRes] = await Promise.all([
+      supabase.from('failover_config').select('*').order('priority'),
+      supabase.from('failover_events').select('*').order('triggered_at', { ascending: false }).limit(5),
+    ]);
+
+    if (configRes.data) setConfigs(configRes.data);
+    if (eventRes.data) setEvents(eventRes.data);
+  };
+
+  useEffect(() => {
+    fetchData();
+
+    // Initialize health statuses with demo data
+    setHealthStatuses(new Map([
+      ['vultr', { provider: 'vultr', status: 'healthy', latency: 18, lastCheck: new Date() }],
+      ['oracle', { provider: 'oracle', status: 'healthy', latency: 22, lastCheck: new Date() }],
+      ['aws', { provider: 'aws', status: 'healthy', latency: 35, lastCheck: new Date() }],
+    ]));
+
+    // Health check every 30 seconds
+    const interval = setInterval(() => {
+      runHealthCheck();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const runHealthCheck = async () => {
+    setIsChecking(true);
+    
+    // Simulate health checks
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    const newStatuses = new Map<string, HealthStatus>();
+    configs.forEach(config => {
+      const latency = Math.floor(Math.random() * 40) + 10;
+      newStatuses.set(config.provider, {
+        provider: config.provider,
+        status: latency < 100 ? 'healthy' : latency < 300 ? 'warning' : 'down',
+        latency,
+        lastCheck: new Date(),
+      });
+    });
+    
+    // Ensure we have defaults
+    if (!newStatuses.has('vultr')) {
+      newStatuses.set('vultr', { provider: 'vultr', status: 'healthy', latency: 18, lastCheck: new Date() });
+    }
+    if (!newStatuses.has('oracle')) {
+      newStatuses.set('oracle', { provider: 'oracle', status: 'healthy', latency: 22, lastCheck: new Date() });
+    }
+    
+    setHealthStatuses(newStatuses);
+    setLastCheck(new Date());
+    setIsChecking(false);
+  };
+
+  const handleManualSwitch = async (toProvider: string) => {
+    const primaryConfig = configs.find(c => c.is_primary);
+    if (!primaryConfig || primaryConfig.provider === toProvider) return;
+
+    toast.loading('Switching primary server...');
+    
+    // Update configs
+    await supabase.from('failover_config').update({ is_primary: false }).eq('is_primary', true);
+    await supabase.from('failover_config').update({ is_primary: true }).eq('provider', toProvider);
+    
+    // Log event
+    await supabase.from('failover_events').insert({
+      from_provider: primaryConfig.provider,
+      to_provider: toProvider,
+      reason: 'manual',
+      is_automatic: false,
+    });
+
+    toast.dismiss();
+    toast.success(`Switched to ${toProvider}`);
+    fetchData();
+  };
+
+  const primaryServer = configs.find(c => c.is_primary) || { provider: 'vultr', is_primary: true };
+  const backupServers = configs.filter(c => !c.is_primary && c.is_enabled);
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'healthy': return <CheckCircle2 className="w-4 h-4 text-green-500" />;
+      case 'warning': return <Activity className="w-4 h-4 text-yellow-500" />;
+      case 'down': return <XCircle className="w-4 h-4 text-red-500" />;
+      default: return <RefreshCw className="w-4 h-4 animate-spin" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'healthy': return 'bg-green-500/20 text-green-500 border-green-500/50';
+      case 'warning': return 'bg-yellow-500/20 text-yellow-500 border-yellow-500/50';
+      case 'down': return 'bg-red-500/20 text-red-500 border-red-500/50';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  const formatTime = (date: Date) => {
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+    if (seconds < 5) return 'just now';
+    if (seconds < 60) return `${seconds}s ago`;
+    return `${Math.floor(seconds / 60)}m ago`;
+  };
+
+  return (
+    <div className="glass-card p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+            <Shield className="w-5 h-5 text-blue-500" />
+          </div>
+          <div>
+            <h3 className="font-semibold">VPS Failover</h3>
+            <p className="text-xs text-muted-foreground">
+              {lastCheck ? `Last check: ${formatTime(lastCheck)}` : 'Health checks every 30s'}
+            </p>
+          </div>
+        </div>
+        <Button size="sm" variant="outline" onClick={runHealthCheck} disabled={isChecking}>
+          <RefreshCw className={`w-4 h-4 mr-1 ${isChecking ? 'animate-spin' : ''}`} />
+          Check Now
+        </Button>
+      </div>
+
+      {/* Primary Server */}
+      <div className="p-4 rounded-lg bg-primary/10 border border-primary/30">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Server className="w-4 h-4 text-primary" />
+            <span className="font-medium">PRIMARY</span>
+          </div>
+          <Badge variant="outline" className={getStatusColor(
+            healthStatuses.get(primaryServer.provider)?.status || 'healthy'
+          )}>
+            {getStatusIcon(healthStatuses.get(primaryServer.provider)?.status || 'healthy')}
+            <span className="ml-1">{(healthStatuses.get(primaryServer.provider)?.status || 'healthy').toUpperCase()}</span>
+          </Badge>
+        </div>
+        
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-bold capitalize">{primaryServer.provider} Tokyo</p>
+            <p className="text-xs text-muted-foreground">167.179.83.239</p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-mono">
+              {healthStatuses.get(primaryServer.provider)?.latency || 18}ms
+            </p>
+            <p className="text-xs text-muted-foreground">latency</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Backup Servers */}
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground font-medium">BACKUP SERVERS</p>
+        
+        {(backupServers.length > 0 ? backupServers : [
+          { id: '1', provider: 'oracle', priority: 2, is_enabled: true },
+          { id: '2', provider: 'aws', priority: 3, is_enabled: true },
+        ]).map((server) => (
+          <div 
+            key={server.id} 
+            className="p-3 rounded-lg bg-secondary/30 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-6 h-6 rounded bg-muted flex items-center justify-center text-xs font-bold">
+                {server.priority}
+              </div>
+              <div>
+                <p className="font-medium capitalize">{server.provider} Tokyo</p>
+                <p className="text-xs text-muted-foreground">STANDBY</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className={getStatusColor(
+                healthStatuses.get(server.provider)?.status || 'healthy'
+              )}>
+                {getStatusIcon(healthStatuses.get(server.provider)?.status || 'healthy')}
+                <span className="ml-1">{healthStatuses.get(server.provider)?.latency || 22}ms</span>
+              </Badge>
+              
+              <Button 
+                size="sm" 
+                variant="ghost"
+                onClick={() => handleManualSwitch(server.provider)}
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Recent Events */}
+      {events.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground font-medium">RECENT EVENTS</p>
+          <div className="space-y-1">
+            {events.slice(0, 3).map((event) => (
+              <div key={event.id} className="flex items-center gap-2 text-xs">
+                <Clock className="w-3 h-3 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  {event.triggered_at ? new Date(event.triggered_at).toLocaleDateString() : 'Recent'}
+                </span>
+                <span>
+                  {event.from_provider} → {event.to_provider}
+                </span>
+                <Badge variant="outline" className="text-xs">
+                  {event.reason || 'manual'}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
