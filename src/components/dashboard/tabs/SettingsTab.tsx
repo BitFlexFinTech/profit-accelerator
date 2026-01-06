@@ -29,6 +29,9 @@ import { GCPWizard } from '../wizards/GCPWizard';
 import { VultrWizard } from '../wizards/VultrWizard';
 import { LinodeWizard } from '../wizards/LinodeWizard';
 import { AWSWizard } from '../wizards/AWSWizard';
+import { CloudwaysWizard } from '../wizards/CloudwaysWizard';
+import { BitLaunchWizard } from '../wizards/BitLaunchWizard';
+import { SecurityHardeningWizard } from '../wizards/SecurityHardeningWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
@@ -331,9 +334,36 @@ export function SettingsTab() {
             <p className="text-xs text-muted-foreground">Tokyo 2 (ap-northeast)</p>
             <span className="text-xs text-warning">$100 Credit - Nanode</span>
           </button>
-        </div>
 
-        <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
+          <button
+            onClick={() => setActiveWizard('cloudways-wizard')}
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl">🚀</span>
+              {getCloudProviderStatus('cloudways') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium">Cloudways</p>
+            <p className="text-xs text-muted-foreground">Managed Hosting</p>
+            <span className="text-xs text-warning">$14+/mo</span>
+          </button>
+
+          <button
+            onClick={() => setActiveWizard('bitlaunch-wizard')}
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl">₿</span>
+              {getCloudProviderStatus('bitlaunch') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium">BitLaunch</p>
+            <p className="text-xs text-muted-foreground">Crypto VPS</p>
+            <span className="text-xs text-warning">$350 Balance</span>
+          </button>
           <div className="flex items-center gap-3">
             <Checkbox 
               id="freeTier" 
@@ -659,6 +689,18 @@ export function SettingsTab() {
       />
       <AWSWizard 
         open={activeWizard === 'aws-wizard'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <CloudwaysWizard 
+        open={activeWizard === 'cloudways-wizard'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <BitLaunchWizard 
+        open={activeWizard === 'bitlaunch-wizard'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <SecurityHardeningWizard 
+        open={activeWizard === 'security-hardening'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
     </div>
