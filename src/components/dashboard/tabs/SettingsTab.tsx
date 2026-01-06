@@ -23,6 +23,8 @@ import { ExchangeWizard } from '../wizards/ExchangeWizard';
 import { TradeCopierWizard } from '../wizards/TradeCopierWizard';
 import { GroqWizard } from '../wizards/GroqWizard';
 import { CloudWizard } from '../wizards/CloudWizard';
+import { OracleWizard } from '../wizards/OracleWizard';
+import { GCPWizard } from '../wizards/GCPWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
@@ -235,7 +237,7 @@ export function SettingsTab() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <button
             onClick={() => { setCloudProvider('digitalocean'); setActiveWizard('cloud'); }}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
@@ -265,7 +267,7 @@ export function SettingsTab() {
           </button>
 
           <button
-            onClick={() => { setCloudProvider('gcp'); setActiveWizard('cloud'); }}
+            onClick={() => setActiveWizard('gcp-wizard')}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
           >
             <div className="flex items-center justify-between mb-2">
@@ -276,6 +278,22 @@ export function SettingsTab() {
             </div>
             <p className="font-medium">Google Cloud</p>
             <p className="text-xs text-muted-foreground">Tokyo (asia-northeast1)</p>
+            <span className="text-xs text-success">Free Tier - e2-micro</span>
+          </button>
+
+          <button
+            onClick={() => setActiveWizard('oracle')}
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl">🔴</span>
+              {getCloudProviderStatus('oracle') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium">Oracle Cloud</p>
+            <p className="text-xs text-muted-foreground">Tokyo (ap-tokyo-1)</p>
+            <span className="text-xs text-success">Always Free - 4 OCPU, 24GB</span>
           </button>
         </div>
 
@@ -586,6 +604,14 @@ export function SettingsTab() {
         open={activeWizard === 'cloud'} 
         onOpenChange={(open) => { if (!open) { setActiveWizard(null); setCloudProvider(null); } }}
         provider={cloudProvider}
+      />
+      <OracleWizard 
+        open={activeWizard === 'oracle'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <GCPWizard 
+        open={activeWizard === 'gcp-wizard'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
     </div>
   );
