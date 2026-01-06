@@ -86,16 +86,9 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
     return 'VPS inactive';
   };
 
-  // Tokyo VPS IP for manual override
-  const TOKYO_VPS_IP = '167.179.83.239';
-  const isManuallyConfigured = status.vps.ip === TOKYO_VPS_IP;
-  
   // VPS pulse when BOTH vps.status is running AND bot_status is 'running'
-  // Also pulse if manually configured with Tokyo IP and bot is running
-  const isVpsActive = (status.vps.status === 'running' && botStatus === 'running') || 
-                      (isManuallyConfigured && botStatus === 'running');
+  const isVpsActive = status.vps.status === 'running' && botStatus === 'running';
   const isVpsConnected = status.vps.status === 'running' || 
-                         isManuallyConfigured || 
                          (status.vps.status === 'idle' && status.vps.ip);
   
   const indicators = [
