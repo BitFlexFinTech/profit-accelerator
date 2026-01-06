@@ -49,6 +49,7 @@ serve(async (req) => {
       const balanceUpdates = [];
       
       for (const exchange of exchanges || []) {
+        const requestStartTime = Date.now();
         try {
           let balance = 0;
           const exchangeName = exchange.exchange_name?.toLowerCase();
@@ -68,14 +69,41 @@ serve(async (req) => {
 
           console.log(`[exchange-websocket] ${exchangeName} balance: $${balance}`);
           
+          const requestEndTime = Date.now();
+          const latencyMs = requestEndTime - requestStartTime;
+          
           balanceUpdates.push({
             id: exchange.id,
+            exchange_name: exchangeName,
             balance_usdt: balance,
             balance_updated_at: new Date().toISOString(),
-            last_ping_at: new Date().toISOString()
+            last_ping_at: new Date().toISOString(),
+            last_ping_ms: latencyMs
           });
+          
+          // Log successful API request
+          await supabase.from('api_request_logs').insert({
+            exchange_name: exchangeName,
+            endpoint: '/balance',
+            method: 'GET',
+            status_code: 200,
+            latency_ms: latencyMs,
+            success: true
+          });
+          
         } catch (err) {
           console.error(`[exchange-websocket] Error fetching ${exchange.exchange_name} balance:`, err);
+          
+          // Log failed API request
+          await supabase.from('api_request_logs').insert({
+            exchange_name: exchange.exchange_name?.toLowerCase(),
+            endpoint: '/balance',
+            method: 'GET',
+            status_code: 500,
+            latency_ms: Date.now() - requestStartTime,
+            error_message: String(err),
+            success: false
+          });
         }
       }
 
@@ -91,13 +119,29 @@ serve(async (req) => {
             .update({
               balance_usdt: update.balance_usdt,
               balance_updated_at: update.balance_updated_at,
-              last_ping_at: update.last_ping_at
+              last_ping_at: update.last_ping_at,
+              last_ping_ms: update.last_ping_ms
             })
             .eq('id', update.id);
           
           if (updateError) {
             console.error(`[exchange-websocket] Update error for ${update.id}:`, updateError);
           }
+        }
+        
+        // Record balance history snapshot
+        const totalBalance = balanceUpdates.reduce((sum, u) => sum + (u.balance_usdt || 0), 0);
+        if (totalBalance > 0) {
+          const breakdown = balanceUpdates.map(u => ({
+            exchange: u.exchange_name,
+            balance: u.balance_usdt
+          }));
+          
+          await supabase.from('balance_history').insert({
+            total_balance: totalBalance,
+            exchange_breakdown: breakdown
+          });
+          console.log(`[exchange-websocket] Recorded balance snapshot: $${totalBalance}`);
         }
         
         console.log(`[exchange-websocket] Updated ${balanceUpdates.length} exchange balances`);
