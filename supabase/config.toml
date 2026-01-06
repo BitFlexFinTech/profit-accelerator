@@ -32,3 +32,9 @@ verify_jwt = false
 
 [functions.ai-analyze]
 verify_jwt = false
+
+[functions.oracle-cloud]
+verify_jwt = false
+
+[functions.gcp-cloud]
+verify_jwt = false

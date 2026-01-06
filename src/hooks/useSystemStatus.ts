@@ -4,16 +4,16 @@ import { supabase } from '@/integrations/supabase/client';
 interface SystemStatus {
   ai: { isActive: boolean; model: string | null };
   exchanges: { connected: number; total: number; balanceUsdt: number };
-  vps: { status: string; region: string; ip: string | null };
+  vps: { status: string; region: string; ip: string | null; provider: string | null };
   isFullyOperational: boolean;
   isLoading: boolean;
 }
 
 export function useSystemStatus() {
-  const [status, setStatus] = useState<SystemStatus>({
+const [status, setStatus] = useState<SystemStatus>({
     ai: { isActive: false, model: null },
     exchanges: { connected: 0, total: 11, balanceUsdt: 0 },
-    vps: { status: 'inactive', region: 'ap-northeast-1', ip: null },
+    vps: { status: 'inactive', region: 'ap-northeast-1', ip: null, provider: null },
     isFullyOperational: false,
     isLoading: true,
   });
@@ -23,7 +23,7 @@ export function useSystemStatus() {
       const [aiResult, exchangeResult, vpsResult] = await Promise.all([
         supabase.from('ai_config').select('is_active, model').eq('provider', 'groq').single(),
         supabase.from('exchange_connections').select('is_connected, balance_usdt'),
-        supabase.from('vps_config').select('status, region, outbound_ip').single(),
+        supabase.from('vps_config').select('status, region, outbound_ip, provider').single(),
       ]);
 
       const connectedExchanges = exchangeResult.data?.filter(e => e.is_connected) || [];
@@ -43,6 +43,7 @@ export function useSystemStatus() {
           status: vpsResult.data?.status ?? 'inactive',
           region: vpsResult.data?.region ?? 'ap-northeast-1',
           ip: vpsResult.data?.outbound_ip ?? null,
+          provider: vpsResult.data?.provider ?? null,
         },
         isFullyOperational: 
           (aiResult.data?.is_active ?? false) && 
