@@ -26,3 +26,9 @@ verify_jwt = false
 
 [functions.daily-summary]
 verify_jwt = false
+
+[functions.trade-engine]
+verify_jwt = false
+
+[functions.ai-analyze]
+verify_jwt = false

@@ -44,6 +44,39 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_config: {
+        Row: {
+          api_key: string | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          last_used_at: string | null
+          model: string
+          provider: string
+          updated_at: string | null
+        }
+        Insert: {
+          api_key?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_used_at?: string | null
+          model?: string
+          provider?: string
+          updated_at?: string | null
+        }
+        Update: {
+          api_key?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_used_at?: string | null
+          model?: string
+          provider?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -119,6 +152,45 @@ export type Database = {
           total_pnl?: number | null
           total_trades?: number | null
           win_rate?: number | null
+        }
+        Relationships: []
+      }
+      cloud_config: {
+        Row: {
+          created_at: string | null
+          credentials: Json | null
+          id: string
+          instance_type: string | null
+          is_active: boolean | null
+          provider: string
+          region: string
+          status: string | null
+          updated_at: string | null
+          use_free_tier: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          credentials?: Json | null
+          id?: string
+          instance_type?: string | null
+          is_active?: boolean | null
+          provider: string
+          region?: string
+          status?: string | null
+          updated_at?: string | null
+          use_free_tier?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          credentials?: Json | null
+          id?: string
+          instance_type?: string | null
+          is_active?: boolean | null
+          provider?: string
+          region?: string
+          status?: string | null
+          updated_at?: string | null
+          use_free_tier?: boolean | null
         }
         Relationships: []
       }
