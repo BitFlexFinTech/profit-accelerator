@@ -1,8 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import '@xterm/xterm/css/xterm.css';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
   Terminal as TerminalIcon, 
@@ -25,13 +21,14 @@ export function VPSTerminalPanel({
   serverName = 'Vultr Tokyo' 
 }: VPSTerminalPanelProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const terminalInstanceRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
+  const terminalInstanceRef = useRef<any>(null);
+  const fitAddonRef = useRef<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isTerminalReady, setIsTerminalReady] = useState(false);
   const commandBufferRef = useRef('');
 
-  const handleDemoCommand = useCallback((cmd: string, term: Terminal) => {
+  const handleDemoCommand = useCallback((cmd: string, term: any) => {
     const trimmed = cmd.trim();
 
     const responses: Record<string, string> = {
@@ -66,49 +63,85 @@ export function VPSTerminalPanel({
   useEffect(() => {
     if (!terminalRef.current || terminalInstanceRef.current) return;
 
-    const term = new Terminal({
-      theme: {
-        background: '#0a0a0a',
-        foreground: '#22c55e',
-        cursor: '#22c55e',
-        cursorAccent: '#000000',
-        selectionBackground: '#22c55e33',
-        black: '#0a0a0a',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#eab308',
-        blue: '#3b82f6',
-        magenta: '#a855f7',
-        cyan: '#06b6d4',
-        white: '#f5f5f5',
-      },
-      fontFamily: 'JetBrains Mono, Fira Code, Monaco, Consolas, monospace',
-      fontSize: 13,
-      cursorBlink: true,
-      cursorStyle: 'block',
-      scrollback: 10000,
-      convertEol: true,
-    });
+    let mounted = true;
 
-    const fit = new FitAddon();
-    const webLinks = new WebLinksAddon();
+    const initTerminal = async () => {
+      try {
+        // Dynamic imports to avoid React context issues
+        const [xtermModule, fitModule, webLinksModule] = await Promise.all([
+          import('@xterm/xterm'),
+          import('@xterm/addon-fit'),
+          import('@xterm/addon-web-links'),
+        ]);
 
-    term.loadAddon(fit);
-    term.loadAddon(webLinks);
-    term.open(terminalRef.current);
-    
-    setTimeout(() => fit.fit(), 0);
+        if (!mounted || !terminalRef.current) return;
 
-    term.writeln('\x1b[32m╔════════════════════════════════════════════════════╗\x1b[0m');
-    term.writeln('\x1b[32m║          HFT Bot VPS Terminal                      ║\x1b[0m');
-    term.writeln('\x1b[32m╚════════════════════════════════════════════════════╝\x1b[0m');
-    term.writeln('');
-    term.writeln(`\x1b[33mServer:\x1b[0m ${serverIp} (${serverName})`);
-    term.writeln('\x1b[90mPress "Connect" to establish SSH connection.\x1b[0m');
-    term.writeln('');
+        // Inject xterm CSS
+        if (!document.getElementById('xterm-styles')) {
+          const style = document.createElement('style');
+          style.id = 'xterm-styles';
+          style.textContent = `
+            .xterm { height: 100%; }
+            .xterm-viewport { overflow-y: auto !important; }
+            .xterm-screen { height: 100%; }
+          `;
+          document.head.appendChild(style);
+        }
 
-    terminalInstanceRef.current = term;
-    fitAddonRef.current = fit;
+        const Terminal = xtermModule.Terminal;
+        const FitAddon = fitModule.FitAddon;
+        const WebLinksAddon = webLinksModule.WebLinksAddon;
+
+        const term = new Terminal({
+          theme: {
+            background: '#0a0a0a',
+            foreground: '#22c55e',
+            cursor: '#22c55e',
+            cursorAccent: '#000000',
+            selectionBackground: '#22c55e33',
+            black: '#0a0a0a',
+            red: '#ef4444',
+            green: '#22c55e',
+            yellow: '#eab308',
+            blue: '#3b82f6',
+            magenta: '#a855f7',
+            cyan: '#06b6d4',
+            white: '#f5f5f5',
+          },
+          fontFamily: 'JetBrains Mono, Fira Code, Monaco, Consolas, monospace',
+          fontSize: 13,
+          cursorBlink: true,
+          cursorStyle: 'block',
+          scrollback: 10000,
+          convertEol: true,
+        });
+
+        const fit = new FitAddon();
+        const webLinks = new WebLinksAddon();
+
+        term.loadAddon(fit);
+        term.loadAddon(webLinks);
+        term.open(terminalRef.current);
+        
+        setTimeout(() => fit.fit(), 50);
+
+        term.writeln('\x1b[32m╔════════════════════════════════════════════════════╗\x1b[0m');
+        term.writeln('\x1b[32m║          HFT Bot VPS Terminal                      ║\x1b[0m');
+        term.writeln('\x1b[32m╚════════════════════════════════════════════════════╝\x1b[0m');
+        term.writeln('');
+        term.writeln(`\x1b[33mServer:\x1b[0m ${serverIp} (${serverName})`);
+        term.writeln('\x1b[90mPress "Connect" to establish SSH connection.\x1b[0m');
+        term.writeln('');
+
+        terminalInstanceRef.current = term;
+        fitAddonRef.current = fit;
+        setIsTerminalReady(true);
+      } catch (error) {
+        console.error('Failed to initialize terminal:', error);
+      }
+    };
+
+    initTerminal();
 
     const handleResize = () => {
       if (fitAddonRef.current) {
@@ -118,9 +151,12 @@ export function VPSTerminalPanel({
     window.addEventListener('resize', handleResize);
 
     return () => {
+      mounted = false;
       window.removeEventListener('resize', handleResize);
-      term.dispose();
-      terminalInstanceRef.current = null;
+      if (terminalInstanceRef.current) {
+        terminalInstanceRef.current.dispose();
+        terminalInstanceRef.current = null;
+      }
     };
   }, [serverIp, serverName]);
 
@@ -139,7 +175,7 @@ export function VPSTerminalPanel({
       term.write('\x1b[32mroot@hft-bot:~# \x1b[0m');
       toast.success('Connected to VPS');
 
-      const dataHandler = term.onData((data) => {
+      term.onData((data: string) => {
         if (data === '\r') {
           term.writeln('');
           handleDemoCommand(commandBufferRef.current, term);
@@ -155,8 +191,6 @@ export function VPSTerminalPanel({
           term.write(data);
         }
       });
-
-      return () => dataHandler.dispose();
     }, 1500);
   }, [handleDemoCommand]);
 
@@ -208,7 +242,7 @@ export function VPSTerminalPanel({
           </div>
 
           {!isConnected ? (
-            <Button size="sm" onClick={connect} disabled={isConnecting}>
+            <Button size="sm" onClick={connect} disabled={isConnecting || !isTerminalReady}>
               {isConnecting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
