@@ -15,26 +15,29 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get VPS config - provider agnostic now
+    // Get VPS config - provider agnostic (supports AWS, DigitalOcean, Vultr, etc.)
     let { data: vpsConfig, error: vpsError } = await supabase
       .from('vps_config')
-      .select('id, outbound_ip, provider, status')
+      .select('id, outbound_ip, provider, status, region')
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .single();
 
-    // FALLBACK: If no vps_config, check cloud_config for active provider with IP
+    // FALLBACK: If no vps_config, check cloud_config for any active provider with IP
     if (vpsError || !vpsConfig?.outbound_ip) {
       console.log('[check-vps-health] No vps_config found, checking cloud_config...');
       
       const { data: cloudConfigs } = await supabase
         .from('cloud_config')
-        .select('provider, credentials, region, status')
-        .eq('is_active', true);
+        .select('provider, credentials, region, status, instance_type')
+        .eq('is_active', true)
+        .order('updated_at', { ascending: false });
 
-      // Find a cloud config with an IP in credentials
+      // Find a cloud config with an IP in credentials (supports any provider)
       const activeCloud = cloudConfigs?.find((c: any) => c.credentials?.ip);
       
       if (activeCloud?.credentials?.ip) {
-        console.log(`[check-vps-health] Found IP in cloud_config: ${activeCloud.credentials.ip}`);
+        console.log(`[check-vps-health] Found IP in cloud_config (${activeCloud.provider}): ${activeCloud.credentials.ip}`);
         
         // Create vpsConfig from cloud_config
         vpsConfig = {
@@ -42,6 +45,7 @@ Deno.serve(async (req) => {
           outbound_ip: activeCloud.credentials.ip,
           provider: activeCloud.provider,
           status: 'unknown',
+          region: activeCloud.region,
         };
       } else {
         console.log('[check-vps-health] No VPS configured in either table');
@@ -78,15 +82,15 @@ Deno.serve(async (req) => {
 
         // If we got health from cloud_config fallback, create vps_config entry
         if (!vpsConfig.id) {
-          console.log('[check-vps-health] Auto-inserting vps_config from cloud_config...');
+          console.log(`[check-vps-health] Auto-inserting vps_config from cloud_config (${vpsConfig.provider})...`);
           const { data: inserted, error: insertError } = await supabase
             .from('vps_config')
             .insert({
               provider: vpsConfig.provider,
               outbound_ip: vpsConfig.outbound_ip,
-              region: 'sgp1',
+              region: vpsConfig.region || 'ap-northeast-1',
               status: 'running',
-              instance_type: 's-1vcpu-1gb',
+              instance_type: vpsConfig.provider === 'aws' ? 't4g.micro' : 's-1vcpu-1gb',
             })
             .select()
             .single();
@@ -95,7 +99,7 @@ Deno.serve(async (req) => {
             console.error('[check-vps-health] Failed to insert vps_config:', insertError);
           } else {
             vpsConfig.id = inserted.id;
-            console.log('[check-vps-health] Created vps_config:', inserted.id);
+            console.log(`[check-vps-health] Created vps_config for ${vpsConfig.provider}:`, inserted.id);
           }
         }
 

@@ -8,10 +8,13 @@ const corsHeaders = {
 const INSTALL_SCRIPT = `#!/bin/bash
 set -e
 
+# Get server IP dynamically
+SERVER_IP=$(hostname -I | awk '{print $1}')
+
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║          HFT Bot Installation - Tokyo VPS                  ║"
-echo "║          Server: 167.179.83.239                            ║"
+echo "║          HFT Bot Installation - Cloud VPS                  ║"
+echo "║          Server: \$SERVER_IP                                ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -32,6 +35,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 log_info "Starting HFT Bot installation..."
+log_info "Detected Server IP: \$SERVER_IP"
 
 # System updates
 log_info "Updating system packages..."
@@ -335,14 +339,15 @@ echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║                 INSTALLATION COMPLETE!                     ║"
 echo "╠════════════════════════════════════════════════════════════╣"
-echo "║  📍 Server: 167.179.83.239 (Tokyo)                         ║"
-echo "║  🔍 Health: http://167.179.83.239:8080/health              ║"
+echo "║  📍 Server: \$SERVER_IP                                     ║"
+echo "║  🔍 Health: http://\$SERVER_IP:8080/health                  ║"
 echo "║  📁 Path:   /opt/hft-bot/                                  ║"
 echo "╠════════════════════════════════════════════════════════════╣"
 echo "║  Next Steps:                                               ║"
-echo "║  1. Add exchange credentials to /opt/hft-bot/config/.env   ║"
-echo "║  2. Deploy strategy to /opt/hft-bot/app/                   ║"
-echo "║  3. systemctl restart hft-bot                              ║"
+echo "║  1. Whitelist \$SERVER_IP on your exchanges                 ║"
+echo "║  2. Add exchange credentials to /opt/hft-bot/config/.env   ║"
+echo "║  3. Deploy strategy to /opt/hft-bot/app/                   ║"
+echo "║  4. systemctl restart hft-bot                              ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 `;
@@ -359,10 +364,9 @@ serve(async (req) => {
     if (format === 'json') {
       return new Response(JSON.stringify({
         success: true,
-        serverIp: '167.179.83.239',
-        region: 'Tokyo (NRT)',
+        message: 'Dynamic IP detection - run the script to see your server IP',
         installCommand: 'curl -sSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash',
-        healthEndpoint: 'http://167.179.83.239:8080/health',
+        healthEndpoint: 'http://<YOUR-SERVER-IP>:8080/health',
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
