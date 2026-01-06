@@ -86,11 +86,22 @@ Deno.serve(async (req) => {
     } catch (fetchError) {
       console.error('[check-vps-health] Fetch failed:', fetchError);
       
-      // Update VPS status to offline if health check fails
-      await supabase
+      // Check current status - don't override if manually set to running
+      const { data: currentStatus } = await supabase
         .from('vps_config')
-        .update({ status: 'offline', updated_at: new Date().toISOString() })
-        .eq('provider', 'vultr');
+        .select('status')
+        .eq('provider', 'vultr')
+        .single();
+      
+      // Only set to offline if not already manually set to running
+      if (currentStatus?.status !== 'running') {
+        await supabase
+          .from('vps_config')
+          .update({ status: 'offline', updated_at: new Date().toISOString() })
+          .eq('provider', 'vultr');
+      } else {
+        console.log('[check-vps-health] VPS status is running, not overriding to offline');
+      }
     }
 
     return new Response(

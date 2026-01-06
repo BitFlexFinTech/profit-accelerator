@@ -59,6 +59,18 @@ export function useSystemStatus() {
 
   const checkVpsHealth = useCallback(async () => {
     try {
+      // Check if VPS is already set to running in DB - if so, trust that state
+      const { data: vpsData } = await supabase
+        .from('vps_config')
+        .select('status, outbound_ip')
+        .single();
+      
+      if (vpsData?.status === 'running') {
+        console.log('[useSystemStatus] VPS already running, skipping external health check');
+        await fetchStatus();
+        return;
+      }
+      
       console.log('[useSystemStatus] Triggering VPS health check...');
       const { data, error } = await supabase.functions.invoke('check-vps-health');
       if (error) {
@@ -70,6 +82,8 @@ export function useSystemStatus() {
       await fetchStatus();
     } catch (err) {
       console.error('[useSystemStatus] Health check failed:', err);
+      // Still fetch status even if health check fails
+      await fetchStatus();
     }
   }, [fetchStatus]);
 
