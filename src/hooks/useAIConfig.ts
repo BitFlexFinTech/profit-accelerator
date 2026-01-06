@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface AIConfig {
@@ -14,7 +14,7 @@ export function useAIConfig() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchConfig = async () => {
+  const fetchConfig = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('ai_config')
@@ -30,11 +30,21 @@ export function useAIConfig() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchConfig();
-  }, []);
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('ai_config_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_config' }, fetchConfig)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchConfig]);
 
   const saveConfig = async (apiKey: string, model: string) => {
     try {

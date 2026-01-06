@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Brain, Loader2, CheckCircle2, ExternalLink, Sparkles, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAIConfig } from '@/hooks/useAIConfig';
+import { useRealtimeConfirmation } from '@/hooks/useRealtimeConfirmation';
 
 interface GroqWizardProps {
   open: boolean;
@@ -21,13 +22,30 @@ const GROQ_MODELS = [
 ];
 
 export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
-  const { saveConfig, validateKey } = useAIConfig();
+  const { saveConfig, validateKey, config } = useAIConfig();
   const [step, setStep] = useState(1);
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('llama-3.3-70b-versatile');
   const [isValidating, setIsValidating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Realtime confirmation for optimistic UI
+  const confirmation = useRealtimeConfirmation({
+    table: 'ai_config',
+    matchColumn: 'provider',
+    matchValue: 'groq',
+    timeoutMs: 5000,
+  });
+
+  // Auto-advance to success when realtime confirms
+  useEffect(() => {
+    if (confirmation.isConfirmed && step === 3 && isSaving) {
+      setIsSaving(false);
+      setStep(4);
+      toast.success('Groq AI configured successfully!');
+    }
+  }, [confirmation.isConfirmed, step, isSaving]);
 
   const handleValidate = async () => {
     if (!apiKey.trim()) {
@@ -52,15 +70,16 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
 
   const handleSave = async () => {
     setIsSaving(true);
+    confirmation.startWaiting(); // Start listening for realtime confirmation
+    
     const result = await saveConfig(apiKey, model);
-    setIsSaving(false);
 
-    if (result.success) {
-      setStep(4);
-      toast.success('Groq AI configured successfully!');
-    } else {
+    if (!result.success) {
+      setIsSaving(false);
+      confirmation.reset();
       toast.error(result.error || 'Failed to save configuration');
     }
+    // Success is handled by the realtime confirmation effect
   };
 
   const handleClose = () => {
@@ -68,6 +87,7 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
     setApiKey('');
     setModel('llama-3.3-70b-versatile');
     setValidationError(null);
+    confirmation.reset();
     onOpenChange(false);
   };
 
@@ -218,7 +238,7 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
                   {isSaving ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving...
+                      {confirmation.isWaiting ? 'Connecting...' : 'Saving...'}
                     </>
                   ) : (
                     'Activate AI'

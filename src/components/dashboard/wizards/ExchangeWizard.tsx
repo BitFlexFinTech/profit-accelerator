@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useRealtimeConfirmation } from '@/hooks/useRealtimeConfirmation';
 
 interface ExchangeWizardProps {
   open: boolean;
@@ -46,8 +47,29 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
   const [walletAddress, setWalletAddress] = useState('');
   const [agentPrivateKey, setAgentPrivateKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; balance?: string; error?: string } | null>(null);
   const [connectedExchanges, setConnectedExchanges] = useState<string[]>([]);
+
+  const selectedExchangeData = exchanges.find(e => e.id === selectedExchange);
+
+  // Realtime confirmation for optimistic UI
+  const confirmation = useRealtimeConfirmation({
+    table: 'exchange_connections',
+    matchColumn: 'exchange_name',
+    matchValue: selectedExchangeData?.name || '',
+    timeoutMs: 5000,
+  });
+
+  // Auto-complete when realtime confirms
+  useEffect(() => {
+    if (confirmation.isConfirmed && isSaving && selectedExchange) {
+      setIsSaving(false);
+      toast.success(`${selectedExchangeData?.name} connected successfully!`);
+      setConnectedExchanges(prev => [...prev, selectedExchange]);
+      resetForm();
+    }
+  }, [confirmation.isConfirmed, isSaving, selectedExchange, selectedExchangeData?.name]);
 
   useEffect(() => {
     if (open) {
@@ -65,8 +87,6 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
       setConnectedExchanges(data.map(e => e.exchange_name.toLowerCase()));
     }
   };
-
-  const selectedExchangeData = exchanges.find(e => e.id === selectedExchange);
 
   const handleTest = async () => {
     if (!selectedExchange) return;
@@ -102,7 +122,9 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
   const handleSave = async () => {
     if (!selectedExchange || !testResult?.success) return;
 
-    setIsLoading(true);
+    setIsSaving(true);
+    confirmation.startWaiting(); // Start listening for realtime confirmation
+    
     try {
       const response = await supabase.functions.invoke('trade-engine', {
         body: {
@@ -117,17 +139,16 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
         }
       });
 
-      if (response.data?.success) {
-        toast.success(`${selectedExchangeData?.name} connected successfully!`);
-        setConnectedExchanges([...connectedExchanges, selectedExchange]);
-        resetForm();
-      } else {
+      if (!response.data?.success) {
+        setIsSaving(false);
+        confirmation.reset();
         toast.error('Failed to save exchange connection');
       }
+      // Success is handled by the realtime confirmation effect
     } catch (error) {
+      setIsSaving(false);
+      confirmation.reset();
       toast.error('Failed to save exchange connection');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -139,6 +160,7 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
     setWalletAddress('');
     setAgentPrivateKey('');
     setTestResult(null);
+    confirmation.reset();
   };
 
   const isFormValid = () => {
@@ -343,13 +365,13 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
                 </Button>
                 <Button
                   onClick={handleSave}
-                  disabled={!testResult?.success || isLoading}
+                  disabled={!testResult?.success || isSaving}
                   className="flex-1"
                 >
-                  {isLoading && testResult?.success ? (
+                  {isSaving ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Saving...
+                      {confirmation.isWaiting ? 'Connecting...' : 'Saving...'}
                     </>
                   ) : (
                     'Save & Connect'

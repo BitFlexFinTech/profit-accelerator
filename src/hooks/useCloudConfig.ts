@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface CloudConfig {
@@ -16,7 +16,7 @@ export function useCloudConfig() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchConfigs = async () => {
+  const fetchConfigs = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('cloud_config')
@@ -31,11 +31,21 @@ export function useCloudConfig() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchConfigs();
-  }, []);
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('cloud_config_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cloud_config' }, fetchConfigs)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchConfigs]);
 
   const getProviderConfig = (provider: string) => {
     return configs.find(c => c.provider === provider);

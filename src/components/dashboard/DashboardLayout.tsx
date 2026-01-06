@@ -20,6 +20,7 @@ import { Backtesting } from './tabs/Backtesting';
 import { Leaderboard } from './tabs/Leaderboard';
 import { SettingsTab } from './tabs/SettingsTab';
 import { KillSwitchDialog } from './KillSwitchDialog';
+import { SystemHealthBar } from './SystemHealthBar';
 
 const tabs = [
   { id: 'dashboard', label: 'Live Dashboard', icon: LayoutDashboard },
@@ -79,6 +80,11 @@ export function DashboardLayout() {
             <span className="font-bold text-lg hidden sm:inline gradient-text">
               Tokyo HFT
             </span>
+          </div>
+
+          {/* System Health Bar */}
+          <div className="hidden md:flex">
+            <SystemHealthBar onNavigateToSettings={() => setActiveTab('settings')} />
           </div>
         </div>
 
