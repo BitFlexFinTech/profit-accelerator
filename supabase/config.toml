@@ -38,3 +38,27 @@ verify_jwt = false
 
 [functions.gcp-cloud]
 verify_jwt = false
+
+[functions.vultr-cloud]
+verify_jwt = false
+
+[functions.linode-cloud]
+verify_jwt = false
+
+[functions.aws-cloud]
+verify_jwt = false
+
+[functions.security-analyzer]
+verify_jwt = false
+
+[functions.security-fixer]
+verify_jwt = false
+
+[functions.credential-health-check]
+verify_jwt = false
+
+[functions.cloudways-cloud]
+verify_jwt = false
+
+[functions.bitlaunch-cloud]
+verify_jwt = false

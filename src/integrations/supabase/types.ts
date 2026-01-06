@@ -622,6 +622,50 @@ export type Database = {
         }
         Relationships: []
       }
+      health_check_results: {
+        Row: {
+          check_type: string
+          created_at: string | null
+          credential_id: string | null
+          details: Json | null
+          id: string
+          message: string | null
+          provider: string | null
+          status: string
+          telegram_notified: boolean | null
+        }
+        Insert: {
+          check_type: string
+          created_at?: string | null
+          credential_id?: string | null
+          details?: Json | null
+          id?: string
+          message?: string | null
+          provider?: string | null
+          status: string
+          telegram_notified?: boolean | null
+        }
+        Update: {
+          check_type?: string
+          created_at?: string | null
+          credential_id?: string | null
+          details?: Json | null
+          id?: string
+          message?: string | null
+          provider?: string | null
+          status?: string
+          telegram_notified?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "health_check_results_credential_id_fkey"
+            columns: ["credential_id"]
+            isOneToOne: false
+            referencedRelation: "credential_vault"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       latency_thresholds: {
         Row: {
           created_at: string | null

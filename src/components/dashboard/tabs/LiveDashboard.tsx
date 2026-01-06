@@ -5,6 +5,7 @@ import { PnLPanel } from '../panels/PnLPanel';
 import { RecentTradesPanel } from '../panels/RecentTradesPanel';
 import { QuickActionsPanel } from '../panels/QuickActionsPanel';
 import { MarketWatchPanel } from '../panels/MarketWatchPanel';
+import { CloudStatusPanel } from '../panels/CloudStatusPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 
 export function LiveDashboard() {
@@ -13,6 +14,9 @@ export function LiveDashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Cloud Status Panel - Shows your Vultr server at 167.179.83.239 */}
+      <CloudStatusPanel />
+
       {/* Top Row - Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <PnLPanel />
