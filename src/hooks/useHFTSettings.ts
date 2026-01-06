@@ -77,6 +77,17 @@ export function useHFTSettings() {
 
   useEffect(() => {
     fetchSettings();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('hft_settings_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, fetchSettings)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_config' }, fetchSettings)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchSettings]);
 
   const saveSettings = async (newSettings: Partial<HFTSettings>) => {

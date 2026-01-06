@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Cloud, Loader2, CheckCircle2, Server, Lock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCloudConfig } from '@/hooks/useCloudConfig';
+import { useRealtimeConfirmation } from '@/hooks/useRealtimeConfirmation';
 
 interface CloudWizardProps {
   open: boolean;
@@ -54,6 +55,23 @@ export function CloudWizard({ open, onOpenChange, provider }: CloudWizardProps) 
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  // Realtime confirmation for optimistic UI
+  const confirmation = useRealtimeConfirmation({
+    table: 'cloud_config',
+    matchColumn: 'provider',
+    matchValue: provider || '',
+    timeoutMs: 5000,
+  });
+
+  // Auto-advance to success when realtime confirms
+  useEffect(() => {
+    if (confirmation.isConfirmed && isSaving) {
+      setIsSaving(false);
+      setIsSuccess(true);
+      toast.success(`${provider ? PROVIDER_CONFIG[provider].name : 'Provider'} configured successfully!`);
+    }
+  }, [confirmation.isConfirmed, isSaving, provider]);
+
   if (!provider) return null;
 
   const config = PROVIDER_CONFIG[provider];
@@ -68,23 +86,25 @@ export function CloudWizard({ open, onOpenChange, provider }: CloudWizardProps) 
     }
 
     setIsSaving(true);
+    confirmation.startWaiting(); // Start listening for realtime confirmation
+    
     const result = await saveProviderConfig(provider, credentials, {
       region: config.regionCode,
       useFreeTier: true
     });
-    setIsSaving(false);
 
-    if (result.success) {
-      setIsSuccess(true);
-      toast.success(`${config.name} configured successfully!`);
-    } else {
+    if (!result.success) {
+      setIsSaving(false);
+      confirmation.reset();
       toast.error(result.error || 'Failed to save configuration');
     }
+    // Success is handled by the realtime confirmation effect
   };
 
   const handleClose = () => {
     setCredentials({});
     setIsSuccess(false);
+    confirmation.reset();
     onOpenChange(false);
   };
 
@@ -163,7 +183,7 @@ export function CloudWizard({ open, onOpenChange, provider }: CloudWizardProps) 
                   {isSaving ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving...
+                      {confirmation.isWaiting ? 'Connecting...' : 'Saving...'}
                     </>
                   ) : (
                     'Connect'
