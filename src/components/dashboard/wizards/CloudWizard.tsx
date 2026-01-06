@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
 import { Cloud, Loader2, CheckCircle2, Server, Lock, MapPin, Rocket, Wifi, Shield, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCloudConfig } from '@/hooks/useCloudConfig';
@@ -55,16 +56,16 @@ const PROVIDER_CONFIG = {
   }
 };
 
-const DEPLOYMENT_STAGES: Record<DeploymentStage, { label: string; icon: React.ReactNode }> = {
-  idle: { label: 'Ready', icon: <Server className="h-4 w-4" /> },
-  validating: { label: 'Validating credentials...', icon: <Loader2 className="h-4 w-4 animate-spin" /> },
-  creating: { label: 'Creating Droplet...', icon: <Rocket className="h-4 w-4 animate-pulse" /> },
-  'waiting-ip': { label: 'Waiting for IP assignment...', icon: <Wifi className="h-4 w-4 animate-pulse" /> },
-  'configuring-firewall': { label: 'Configuring firewall...', icon: <Shield className="h-4 w-4 animate-pulse" /> },
-  installing: { label: 'Installing HFT bot...', icon: <Loader2 className="h-4 w-4 animate-spin" /> },
-  'health-check': { label: 'Verifying health check...', icon: <Activity className="h-4 w-4 animate-pulse" /> },
-  complete: { label: 'Deployment complete!', icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> },
-  error: { label: 'Deployment failed', icon: <Server className="h-4 w-4 text-destructive" /> },
+const DEPLOYMENT_STAGES: Record<DeploymentStage, { label: string; icon: React.ReactNode; progress: number; eta: string }> = {
+  idle: { label: 'Ready', icon: <Server className="h-4 w-4" />, progress: 0, eta: '' },
+  validating: { label: 'Validating credentials...', icon: <Loader2 className="h-4 w-4 animate-spin" />, progress: 10, eta: '~30s' },
+  creating: { label: 'Creating Droplet...', icon: <Rocket className="h-4 w-4 animate-pulse" />, progress: 25, eta: '~2min' },
+  'waiting-ip': { label: 'Waiting for IP assignment...', icon: <Wifi className="h-4 w-4 animate-pulse" />, progress: 40, eta: '~3min' },
+  'configuring-firewall': { label: 'Configuring firewall...', icon: <Shield className="h-4 w-4 animate-pulse" />, progress: 55, eta: '~1min' },
+  installing: { label: 'Installing HFT bot...', icon: <Loader2 className="h-4 w-4 animate-spin" />, progress: 70, eta: '~3min' },
+  'health-check': { label: 'Verifying health check...', icon: <Activity className="h-4 w-4 animate-pulse" />, progress: 90, eta: '~1min' },
+  complete: { label: 'Deployment complete!', icon: <CheckCircle2 className="h-4 w-4 text-green-500" />, progress: 100, eta: '' },
+  error: { label: 'Deployment failed', icon: <Server className="h-4 w-4 text-destructive" />, progress: 0, eta: '' },
 };
 
 export function CloudWizard({ open, onOpenChange, provider }: CloudWizardProps) {
@@ -306,16 +307,48 @@ export function CloudWizard({ open, onOpenChange, provider }: CloudWizardProps) 
             <>
               {/* Deployment Progress */}
               {isDeploying && (
-                <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 space-y-3">
+                <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 space-y-4">
+                  {/* Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{DEPLOYMENT_STAGES[deploymentStage].progress}%</span>
+                      {DEPLOYMENT_STAGES[deploymentStage].eta && (
+                        <span className="text-muted-foreground">ETA: {DEPLOYMENT_STAGES[deploymentStage].eta}</span>
+                      )}
+                    </div>
+                    <Progress value={DEPLOYMENT_STAGES[deploymentStage].progress} className="h-2" />
+                  </div>
+                  
+                  {/* Current Stage */}
                   <div className="flex items-center gap-3">
                     {DEPLOYMENT_STAGES[deploymentStage].icon}
                     <span className="font-medium">{DEPLOYMENT_STAGES[deploymentStage].label}</span>
                   </div>
+                  
                   {dropletInfo.ip && (
                     <div className="text-sm text-muted-foreground">
                       IP: <span className="font-mono text-primary">{dropletInfo.ip}</span>
                     </div>
                   )}
+                  
+                  {/* Stage Timeline */}
+                  <div className="grid grid-cols-7 gap-1 pt-2">
+                    {(['validating', 'creating', 'waiting-ip', 'configuring-firewall', 'installing', 'health-check', 'complete'] as DeploymentStage[]).map((stage, idx) => {
+                      const stageProgress = DEPLOYMENT_STAGES[stage].progress;
+                      const currentProgress = DEPLOYMENT_STAGES[deploymentStage].progress;
+                      const isComplete = stageProgress <= currentProgress;
+                      const isCurrent = stage === deploymentStage;
+                      return (
+                        <div
+                          key={stage}
+                          className={`h-1 rounded-full transition-colors ${
+                            isComplete ? 'bg-primary' : isCurrent ? 'bg-primary/50 animate-pulse' : 'bg-muted'
+                          }`}
+                        />
+                      );
+                    })}
+                  </div>
+                  
                   <div className="text-xs text-muted-foreground">
                     This may take 5-7 minutes. Do not close this window.
                   </div>
