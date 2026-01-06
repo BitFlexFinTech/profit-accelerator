@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const VULTR_SERVER_IP = '167.179.83.239';
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -16,7 +18,8 @@ serve(async (req) => {
   if (upgradeHeader.toLowerCase() !== "websocket") {
     return new Response(JSON.stringify({ 
       error: "Expected WebSocket upgrade",
-      usage: "Connect via WebSocket for SSH terminal access"
+      usage: "Connect via WebSocket for SSH terminal access",
+      serverIp: VULTR_SERVER_IP
     }), { 
       status: 400, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -25,14 +28,19 @@ serve(async (req) => {
 
   try {
     const { socket, response } = Deno.upgradeWebSocket(req);
+    const sshPrivateKey = Deno.env.get('VULTR_SSH_PRIVATE_KEY');
+    
+    let sshProcess: Deno.ChildProcess | null = null;
+    let stdinWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
 
-    console.log("WebSocket connection opened");
+    console.log("WebSocket connection opened for SSH terminal");
 
     socket.onopen = () => {
       console.log("SSH Terminal WebSocket ready");
       socket.send(JSON.stringify({ 
         type: 'connected',
-        message: 'WebSocket connection established'
+        message: 'WebSocket connection established',
+        serverIp: VULTR_SERVER_IP
       }));
     };
 
@@ -42,37 +50,117 @@ serve(async (req) => {
         console.log("Received message:", message.type);
 
         if (message.type === 'connect') {
-          // In production, establish actual SSH connection
-          // For now, send welcome message
+          if (!sshPrivateKey) {
+            socket.send(JSON.stringify({
+              type: 'error',
+              message: 'SSH private key not configured. Please add VULTR_SSH_PRIVATE_KEY secret.'
+            }));
+            return;
+          }
+
           socket.send(JSON.stringify({
             type: 'output',
-            data: '\r\n\x1b[32mConnected to VPS via SSH proxy.\x1b[0m\r\n\r\nroot@hft-bot:~# '
+            data: `\r\n\x1b[33mConnecting to ${VULTR_SERVER_IP}...\x1b[0m\r\n`
           }));
-        } else if (message.type === 'input') {
-          const input = message.data;
-          
-          // Echo input and handle commands
-          if (input === '\r') {
-            // Process command (in production, forward to SSH)
+
+          try {
+            // Write private key to temp file
+            const keyPath = '/tmp/vultr_ssh_key';
+            await Deno.writeTextFile(keyPath, sshPrivateKey);
+            await Deno.chmod(keyPath, 0o600);
+
+            // Start SSH process
+            const command = new Deno.Command('ssh', {
+              args: [
+                '-i', keyPath,
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'UserKnownHostsFile=/dev/null',
+                '-o', 'LogLevel=ERROR',
+                '-tt',
+                `root@${VULTR_SERVER_IP}`
+              ],
+              stdin: 'piped',
+              stdout: 'piped',
+              stderr: 'piped',
+            });
+
+            sshProcess = command.spawn();
+            stdinWriter = sshProcess.stdin.getWriter();
+
+            // Stream stdout to WebSocket
+            (async () => {
+              const reader = sshProcess!.stdout.getReader();
+              const decoder = new TextDecoder();
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  const text = decoder.decode(value);
+                  socket.send(JSON.stringify({
+                    type: 'output',
+                    data: text
+                  }));
+                }
+              } catch (e) {
+                console.error('stdout error:', e);
+              }
+            })();
+
+            // Stream stderr to WebSocket
+            (async () => {
+              const reader = sshProcess!.stderr.getReader();
+              const decoder = new TextDecoder();
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  const text = decoder.decode(value);
+                  socket.send(JSON.stringify({
+                    type: 'output',
+                    data: `\x1b[31m${text}\x1b[0m`
+                  }));
+                }
+              } catch (e) {
+                console.error('stderr error:', e);
+              }
+            })();
+
+            // Monitor process exit
+            sshProcess.status.then((status) => {
+              socket.send(JSON.stringify({
+                type: 'disconnected',
+                message: `SSH session ended with code ${status.code}`
+              }));
+              // Clean up key file
+              Deno.remove(keyPath).catch(() => {});
+            });
+
             socket.send(JSON.stringify({
-              type: 'output',
-              data: '\r\nroot@hft-bot:~# '
+              type: 'ssh_connected',
+              message: `Connected to ${VULTR_SERVER_IP}`
             }));
-          } else if (input === '\x7f') {
-            // Backspace
+
+          } catch (sshError) {
+            console.error('SSH connection error:', sshError);
             socket.send(JSON.stringify({
-              type: 'output',
-              data: '\b \b'
-            }));
-          } else {
-            // Echo character
-            socket.send(JSON.stringify({
-              type: 'output',
-              data: input
+              type: 'error',
+              message: `SSH connection failed: ${sshError instanceof Error ? sshError.message : 'Unknown error'}`
             }));
           }
+        } else if (message.type === 'input' && stdinWriter) {
+          // Forward input to SSH process
+          const encoder = new TextEncoder();
+          await stdinWriter.write(encoder.encode(message.data));
         } else if (message.type === 'resize') {
           console.log(`Terminal resized to ${message.cols}x${message.rows}`);
+          // Note: PTY resize requires additional handling
+        } else if (message.type === 'disconnect') {
+          if (stdinWriter) {
+            await stdinWriter.close();
+          }
+          if (sshProcess) {
+            sshProcess.kill('SIGTERM');
+          }
         }
       } catch (error) {
         console.error("Message handling error:", error);
@@ -87,8 +175,14 @@ serve(async (req) => {
       console.error("WebSocket error:", error);
     };
 
-    socket.onclose = () => {
+    socket.onclose = async () => {
       console.log("WebSocket connection closed");
+      if (stdinWriter) {
+        try { await stdinWriter.close(); } catch (_) {}
+      }
+      if (sshProcess) {
+        try { sshProcess.kill('SIGTERM'); } catch (_) {}
+      }
     };
 
     return response;
