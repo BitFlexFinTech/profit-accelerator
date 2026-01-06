@@ -66,19 +66,6 @@ export function IPWhitelistCard() {
   const handleVerifyConnection = async () => {
     setIsVerifying(true);
     try {
-      // First check if VPS status is already running in DB
-      const { data: vpsData } = await supabase
-        .from('vps_config')
-        .select('status, outbound_ip')
-        .single();
-      
-      // If DB shows running, trust that and show success
-      if (vpsData?.status === 'running') {
-        toast.success('VPS is running! IP whitelist is active.');
-        setIsVerifying(false);
-        return;
-      }
-      
       // Test VPS health
       const healthResponse = await supabase.functions.invoke('check-vps-health');
       
@@ -89,24 +76,11 @@ export function IPWhitelistCard() {
 
       if (healthResponse.data?.healthy || exchangeResponse.data?.success) {
         toast.success('Connection verified! IP whitelist is working.');
-      } else if (vpsData?.outbound_ip === '167.179.83.239') {
-        // Tokyo VPS is configured, show success even if health endpoint unreachable
-        toast.success('Tokyo VPS configured - whitelist active.');
       } else {
         toast.warning('VPS healthy but exchange connection pending');
       }
     } catch (error) {
-      // Check DB status as fallback
-      const { data: vpsData } = await supabase
-        .from('vps_config')
-        .select('status')
-        .single();
-      
-      if (vpsData?.status === 'running') {
-        toast.success('VPS is running! Connection verified.');
-      } else {
-        toast.error('Verification failed - check VPS status');
-      }
+      toast.error('Verification failed - check VPS status');
     } finally {
       setIsVerifying(false);
     }

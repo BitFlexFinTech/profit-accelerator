@@ -400,10 +400,14 @@ export function SettingsTab() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+          {/* DigitalOcean - Recommended */}
           <button
             onClick={() => { setCloudProvider('digitalocean'); setActiveWizard('cloud'); }}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group relative"
           >
+            <div className="absolute -top-2 -right-2">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">Recommended</span>
+            </div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-2xl">🌊</span>
               {getCloudProviderStatus('digitalocean') && (
@@ -411,14 +415,18 @@ export function SettingsTab() {
               )}
             </div>
             <p className="font-medium">DigitalOcean</p>
-            <p className="text-xs text-muted-foreground">Singapore (sgp1)</p>
+            <p className="text-xs text-muted-foreground">Singapore (sgp1) - Near Tokyo</p>
             <span className="text-xs text-warning">$200 Credit - 60 days</span>
           </button>
 
+          {/* AWS - Recommended */}
           <button
             onClick={() => setActiveWizard('aws-wizard')}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group relative"
           >
+            <div className="absolute -top-2 -right-2">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">Recommended</span>
+            </div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-2xl">☁️</span>
               {getCloudProviderStatus('aws') && (
@@ -430,6 +438,7 @@ export function SettingsTab() {
             <span className="text-xs text-warning">$200 Credit - t4g.micro</span>
           </button>
 
+          {/* Google Cloud */}
           <button
             onClick={() => setActiveWizard('gcp-wizard')}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
@@ -445,6 +454,7 @@ export function SettingsTab() {
             <span className="text-xs text-success">Free Tier - e2-micro</span>
           </button>
 
+          {/* Oracle Cloud */}
           <button
             onClick={() => setActiveWizard('oracle')}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
@@ -460,21 +470,7 @@ export function SettingsTab() {
             <span className="text-xs text-success">Always Free - 4 OCPU, 24GB</span>
           </button>
 
-          <button
-            onClick={() => setActiveWizard('vultr-wizard')}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <Zap className="w-6 h-6 text-sky-400" />
-              {getCloudProviderStatus('vultr') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
-              )}
-            </div>
-            <p className="font-medium">Vultr</p>
-            <p className="text-xs text-muted-foreground">Tokyo (NRT)</p>
-            <span className="text-xs text-warning">$250 Credit - High Frequency</span>
-          </button>
-
+          {/* Linode */}
           <button
             onClick={() => setActiveWizard('linode-wizard')}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
@@ -490,6 +486,7 @@ export function SettingsTab() {
             <span className="text-xs text-warning">$100 Credit - Nanode</span>
           </button>
 
+          {/* Cloudways */}
           <button
             onClick={() => setActiveWizard('cloudways-wizard')}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
@@ -505,6 +502,7 @@ export function SettingsTab() {
             <span className="text-xs text-warning">$14+/mo</span>
           </button>
 
+          {/* BitLaunch */}
           <button
             onClick={() => setActiveWizard('bitlaunch-wizard')}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
@@ -519,6 +517,23 @@ export function SettingsTab() {
             <p className="text-xs text-muted-foreground">Crypto VPS</p>
             <span className="text-xs text-warning">Pay with Crypto</span>
           </button>
+
+          {/* Vultr - De-emphasized, moved to last */}
+          <button
+            onClick={() => setActiveWizard('vultr-wizard')}
+            className="p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors text-left group opacity-60"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <Zap className="w-6 h-6 text-muted-foreground" />
+              {getCloudProviderStatus('vultr') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium text-muted-foreground">Vultr</p>
+            <p className="text-xs text-muted-foreground">Tokyo (NRT)</p>
+            <span className="text-xs text-muted-foreground">$250 Credit</span>
+          </button>
+
           <div className="flex items-center gap-3">
             <Checkbox 
               id="freeTier" 

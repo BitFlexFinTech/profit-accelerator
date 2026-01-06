@@ -15,17 +15,16 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get VPS config to find the IP
+    // Get VPS config - provider agnostic now
     const { data: vpsConfig, error: vpsError } = await supabase
       .from('vps_config')
-      .select('outbound_ip, provider')
-      .eq('provider', 'vultr')
+      .select('id, outbound_ip, provider, status')
       .single();
 
     if (vpsError || !vpsConfig?.outbound_ip) {
-      console.error('[check-vps-health] No VPS config found:', vpsError);
+      console.log('[check-vps-health] No VPS configured');
       return new Response(
-        JSON.stringify({ success: false, error: 'No VPS configured' }),
+        JSON.stringify({ success: false, error: 'No VPS configured', healthy: false }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
       );
     }
@@ -56,7 +55,7 @@ Deno.serve(async (req) => {
 
         // Insert metrics into vps_metrics
         const { error: metricsError } = await supabase.from('vps_metrics').insert({
-          provider: vpsConfig.provider || 'vultr',
+          provider: vpsConfig.provider || 'unknown',
           cpu_percent: healthData.cpu_percent ?? healthData.cpu ?? 0,
           ram_percent: healthData.ram_percent ?? healthData.memory_percent ?? 0,
           disk_percent: healthData.disk_percent ?? 0,
@@ -77,7 +76,7 @@ Deno.serve(async (req) => {
         const { error: updateError } = await supabase
           .from('vps_config')
           .update({ status: 'running', updated_at: new Date().toISOString() })
-          .eq('provider', 'vultr');
+          .eq('id', vpsConfig.id);
 
         if (updateError) {
           console.error('[check-vps-health] Failed to update status:', updateError);
@@ -86,22 +85,11 @@ Deno.serve(async (req) => {
     } catch (fetchError) {
       console.error('[check-vps-health] Fetch failed:', fetchError);
       
-      // Check current status - don't override if manually set to running
-      const { data: currentStatus } = await supabase
+      // Set status to offline since health check failed
+      await supabase
         .from('vps_config')
-        .select('status')
-        .eq('provider', 'vultr')
-        .single();
-      
-      // Only set to offline if not already manually set to running
-      if (currentStatus?.status !== 'running') {
-        await supabase
-          .from('vps_config')
-          .update({ status: 'offline', updated_at: new Date().toISOString() })
-          .eq('provider', 'vultr');
-      } else {
-        console.log('[check-vps-health] VPS status is running, not overriding to offline');
-      }
+        .update({ status: 'offline', updated_at: new Date().toISOString() })
+        .not('status', 'eq', 'deploying'); // Don't override deploying status
     }
 
     return new Response(
@@ -109,6 +97,7 @@ Deno.serve(async (req) => {
         success: true,
         healthy: isHealthy,
         ip: vpsConfig.outbound_ip,
+        provider: vpsConfig.provider,
         data: healthData,
         latency_ms: Date.now() - startTime,
       }),
@@ -118,7 +107,7 @@ Deno.serve(async (req) => {
     const errMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('[check-vps-health] Error:', errMessage);
     return new Response(
-      JSON.stringify({ success: false, error: errMessage }),
+      JSON.stringify({ success: false, error: errMessage, healthy: false }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     );
   }
