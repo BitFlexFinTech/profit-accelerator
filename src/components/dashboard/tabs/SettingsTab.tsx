@@ -362,7 +362,7 @@ export function SettingsTab() {
             </div>
             <p className="font-medium">BitLaunch</p>
             <p className="text-xs text-muted-foreground">Crypto VPS</p>
-            <span className="text-xs text-warning">$350 Balance</span>
+            <span className="text-xs text-warning">Pay with Crypto</span>
           </button>
           <div className="flex items-center gap-3">
             <Checkbox 
@@ -390,7 +390,7 @@ export function SettingsTab() {
           </div>
           <div>
             <h3 className="font-semibold">Risk Management</h3>
-            <p className="text-sm text-muted-foreground">Protect your $350 principal</p>
+            <p className="text-sm text-muted-foreground">Protect your capital</p>
           </div>
         </div>
 
