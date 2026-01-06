@@ -11,7 +11,8 @@ import {
   Check,
   Loader2,
   Brain,
-  Cloud
+  Cloud,
+  Globe
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,9 @@ import { GroqWizard } from '../wizards/GroqWizard';
 import { CloudWizard } from '../wizards/CloudWizard';
 import { OracleWizard } from '../wizards/OracleWizard';
 import { GCPWizard } from '../wizards/GCPWizard';
+import { VultrWizard } from '../wizards/VultrWizard';
+import { LinodeWizard } from '../wizards/LinodeWizard';
+import { AWSWizard } from '../wizards/AWSWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
@@ -237,7 +241,7 @@ export function SettingsTab() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
           <button
             onClick={() => { setCloudProvider('digitalocean'); setActiveWizard('cloud'); }}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
@@ -250,10 +254,11 @@ export function SettingsTab() {
             </div>
             <p className="font-medium">DigitalOcean</p>
             <p className="text-xs text-muted-foreground">Singapore (sgp1)</p>
+            <span className="text-xs text-warning">$200 Credit - 60 days</span>
           </button>
 
           <button
-            onClick={() => { setCloudProvider('aws'); setActiveWizard('cloud'); }}
+            onClick={() => setActiveWizard('aws-wizard')}
             className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
           >
             <div className="flex items-center justify-between mb-2">
@@ -264,6 +269,7 @@ export function SettingsTab() {
             </div>
             <p className="font-medium">AWS</p>
             <p className="text-xs text-muted-foreground">Tokyo (ap-northeast-1)</p>
+            <span className="text-xs text-warning">$200 Credit - t4g.micro</span>
           </button>
 
           <button
@@ -294,6 +300,36 @@ export function SettingsTab() {
             <p className="font-medium">Oracle Cloud</p>
             <p className="text-xs text-muted-foreground">Tokyo (ap-tokyo-1)</p>
             <span className="text-xs text-success">Always Free - 4 OCPU, 24GB</span>
+          </button>
+
+          <button
+            onClick={() => setActiveWizard('vultr-wizard')}
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <Zap className="w-6 h-6 text-sky-400" />
+              {getCloudProviderStatus('vultr') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium">Vultr</p>
+            <p className="text-xs text-muted-foreground">Tokyo (NRT)</p>
+            <span className="text-xs text-warning">$250 Credit - High Frequency</span>
+          </button>
+
+          <button
+            onClick={() => setActiveWizard('linode-wizard')}
+            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <Globe className="w-6 h-6 text-green-500" />
+              {getCloudProviderStatus('linode') && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              )}
+            </div>
+            <p className="font-medium">Linode / Akamai</p>
+            <p className="text-xs text-muted-foreground">Tokyo 2 (ap-northeast)</p>
+            <span className="text-xs text-warning">$100 Credit - Nanode</span>
           </button>
         </div>
 
@@ -611,6 +647,18 @@ export function SettingsTab() {
       />
       <GCPWizard 
         open={activeWizard === 'gcp-wizard'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <VultrWizard 
+        open={activeWizard === 'vultr-wizard'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <LinodeWizard 
+        open={activeWizard === 'linode-wizard'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <AWSWizard 
+        open={activeWizard === 'aws-wizard'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
     </div>

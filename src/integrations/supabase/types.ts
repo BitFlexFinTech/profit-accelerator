@@ -77,6 +77,72 @@ export type Database = {
         }
         Relationships: []
       }
+      alert_config: {
+        Row: {
+          alert_type: string
+          channel: string
+          cooldown_minutes: number | null
+          created_at: string | null
+          id: string
+          is_enabled: boolean | null
+          threshold_value: number | null
+          updated_at: string | null
+          webhook_url: string | null
+        }
+        Insert: {
+          alert_type: string
+          channel: string
+          cooldown_minutes?: number | null
+          created_at?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          threshold_value?: number | null
+          updated_at?: string | null
+          webhook_url?: string | null
+        }
+        Update: {
+          alert_type?: string
+          channel?: string
+          cooldown_minutes?: number | null
+          created_at?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          threshold_value?: number | null
+          updated_at?: string | null
+          webhook_url?: string | null
+        }
+        Relationships: []
+      }
+      alert_history: {
+        Row: {
+          acknowledged_at: string | null
+          alert_type: string
+          channel: string
+          id: string
+          message: string | null
+          sent_at: string | null
+          severity: string | null
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          alert_type: string
+          channel: string
+          id?: string
+          message?: string | null
+          sent_at?: string | null
+          severity?: string | null
+        }
+        Update: {
+          acknowledged_at?: string | null
+          alert_type?: string
+          channel?: string
+          id?: string
+          message?: string | null
+          sent_at?: string | null
+          severity?: string | null
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -155,6 +221,39 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_schedule: {
+        Row: {
+          created_at: string | null
+          cron_expression: string | null
+          id: string
+          is_enabled: boolean | null
+          last_run_at: string | null
+          next_run_at: string | null
+          provider: string
+          retention_days: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          cron_expression?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          last_run_at?: string | null
+          next_run_at?: string | null
+          provider: string
+          retention_days?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          cron_expression?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          last_run_at?: string | null
+          next_run_at?: string | null
+          provider?: string
+          retention_days?: number | null
+        }
+        Relationships: []
+      }
       cloud_config: {
         Row: {
           created_at: string | null
@@ -191,6 +290,218 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           use_free_tier?: boolean | null
+        }
+        Relationships: []
+      }
+      cost_analysis: {
+        Row: {
+          analysis_date: string
+          avg_latency_ms: number | null
+          compute_cost: number | null
+          cpu_avg_percent: number | null
+          created_at: string | null
+          id: string
+          network_cost: number | null
+          network_gb_out: number | null
+          provider: string
+          ram_avg_percent: number | null
+          storage_cost: number | null
+          total_cost: number | null
+          trades_executed: number | null
+          uptime_hours: number | null
+        }
+        Insert: {
+          analysis_date?: string
+          avg_latency_ms?: number | null
+          compute_cost?: number | null
+          cpu_avg_percent?: number | null
+          created_at?: string | null
+          id?: string
+          network_cost?: number | null
+          network_gb_out?: number | null
+          provider: string
+          ram_avg_percent?: number | null
+          storage_cost?: number | null
+          total_cost?: number | null
+          trades_executed?: number | null
+          uptime_hours?: number | null
+        }
+        Update: {
+          analysis_date?: string
+          avg_latency_ms?: number | null
+          compute_cost?: number | null
+          cpu_avg_percent?: number | null
+          created_at?: string | null
+          id?: string
+          network_cost?: number | null
+          network_gb_out?: number | null
+          provider?: string
+          ram_avg_percent?: number | null
+          storage_cost?: number | null
+          total_cost?: number | null
+          trades_executed?: number | null
+          uptime_hours?: number | null
+        }
+        Relationships: []
+      }
+      cost_recommendations: {
+        Row: {
+          created_at: string | null
+          current_monthly_cost: number | null
+          current_provider: string | null
+          id: string
+          is_dismissed: boolean | null
+          priority: string | null
+          reason: string | null
+          recommendation_type: string
+          recommended_monthly_cost: number | null
+          recommended_provider: string | null
+          savings_percent: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          current_monthly_cost?: number | null
+          current_provider?: string | null
+          id?: string
+          is_dismissed?: boolean | null
+          priority?: string | null
+          reason?: string | null
+          recommendation_type: string
+          recommended_monthly_cost?: number | null
+          recommended_provider?: string | null
+          savings_percent?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          current_monthly_cost?: number | null
+          current_provider?: string | null
+          id?: string
+          is_dismissed?: boolean | null
+          priority?: string | null
+          reason?: string | null
+          recommendation_type?: string
+          recommended_monthly_cost?: number | null
+          recommended_provider?: string | null
+          savings_percent?: number | null
+        }
+        Relationships: []
+      }
+      credential_permissions: {
+        Row: {
+          can_trade: boolean | null
+          can_withdraw: boolean | null
+          created_at: string | null
+          credential_id: string | null
+          credential_type: string
+          detected_scopes: string[] | null
+          excess_scopes: string[] | null
+          expiry_date: string | null
+          has_expiry: boolean | null
+          id: string
+          ip_restricted: boolean | null
+          is_read_only: boolean | null
+          last_analyzed_at: string | null
+          provider: string
+          required_scopes: string[] | null
+          risk_level: string | null
+          security_score: number | null
+        }
+        Insert: {
+          can_trade?: boolean | null
+          can_withdraw?: boolean | null
+          created_at?: string | null
+          credential_id?: string | null
+          credential_type: string
+          detected_scopes?: string[] | null
+          excess_scopes?: string[] | null
+          expiry_date?: string | null
+          has_expiry?: boolean | null
+          id?: string
+          ip_restricted?: boolean | null
+          is_read_only?: boolean | null
+          last_analyzed_at?: string | null
+          provider: string
+          required_scopes?: string[] | null
+          risk_level?: string | null
+          security_score?: number | null
+        }
+        Update: {
+          can_trade?: boolean | null
+          can_withdraw?: boolean | null
+          created_at?: string | null
+          credential_id?: string | null
+          credential_type?: string
+          detected_scopes?: string[] | null
+          excess_scopes?: string[] | null
+          expiry_date?: string | null
+          has_expiry?: boolean | null
+          id?: string
+          ip_restricted?: boolean | null
+          is_read_only?: boolean | null
+          last_analyzed_at?: string | null
+          provider?: string
+          required_scopes?: string[] | null
+          risk_level?: string | null
+          security_score?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credential_permissions_credential_id_fkey"
+            columns: ["credential_id"]
+            isOneToOne: false
+            referencedRelation: "credential_vault"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      credential_vault: {
+        Row: {
+          access_count: number | null
+          auth_tag: string
+          created_at: string | null
+          credential_type: string
+          encrypted_data: string
+          id: string
+          iv: string
+          key_version: number | null
+          label: string | null
+          last_accessed_at: string | null
+          last_rotated_at: string | null
+          provider: string
+          rotation_reminder_days: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          access_count?: number | null
+          auth_tag: string
+          created_at?: string | null
+          credential_type: string
+          encrypted_data: string
+          id?: string
+          iv: string
+          key_version?: number | null
+          label?: string | null
+          last_accessed_at?: string | null
+          last_rotated_at?: string | null
+          provider: string
+          rotation_reminder_days?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          access_count?: number | null
+          auth_tag?: string
+          created_at?: string | null
+          credential_type?: string
+          encrypted_data?: string
+          id?: string
+          iv?: string
+          key_version?: number | null
+          label?: string | null
+          last_accessed_at?: string | null
+          last_rotated_at?: string | null
+          provider?: string
+          rotation_reminder_days?: number | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -242,6 +553,72 @@ export type Database = {
           last_ping_ms?: number | null
           updated_at?: string | null
           wallet_address?: string | null
+        }
+        Relationships: []
+      }
+      failover_config: {
+        Row: {
+          created_at: string | null
+          health_check_url: string | null
+          id: string
+          is_enabled: boolean | null
+          is_primary: boolean | null
+          priority: number
+          provider: string
+          timeout_ms: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          health_check_url?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          is_primary?: boolean | null
+          priority?: number
+          provider: string
+          timeout_ms?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          health_check_url?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          is_primary?: boolean | null
+          priority?: number
+          provider?: string
+          timeout_ms?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      failover_events: {
+        Row: {
+          from_provider: string
+          id: string
+          is_automatic: boolean | null
+          reason: string | null
+          resolved_at: string | null
+          to_provider: string
+          triggered_at: string | null
+        }
+        Insert: {
+          from_provider: string
+          id?: string
+          is_automatic?: boolean | null
+          reason?: string | null
+          resolved_at?: string | null
+          to_provider: string
+          triggered_at?: string | null
+        }
+        Update: {
+          from_provider?: string
+          id?: string
+          is_automatic?: boolean | null
+          reason?: string | null
+          resolved_at?: string | null
+          to_provider?: string
+          triggered_at?: string | null
         }
         Relationships: []
       }
@@ -347,6 +724,36 @@ export type Database = {
           id?: string
           requests_per_minute?: number | null
           reset_at?: string | null
+        }
+        Relationships: []
+      }
+      security_scores: {
+        Row: {
+          analyzed_at: string | null
+          cloud_score: number | null
+          exchange_score: number | null
+          id: string
+          integration_score: number | null
+          overall_score: number
+          recommendations: string[] | null
+        }
+        Insert: {
+          analyzed_at?: string | null
+          cloud_score?: number | null
+          exchange_score?: number | null
+          id?: string
+          integration_score?: number | null
+          overall_score: number
+          recommendations?: string[] | null
+        }
+        Update: {
+          analyzed_at?: string | null
+          cloud_score?: number | null
+          exchange_score?: number | null
+          id?: string
+          integration_score?: number | null
+          overall_score?: number
+          recommendations?: string[] | null
         }
         Relationships: []
       }
@@ -572,6 +979,71 @@ export type Database = {
         }
         Relationships: []
       }
+      vault_audit_log: {
+        Row: {
+          action: string
+          created_at: string | null
+          credential_id: string | null
+          id: string
+          ip_address: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          credential_id?: string | null
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          credential_id?: string | null
+          id?: string
+          ip_address?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vault_audit_log_credential_id_fkey"
+            columns: ["credential_id"]
+            isOneToOne: false
+            referencedRelation: "credential_vault"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vps_backups: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          id: string
+          provider: string
+          size_gb: number | null
+          snapshot_id: string | null
+          status: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          id?: string
+          provider: string
+          size_gb?: number | null
+          snapshot_id?: string | null
+          status?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          id?: string
+          provider?: string
+          size_gb?: number | null
+          snapshot_id?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
       vps_config: {
         Row: {
           cors_proxy_enabled: boolean | null
@@ -611,6 +1083,45 @@ export type Database = {
           region?: string
           status?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      vps_metrics: {
+        Row: {
+          cpu_percent: number | null
+          disk_percent: number | null
+          id: string
+          latency_ms: number | null
+          network_in_mbps: number | null
+          network_out_mbps: number | null
+          provider: string
+          ram_percent: number | null
+          recorded_at: string | null
+          uptime_seconds: number | null
+        }
+        Insert: {
+          cpu_percent?: number | null
+          disk_percent?: number | null
+          id?: string
+          latency_ms?: number | null
+          network_in_mbps?: number | null
+          network_out_mbps?: number | null
+          provider: string
+          ram_percent?: number | null
+          recorded_at?: string | null
+          uptime_seconds?: number | null
+        }
+        Update: {
+          cpu_percent?: number | null
+          disk_percent?: number | null
+          id?: string
+          latency_ms?: number | null
+          network_in_mbps?: number | null
+          network_out_mbps?: number | null
+          provider?: string
+          ram_percent?: number | null
+          recorded_at?: string | null
+          uptime_seconds?: number | null
         }
         Relationships: []
       }
