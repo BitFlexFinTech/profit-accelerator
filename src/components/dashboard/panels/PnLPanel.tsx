@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Activity, Wifi } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useExchangeStatus } from '@/hooks/useExchangeStatus';
+import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PortfolioSnapshot {
@@ -10,15 +10,12 @@ interface PortfolioSnapshot {
   total_balance: number;
 }
 
-interface TradingJournal {
-  status: string | null;
-}
-
 export function PnLPanel() {
-  const { totalBalance, connectedCount, isLoading: exchangeLoading } = useExchangeStatus();
+  const { totalBalance, exchanges, isLive, isLoading: exchangeLoading } = useExchangeWebSocket();
   const [pnlData, setPnlData] = useState<PortfolioSnapshot | null>(null);
   const [activeTrades, setActiveTrades] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const connectedCount = exchanges.length;
 
   useEffect(() => {
     const fetchPnLData = async () => {
@@ -140,7 +137,15 @@ export function PnLPanel() {
 
       <div className="glass-card p-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-muted-foreground">Total Equity</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Total Equity</span>
+            {isLive && (
+              <span className="flex items-center gap-1 text-xs text-success bg-success/10 px-1.5 py-0.5 rounded-full">
+                <Wifi className="w-3 h-3" />
+                LIVE
+              </span>
+            )}
+          </div>
           <DollarSign className="w-4 h-4 text-primary" />
         </div>
         {exchangeLoading ? (

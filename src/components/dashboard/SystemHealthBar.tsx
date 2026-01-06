@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Brain, Activity, Server, Loader2, RefreshCw } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 interface SystemHealthBarProps {
@@ -12,7 +13,42 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
   const { checkHealth, isLoading: statusLoading, ...status } = useSystemStatus();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [flashingIndicators, setFlashingIndicators] = useState<Set<string>>(new Set());
+  const [botStatus, setBotStatus] = useState<string>('idle');
   const prevStatusRef = useRef(status);
+
+  // Fetch bot status to control pulse
+  useEffect(() => {
+    const fetchBotStatus = async () => {
+      const { data } = await supabase
+        .from('trading_config')
+        .select('bot_status')
+        .single();
+      if (data?.bot_status) {
+        setBotStatus(data.bot_status);
+      }
+    };
+    
+    fetchBotStatus();
+    
+    // Subscribe to trading_config changes
+    const channel = supabase
+      .channel('bot-status-pulse')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'trading_config'
+      }, (payload) => {
+        const newData = payload.new as { bot_status?: string };
+        if (newData?.bot_status) {
+          setBotStatus(newData.bot_status);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Trigger flash animation on status changes
   useEffect(() => {
@@ -35,11 +71,14 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
   const isDeploying = status.vps.status === 'deploying';
 
   const getVpsTooltip = () => {
-    if (status.vps.status === 'running') {
+    if (botStatus === 'running') {
       const provider = status.vps.provider 
         ? `${status.vps.provider.charAt(0).toUpperCase()}${status.vps.provider.slice(1)}` 
         : '';
-      return `Tokyo (${status.vps.ip || 'IP pending'})${provider ? ` - ${provider}` : ''}`;
+      return `Running on ${status.vps.ip || 'Tokyo VPS'}${provider ? ` - ${provider}` : ''}`;
+    }
+    if (status.vps.status === 'idle' && status.vps.ip) {
+      return `Connected (Idle) - ${status.vps.ip}`;
     }
     if (status.vps.status === 'deploying') {
       return 'Deploying instance...';
@@ -47,8 +86,9 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
     return 'VPS inactive';
   };
 
-  // VPS pulse only when bot_status is 'running', not just vps.status
-  const isVpsActive = status.vps.status === 'running';
+  // VPS pulse only when BOTH vps.status is running AND bot_status is 'running'
+  const isVpsActive = status.vps.status === 'running' && botStatus === 'running';
+  const isVpsConnected = status.vps.status === 'running' || (status.vps.status === 'idle' && status.vps.ip);
   
   const indicators = [
     {
@@ -76,6 +116,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       label: 'VPS',
       icon: Server,
       isActive: isVpsActive,
+      isConnected: isVpsConnected,
       isDeploying: isDeploying,
       tooltip: getVpsTooltip(),
     },
@@ -102,6 +143,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       <div className="flex items-center gap-1.5">
         {indicators.map((indicator) => {
           const isFlashing = flashingIndicators.has(indicator.id);
+          const isConnectedOnly = 'isConnected' in indicator && indicator.isConnected && !indicator.isActive;
           
           return (
             <Tooltip key={indicator.id}>
@@ -115,6 +157,8 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
                       ? 'bg-primary/20 border-primary/40 text-primary'
                       : indicator.isDeploying
                       ? 'bg-warning/20 border-warning/40 text-warning'
+                      : isConnectedOnly
+                      ? 'bg-success/10 border-success/40 text-success'
                       : 'bg-muted/50 border-border text-muted-foreground',
                     isFlashing && 'animate-pulse ring-2 ring-primary/50'
                   )}
@@ -131,6 +175,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
                         'relative inline-flex rounded-full h-2 w-2',
                         indicator.isActive ? 'bg-primary' : 
                         indicator.isDeploying ? 'bg-warning' : 
+                        isConnectedOnly ? 'bg-success' :
                         'bg-muted-foreground/50'
                       )}
                     />
