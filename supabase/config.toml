@@ -80,3 +80,6 @@ verify_jwt = false
 
 [functions.exchange-websocket]
 verify_jwt = false
+
+[functions.digitalocean-cloud]
+verify_jwt = false
