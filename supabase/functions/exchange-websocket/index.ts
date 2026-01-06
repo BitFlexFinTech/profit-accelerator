@@ -29,6 +29,16 @@ serve(async (req) => {
     try {
       const supabase = createClient(supabaseUrl, supabaseServiceKey);
       
+      // Check if VPS is available for proxying balance requests
+      const { data: vpsConfig } = await supabase
+        .from('vps_config')
+        .select('outbound_ip, status')
+        .eq('status', 'running')
+        .single();
+
+      const vpsProxyAvailable = vpsConfig?.outbound_ip && vpsConfig?.status === 'running';
+      console.log(`[exchange-websocket] VPS proxy available: ${vpsProxyAvailable}, IP: ${vpsConfig?.outbound_ip}`);
+      
       // Fetch current exchange connections
       const { data: exchanges, error: fetchError } = await supabase
         .from('exchange_connections')
@@ -56,18 +66,52 @@ serve(async (req) => {
           
           console.log(`[exchange-websocket] Fetching balance for ${exchangeName}...`);
           
-          if (exchangeName === 'binance' && exchange.api_key && exchange.api_secret) {
-            // Binance REST API balance fetch
+          // Try VPS proxy first if available (for IP-whitelisted exchanges)
+          if (vpsProxyAvailable && (exchangeName === 'binance' || exchangeName === 'okx')) {
+            try {
+              const proxyUrl = `http://${vpsConfig.outbound_ip}:8080/balance`;
+              console.log(`[exchange-websocket] Trying VPS proxy: ${proxyUrl}`);
+              
+              const proxyResponse = await fetch(proxyUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  exchange: exchangeName,
+                  apiKey: exchange.api_key,
+                  apiSecret: exchange.api_secret,
+                  passphrase: exchange.api_passphrase,
+                }),
+                signal: AbortSignal.timeout(15000),
+              });
+              
+              if (proxyResponse.ok) {
+                const proxyData = await proxyResponse.json();
+                balance = proxyData.balance || 0;
+                console.log(`[exchange-websocket] VPS proxy ${exchangeName} balance: $${balance}`);
+              } else {
+                throw new Error(`VPS proxy returned ${proxyResponse.status}`);
+              }
+            } catch (proxyErr) {
+              console.log(`[exchange-websocket] VPS proxy failed, falling back to direct: ${proxyErr}`);
+              // Fall through to direct API call
+              if (exchangeName === 'binance' && exchange.api_key && exchange.api_secret) {
+                balance = await fetchBinanceBalance(exchange.api_key, exchange.api_secret);
+              } else if (exchangeName === 'okx' && exchange.api_key && exchange.api_secret) {
+                balance = await fetchOKXBalance(exchange.api_key, exchange.api_secret, exchange.api_passphrase);
+              }
+            }
+          } else if (exchangeName === 'binance' && exchange.api_key && exchange.api_secret) {
+            // Direct Binance REST API balance fetch
             balance = await fetchBinanceBalance(exchange.api_key, exchange.api_secret);
           } else if (exchangeName === 'okx' && exchange.api_key && exchange.api_secret) {
-            // OKX REST API balance fetch
+            // Direct OKX REST API balance fetch
             balance = await fetchOKXBalance(exchange.api_key, exchange.api_secret, exchange.api_passphrase);
           } else {
             // Keep existing balance for other exchanges
             balance = exchange.balance_usdt || 0;
           }
 
-          console.log(`[exchange-websocket] ${exchangeName} balance: $${balance}`);
+          console.log(`[exchange-websocket] ${exchangeName} final balance: $${balance}`);
           
           const requestEndTime = Date.now();
           const latencyMs = requestEndTime - requestStartTime;
@@ -84,7 +128,7 @@ serve(async (req) => {
           // Log successful API request
           await supabase.from('api_request_logs').insert({
             exchange_name: exchangeName,
-            endpoint: '/balance',
+            endpoint: vpsProxyAvailable ? '/balance (via VPS proxy)' : '/balance',
             method: 'GET',
             status_code: 200,
             latency_ms: latencyMs,

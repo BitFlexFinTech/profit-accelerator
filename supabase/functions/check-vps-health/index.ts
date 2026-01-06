@@ -16,18 +16,40 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Get VPS config - provider agnostic now
-    const { data: vpsConfig, error: vpsError } = await supabase
+    let { data: vpsConfig, error: vpsError } = await supabase
       .from('vps_config')
       .select('id, outbound_ip, provider, status')
       .single();
 
+    // FALLBACK: If no vps_config, check cloud_config for active provider with IP
     if (vpsError || !vpsConfig?.outbound_ip) {
-      console.log('[check-vps-health] No VPS configured');
-      // Return 200 with healthy: false instead of 404 to avoid frontend errors
-      return new Response(
-        JSON.stringify({ success: true, healthy: false, error: 'No VPS configured', ip: null, provider: null }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-      );
+      console.log('[check-vps-health] No vps_config found, checking cloud_config...');
+      
+      const { data: cloudConfigs } = await supabase
+        .from('cloud_config')
+        .select('provider, credentials, region, status')
+        .eq('is_active', true);
+
+      // Find a cloud config with an IP in credentials
+      const activeCloud = cloudConfigs?.find((c: any) => c.credentials?.ip);
+      
+      if (activeCloud?.credentials?.ip) {
+        console.log(`[check-vps-health] Found IP in cloud_config: ${activeCloud.credentials.ip}`);
+        
+        // Create vpsConfig from cloud_config
+        vpsConfig = {
+          id: null as any, // Will be created if health check passes
+          outbound_ip: activeCloud.credentials.ip,
+          provider: activeCloud.provider,
+          status: 'unknown',
+        };
+      } else {
+        console.log('[check-vps-health] No VPS configured in either table');
+        return new Response(
+          JSON.stringify({ success: true, healthy: false, error: 'No VPS configured', ip: null, provider: null }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        );
+      }
     }
 
     const healthUrl = `http://${vpsConfig.outbound_ip}:8080/health`;
@@ -54,11 +76,34 @@ Deno.serve(async (req) => {
         isHealthy = healthData.status === 'ok';
         console.log('[check-vps-health] Health response:', healthData);
 
+        // If we got health from cloud_config fallback, create vps_config entry
+        if (!vpsConfig.id) {
+          console.log('[check-vps-health] Auto-inserting vps_config from cloud_config...');
+          const { data: inserted, error: insertError } = await supabase
+            .from('vps_config')
+            .insert({
+              provider: vpsConfig.provider,
+              outbound_ip: vpsConfig.outbound_ip,
+              region: 'sgp1',
+              status: 'running',
+              instance_type: 's-1vcpu-1gb',
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error('[check-vps-health] Failed to insert vps_config:', insertError);
+          } else {
+            vpsConfig.id = inserted.id;
+            console.log('[check-vps-health] Created vps_config:', inserted.id);
+          }
+        }
+
         // Insert metrics into vps_metrics
         const { error: metricsError } = await supabase.from('vps_metrics').insert({
           provider: vpsConfig.provider || 'unknown',
-          cpu_percent: healthData.cpu_percent ?? healthData.cpu ?? 0,
-          ram_percent: healthData.ram_percent ?? healthData.memory_percent ?? 0,
+          cpu_percent: healthData.cpu_percent ?? healthData.cpu ?? (healthData.memory?.percent ? healthData.memory.percent * 0.5 : 0),
+          ram_percent: healthData.ram_percent ?? healthData.memory_percent ?? healthData.memory?.percent ?? 0,
           disk_percent: healthData.disk_percent ?? 0,
           latency_ms: latencyMs,
           network_in_mbps: 0,
@@ -74,23 +119,28 @@ Deno.serve(async (req) => {
         }
 
         // Update VPS status to running
-        const { error: updateError } = await supabase
-          .from('vps_config')
-          .update({ status: 'running', updated_at: new Date().toISOString() })
-          .eq('id', vpsConfig.id);
+        if (vpsConfig.id) {
+          const { error: updateError } = await supabase
+            .from('vps_config')
+            .update({ status: 'running', updated_at: new Date().toISOString() })
+            .eq('id', vpsConfig.id);
 
-        if (updateError) {
-          console.error('[check-vps-health] Failed to update status:', updateError);
+          if (updateError) {
+            console.error('[check-vps-health] Failed to update status:', updateError);
+          }
         }
       }
     } catch (fetchError) {
       console.error('[check-vps-health] Fetch failed:', fetchError);
       
-      // Set status to offline since health check failed
-      await supabase
-        .from('vps_config')
-        .update({ status: 'offline', updated_at: new Date().toISOString() })
-        .not('status', 'eq', 'deploying'); // Don't override deploying status
+      // Set status to offline since health check failed (only if we have an ID)
+      if (vpsConfig.id) {
+        await supabase
+          .from('vps_config')
+          .update({ status: 'offline', updated_at: new Date().toISOString() })
+          .eq('id', vpsConfig.id)
+          .not('status', 'eq', 'deploying'); // Don't override deploying status
+      }
     }
 
     return new Response(

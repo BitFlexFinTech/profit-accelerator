@@ -87,10 +87,12 @@ volumes:
   redis-data:
 COMPOSE_EOF
 
-# Create health check server
-log_info "Creating health check endpoint..."
+# Create health check server with balance proxy
+log_info "Creating health check endpoint with balance proxy..."
 cat > app/health.js << 'HEALTH_EOF'
 const http = require('http');
+const https = require('https');
+const crypto = require('crypto');
 const os = require('os');
 
 const startTime = Date.now();
@@ -111,9 +113,91 @@ const getMetrics = () => ({
   version: '1.0.0'
 });
 
-const server = http.createServer((req, res) => {
+// HMAC-SHA256 signing for Binance
+const signBinance = (query, secret) => {
+  return crypto.createHmac('sha256', secret).update(query).digest('hex');
+};
+
+// Signing for OKX
+const signOKX = (timestamp, method, path, body, secret) => {
+  const message = timestamp + method + path + body;
+  return crypto.createHmac('sha256', secret).update(message).digest('base64');
+};
+
+// Fetch Binance balance
+const fetchBinanceBalance = async (apiKey, apiSecret) => {
+  return new Promise((resolve) => {
+    const timestamp = Date.now();
+    const query = \`timestamp=\${timestamp}\`;
+    const signature = signBinance(query, apiSecret);
+    
+    const options = {
+      hostname: 'api.binance.com',
+      path: \`/api/v3/account?\${query}&signature=\${signature}\`,
+      method: 'GET',
+      headers: { 'X-MBX-APIKEY': apiKey }
+    };
+    
+    https.get(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const usdt = json.balances?.find(b => b.asset === 'USDT');
+          resolve(parseFloat(usdt?.free || 0) + parseFloat(usdt?.locked || 0));
+        } catch { resolve(0); }
+      });
+    }).on('error', () => resolve(0));
+  });
+};
+
+// Fetch OKX balance
+const fetchOKXBalance = async (apiKey, apiSecret, passphrase) => {
+  return new Promise((resolve) => {
+    const timestamp = new Date().toISOString();
+    const path = '/api/v5/account/balance';
+    const sign = signOKX(timestamp, 'GET', path, '', apiSecret);
+    
+    const options = {
+      hostname: 'www.okx.com',
+      path,
+      method: 'GET',
+      headers: {
+        'OK-ACCESS-KEY': apiKey,
+        'OK-ACCESS-SIGN': sign,
+        'OK-ACCESS-TIMESTAMP': timestamp,
+        'OK-ACCESS-PASSPHRASE': passphrase || '',
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    https.get(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const details = json.data?.[0]?.details || [];
+          const usdt = details.find(d => d.ccy === 'USDT');
+          resolve(parseFloat(usdt?.availBal || 0) + parseFloat(usdt?.frozenBal || 0));
+        } catch { resolve(0); }
+      });
+    }).on('error', () => resolve(0));
+  });
+};
+
+const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Content-Type', 'application/json');
+
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
 
   if (req.url === '/health' || req.url === '/') {
     res.writeHead(200);
@@ -125,6 +209,30 @@ const server = http.createServer((req, res) => {
       detailed: true,
       network: os.networkInterfaces()
     }));
+  } else if (req.url === '/balance' && req.method === 'POST') {
+    // Balance proxy endpoint - fetch from exchanges using VPS IP
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { exchange, apiKey, apiSecret, passphrase } = JSON.parse(body);
+        let balance = 0;
+        
+        if (exchange === 'binance') {
+          balance = await fetchBinanceBalance(apiKey, apiSecret);
+        } else if (exchange === 'okx') {
+          balance = await fetchOKXBalance(apiKey, apiSecret, passphrase);
+        }
+        
+        console.log(\`[Balance Proxy] \${exchange}: $\${balance}\`);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, balance, exchange }));
+      } catch (err) {
+        console.error('[Balance Proxy] Error:', err);
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: String(err) }));
+      }
+    });
   } else {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not found' }));
@@ -132,7 +240,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(8080, '0.0.0.0', () => {
-  console.log('[HFT] Health check server running on port 8080');
+  console.log('[HFT] Health check + Balance proxy running on port 8080');
 });
 
 process.on('SIGTERM', () => {
