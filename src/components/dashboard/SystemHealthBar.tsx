@@ -47,6 +47,9 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
     return 'VPS inactive';
   };
 
+  // VPS pulse only when bot_status is 'running', not just vps.status
+  const isVpsActive = status.vps.status === 'running';
+  
   const indicators = [
     {
       id: 'ai',
@@ -65,14 +68,14 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       isActive: status.exchanges.connected > 0,
       isDeploying: false,
       tooltip: status.exchanges.connected > 0
-        ? `$${status.exchanges.balanceUsdt.toLocaleString()} USDT`
+        ? `$${status.exchanges.balanceUsdt.toLocaleString(undefined, { minimumFractionDigits: 2 })} USDT`
         : 'No exchanges connected',
     },
     {
       id: 'vps',
       label: 'VPS',
       icon: Server,
-      isActive: status.vps.status === 'running',
+      isActive: isVpsActive,
       isDeploying: isDeploying,
       tooltip: getVpsTooltip(),
     },

@@ -935,9 +935,11 @@ export type Database = {
       }
       trading_config: {
         Row: {
+          bot_status: string | null
           created_at: string | null
           global_kill_switch_enabled: boolean | null
           id: string
+          leverage: number | null
           max_daily_drawdown_percent: number | null
           max_daily_trades: number | null
           max_position_size: number | null
@@ -945,13 +947,17 @@ export type Database = {
           stop_loss: number | null
           take_profit_1: number | null
           take_profit_2: number | null
+          test_mode: boolean | null
           trading_enabled: boolean | null
+          trading_mode: string | null
           updated_at: string | null
         }
         Insert: {
+          bot_status?: string | null
           created_at?: string | null
           global_kill_switch_enabled?: boolean | null
           id?: string
+          leverage?: number | null
           max_daily_drawdown_percent?: number | null
           max_daily_trades?: number | null
           max_position_size?: number | null
@@ -959,13 +965,17 @@ export type Database = {
           stop_loss?: number | null
           take_profit_1?: number | null
           take_profit_2?: number | null
+          test_mode?: boolean | null
           trading_enabled?: boolean | null
+          trading_mode?: string | null
           updated_at?: string | null
         }
         Update: {
+          bot_status?: string | null
           created_at?: string | null
           global_kill_switch_enabled?: boolean | null
           id?: string
+          leverage?: number | null
           max_daily_drawdown_percent?: number | null
           max_daily_trades?: number | null
           max_position_size?: number | null
@@ -973,7 +983,9 @@ export type Database = {
           stop_loss?: number | null
           take_profit_1?: number | null
           take_profit_2?: number | null
+          test_mode?: boolean | null
           trading_enabled?: boolean | null
+          trading_mode?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -1020,6 +1032,54 @@ export type Database = {
           side?: string
           status?: string | null
           symbol?: string
+        }
+        Relationships: []
+      }
+      trading_strategies: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          is_paused: boolean | null
+          leverage: number | null
+          name: string
+          pnl_today: number | null
+          trades_today: number | null
+          trading_mode: string | null
+          updated_at: string | null
+          vps_ip: string | null
+          win_rate: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_paused?: boolean | null
+          leverage?: number | null
+          name: string
+          pnl_today?: number | null
+          trades_today?: number | null
+          trading_mode?: string | null
+          updated_at?: string | null
+          vps_ip?: string | null
+          win_rate?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_paused?: boolean | null
+          leverage?: number | null
+          name?: string
+          pnl_today?: number | null
+          trades_today?: number | null
+          trading_mode?: string | null
+          updated_at?: string | null
+          vps_ip?: string | null
+          win_rate?: number | null
         }
         Relationships: []
       }

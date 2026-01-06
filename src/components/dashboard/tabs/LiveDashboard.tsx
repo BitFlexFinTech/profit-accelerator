@@ -9,6 +9,7 @@ import { CloudStatusPanel } from '../panels/CloudStatusPanel';
 import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
 import { TradeLogPanel } from '../panels/TradeLogPanel';
 import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
+import { BotControlPanel } from '../BotControlPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 
 export function LiveDashboard() {
@@ -17,6 +18,9 @@ export function LiveDashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Bot Control Panel - Master START/STOP */}
+      <BotControlPanel />
+
       {/* Cloud Status Panel - Shows your Vultr server at 167.179.83.239 */}
       <CloudStatusPanel />
 

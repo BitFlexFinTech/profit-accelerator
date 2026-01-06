@@ -192,7 +192,7 @@ export function TradeLogPanel() {
                   <td className="py-2 text-right">
                     <span className="text-xs text-muted-foreground flex items-center justify-end gap-1">
                       <Zap className="w-3 h-3" />
-                      {trade.execution_latency_ms || Math.floor(Math.random() * 30) + 10}ms
+                      {trade.execution_latency_ms ? `${trade.execution_latency_ms}ms` : '--'}
                     </span>
                   </td>
                 </tr>
