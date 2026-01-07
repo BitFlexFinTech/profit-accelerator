@@ -3,49 +3,98 @@ project_id = "iibdlazwkossyelyroap"
 [api]
 enabled = true
 port = 54321
-schemas = ["public"]
-extra_search_path = ["public"]
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
 [db]
 port = 54322
+shadow_port = 54320
 major_version = 15
 
 [studio]
 enabled = true
 port = 54323
+api_url = "http://127.0.0.1"
 
-[functions.verify-password]
-verify_jwt = false
+[inbucket]
+enabled = true
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
 
-[functions.test-exchange]
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["https://127.0.0.1:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+[functions.ai-analyze]
 verify_jwt = false
 
 [functions.telegram-bot]
 verify_jwt = false
 
-[functions.daily-summary]
-verify_jwt = false
-
 [functions.trade-engine]
 verify_jwt = false
 
-[functions.ai-analyze]
-verify_jwt = false
-
-[functions.oracle-cloud]
-verify_jwt = false
-
-[functions.gcp-cloud]
+[functions.exchange-websocket]
 verify_jwt = false
 
 [functions.vultr-cloud]
 verify_jwt = false
 
-[functions.linode-cloud]
+[functions.gcp-cloud]
+verify_jwt = false
+
+[functions.oracle-cloud]
+verify_jwt = false
+
+[functions.digitalocean-cloud]
 verify_jwt = false
 
 [functions.aws-cloud]
+verify_jwt = false
+
+[functions.linode-cloud]
+verify_jwt = false
+
+[functions.bitlaunch-cloud]
+verify_jwt = false
+
+[functions.cloudways-cloud]
+verify_jwt = false
+
+[functions.failover-monitor]
+verify_jwt = false
+
+[functions.sync-ip-whitelist]
+verify_jwt = false
+
+[functions.check-vps-health]
+verify_jwt = false
+
+[functions.scheduled-health-check]
+verify_jwt = false
+
+[functions.daily-summary]
+verify_jwt = false
+
+[functions.verify-password]
+verify_jwt = false
+
+[functions.ssh-terminal]
+verify_jwt = false
+
+[functions.install-hft-bot]
 verify_jwt = false
 
 [functions.security-analyzer]
@@ -54,31 +103,28 @@ verify_jwt = false
 [functions.security-fixer]
 verify_jwt = false
 
-[functions.credential-health-check]
-verify_jwt = false
-
-[functions.cloudways-cloud]
-verify_jwt = false
-
-[functions.bitlaunch-cloud]
-verify_jwt = false
-
-[functions.ssh-terminal]
-verify_jwt = false
-
-[functions.failover-monitor]
-verify_jwt = false
-
-[functions.install-hft-bot]
-verify_jwt = false
-
 [functions.health-check-test]
 verify_jwt = false
 
-[functions.check-vps-health]
+[functions.credential-health-check]
 verify_jwt = false
 
-[functions.exchange-websocket]
+[functions.contabo-cloud]
+verify_jwt = false
+
+[functions.alibaba-cloud]
+verify_jwt = false
+
+[functions.azure-cloud]
+verify_jwt = false
+
+[functions.auto-provision-mesh]
+verify_jwt = false
+
+[functions.cost-optimizer]
+verify_jwt = false
+
+[functions.vps-benchmark]
 verify_jwt = false
 
 [functions.digitalocean-cloud]
