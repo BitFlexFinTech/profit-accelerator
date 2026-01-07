@@ -187,46 +187,35 @@ Keep the analysis professional, actionable, and under 200 words.`;
       }
 
       case 'save-config': {
-        console.log(`[ai-analyze] SAVE-CONFIG: apiKey=${apiKey ? `present (${apiKey.length} chars)` : 'MISSING'}, model=${model}`);
+        const cleanApiKey = apiKey?.trim();
+        console.log(`[ai-analyze] SAVE-CONFIG: cleanApiKey length=${cleanApiKey?.length || 0}, model=${model}`);
         
-        if (!apiKey || apiKey.trim() === '') {
-          console.log(`[ai-analyze] ERROR: API key is empty or missing`);
+        if (!cleanApiKey || cleanApiKey.length < 10) {
+          console.error(`[ai-analyze] ERROR: API key invalid - length=${cleanApiKey?.length || 0}`);
           return new Response(
-            JSON.stringify({ success: false, error: 'API key is required' }),
+            JSON.stringify({ success: false, error: 'API key is required (min 10 chars)' }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
+
+        // Delete existing groq config and insert fresh to avoid update issues
+        console.log(`[ai-analyze] Deleting existing groq config...`);
+        await supabase.from('ai_config').delete().eq('provider', 'groq');
         
-        const { data: existing } = await supabase
-          .from('ai_config')
-          .select('id')
-          .eq('provider', 'groq')
-          .single();
+        console.log(`[ai-analyze] Inserting new groq config with ${cleanApiKey.length} char API key...`);
+        const { error } = await supabase.from('ai_config').insert({
+          provider: 'groq',
+          api_key: cleanApiKey,
+          model: model || 'llama-3.3-70b-versatile',
+          is_active: true,
+        });
 
-        if (existing) {
-          const { error } = await supabase
-            .from('ai_config')
-            .update({
-              api_key: apiKey,
-              model: model || 'llama-3.3-70b-versatile',
-              is_active: true,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', existing.id);
-
-          if (error) throw error;
-        } else {
-          const { error } = await supabase
-            .from('ai_config')
-            .insert({
-              provider: 'groq',
-              api_key: apiKey,
-              model: model || 'llama-3.3-70b-versatile',
-              is_active: true,
-            });
-
-          if (error) throw error;
+        if (error) {
+          console.error(`[ai-analyze] Insert error:`, error);
+          throw error;
         }
+        
+        console.log(`[ai-analyze] SUCCESS: Groq config saved with ${cleanApiKey.length} char API key`);
 
         // Log to audit
         await supabase.from('audit_logs').insert({

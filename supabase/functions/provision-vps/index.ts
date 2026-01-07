@@ -353,20 +353,27 @@ serve(async (req) => {
       }
 
       case 'azure': {
-        const subscriptionId = credentials.subscriptionId;
+        const tenantId = credentials.tenantId;
+        const clientId = credentials.clientId;
         const clientSecret = credentials.clientSecret;
+        const subscriptionId = credentials.subscriptionId;
         
-        if (!subscriptionId || !clientSecret) {
-          throw new Error('Azure credentials not configured');
+        if (!tenantId || !clientId || !clientSecret || !subscriptionId) {
+          throw new Error('Azure credentials not configured (tenantId, clientId, clientSecret, subscriptionId required)');
         }
 
-        console.log('[provision-vps] Invoking azure-cloud function for real VM deployment');
+        console.log('[provision-vps] Invoking azure-cloud function for real VM deployment with OAuth2');
         
         const { data: azureData, error: azureError } = await supabase.functions.invoke('azure-cloud', {
           body: {
             action: 'deploy-instance',
-            credentials: { subscriptionId, clientSecret },
-            specs: { region: optimalRegion }
+            tenantId,
+            clientId,
+            clientSecret,
+            subscriptionId,
+            resourceGroup: credentials.resourceGroup || 'hft-bot-rg',
+            location: optimalRegion,
+            vmName: `hft-bot-${targetExchange || 'tokyo'}`
           }
         });
 
@@ -376,7 +383,7 @@ serve(async (req) => {
 
         result = {
           success: true,
-          instanceId: azureData.instanceId,
+          instanceId: azureData.vmName || azureData.instanceId,
           publicIp: azureData.publicIp || 'Provisioning...'
         };
         break;
