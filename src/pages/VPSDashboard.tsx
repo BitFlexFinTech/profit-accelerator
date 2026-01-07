@@ -2,20 +2,24 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Server, 
   RefreshCw, 
-  Settings, 
   Plus,
   ArrowLeft,
   DollarSign,
-  Activity
+  Activity,
+  Bell,
+  LayoutGrid
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useRealtimeMesh } from '@/hooks/useRealtimeMesh';
 import { useVPSStatusPolling } from '@/hooks/useVPSStatusPolling';
 import { InstanceCard } from '@/components/vps/InstanceCard';
 import { InstanceDetails } from '@/components/vps/InstanceDetails';
+import { CostTrackingDashboard } from '@/components/dashboard/panels/CostTrackingDashboard';
+import { VPSAlertConfig } from '@/components/dashboard/panels/VPSAlertConfig';
 import { cn } from '@/lib/utils';
 
 export default function VPSDashboard() {
@@ -178,35 +182,62 @@ export default function VPSDashboard() {
           </Card>
         </div>
 
-        {/* Instance Grid */}
-        {nodes.length === 0 ? (
-          <Card className="p-12 bg-card/50 border-border/50 text-center">
-            <Server className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No VPS Instances Configured</h3>
-            <p className="text-muted-foreground mb-4">
-              Connect a cloud provider to deploy your first HFT bot instance.
-            </p>
-            <Link to="/setup">
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Setup Cloud Provider
-              </Button>
-            </Link>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {nodes.map(node => (
-              <InstanceCard
-                key={node.provider}
-                node={node}
-                metric={metrics[node.provider]}
-                liveStatus={statuses[node.provider]}
-                isPrimary={node.provider === activeProvider}
-                onClick={() => handleSelectInstance(node.provider)}
-              />
-            ))}
-          </div>
-        )}
+        {/* Tabs for Instances, Costs, Alerts */}
+        <Tabs defaultValue="instances" className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="instances" className="gap-2">
+              <LayoutGrid className="h-4 w-4" />
+              Instances
+            </TabsTrigger>
+            <TabsTrigger value="costs" className="gap-2">
+              <DollarSign className="h-4 w-4" />
+              Costs
+            </TabsTrigger>
+            <TabsTrigger value="alerts" className="gap-2">
+              <Bell className="h-4 w-4" />
+              Alerts
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="instances">
+            {nodes.length === 0 ? (
+              <Card className="p-12 bg-card/50 border-border/50 text-center">
+                <Server className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No VPS Instances Configured</h3>
+                <p className="text-muted-foreground mb-4">
+                  Connect a cloud provider to deploy your first HFT bot instance.
+                </p>
+                <Link to="/setup">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Setup Cloud Provider
+                  </Button>
+                </Link>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {nodes.map(node => (
+                  <InstanceCard
+                    key={node.provider}
+                    node={node}
+                    metric={metrics[node.provider]}
+                    liveStatus={statuses[node.provider]}
+                    isPrimary={node.provider === activeProvider}
+                    onClick={() => handleSelectInstance(node.provider)}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="costs">
+            <CostTrackingDashboard />
+          </TabsContent>
+
+          <TabsContent value="alerts">
+            <VPSAlertConfig />
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Instance Details Side Panel */}

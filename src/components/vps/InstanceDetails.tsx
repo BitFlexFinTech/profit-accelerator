@@ -12,11 +12,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { 
-  X, 
   Terminal, 
   FileText, 
   Activity, 
-  Power, 
   RotateCcw, 
   Trash2,
   Zap,
@@ -25,10 +23,12 @@ import {
   HardDrive,
   Network,
   Globe,
-  AlertTriangle
+  AlertTriangle,
+  BarChart3
 } from 'lucide-react';
 import { VPSPulseIndicator, getStatusFromVPS } from '@/components/dashboard/panels/VPSPulseIndicator';
 import { LogViewer } from '@/components/vps/LogViewer';
+import { MetricsChart } from '@/components/vps/MetricsChart';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -177,10 +177,14 @@ export function InstanceDetails({ node, metric, liveStatus, isPrimary, onClose }
         </SheetHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden mt-4">
-          <TabsList className="flex-shrink-0 grid grid-cols-3 w-full">
+          <TabsList className="flex-shrink-0 grid grid-cols-4 w-full">
             <TabsTrigger value="overview" className="text-xs">
               <Activity className="h-3 w-3 mr-1" />
               Overview
+            </TabsTrigger>
+            <TabsTrigger value="metrics" className="text-xs">
+              <BarChart3 className="h-3 w-3 mr-1" />
+              Metrics
             </TabsTrigger>
             <TabsTrigger value="logs" className="text-xs">
               <FileText className="h-3 w-3 mr-1" />
@@ -325,6 +329,10 @@ export function InstanceDetails({ node, metric, liveStatus, isPrimary, onClose }
                   </p>
                 )}
               </Card>
+            </TabsContent>
+
+            <TabsContent value="metrics" className="mt-0">
+              <MetricsChart provider={node.provider} />
             </TabsContent>
 
             <TabsContent value="logs" className="mt-0">
