@@ -953,6 +953,89 @@ export type Database = {
           },
         ]
       }
+      hft_deployments: {
+        Row: {
+          bot_status: string | null
+          created_at: string | null
+          id: string
+          ip_address: string | null
+          provider: string
+          region: string | null
+          server_id: string
+          server_name: string | null
+          server_plan: string | null
+          ssh_key_id: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          bot_status?: string | null
+          created_at?: string | null
+          id?: string
+          ip_address?: string | null
+          provider: string
+          region?: string | null
+          server_id: string
+          server_name?: string | null
+          server_plan?: string | null
+          ssh_key_id?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          bot_status?: string | null
+          created_at?: string | null
+          id?: string
+          ip_address?: string | null
+          provider?: string
+          region?: string | null
+          server_id?: string
+          server_name?: string | null
+          server_plan?: string | null
+          ssh_key_id?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hft_deployments_ssh_key_id_fkey"
+            columns: ["ssh_key_id"]
+            isOneToOne: false
+            referencedRelation: "hft_ssh_keys"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hft_ssh_keys: {
+        Row: {
+          created_at: string | null
+          id: string
+          key_name: string
+          private_key_encrypted: string | null
+          provider: string
+          public_key: string
+          server_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          key_name: string
+          private_key_encrypted?: string | null
+          provider: string
+          public_key: string
+          server_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          key_name?: string
+          private_key_encrypted?: string | null
+          provider?: string
+          public_key?: string
+          server_id?: string | null
+        }
+        Relationships: []
+      }
       latency_thresholds: {
         Row: {
           created_at: string | null
@@ -1220,6 +1303,45 @@ export type Database = {
         }
         Relationships: []
       }
+      trade_execution_metrics: {
+        Row: {
+          api_response_time_ms: number | null
+          created_at: string | null
+          exchange: string
+          execution_time_ms: number
+          id: string
+          network_latency_ms: number | null
+          order_filled_at: string | null
+          order_placed_at: string
+          order_type: string | null
+          symbol: string | null
+        }
+        Insert: {
+          api_response_time_ms?: number | null
+          created_at?: string | null
+          exchange: string
+          execution_time_ms: number
+          id?: string
+          network_latency_ms?: number | null
+          order_filled_at?: string | null
+          order_placed_at?: string
+          order_type?: string | null
+          symbol?: string | null
+        }
+        Update: {
+          api_response_time_ms?: number | null
+          created_at?: string | null
+          exchange?: string
+          execution_time_ms?: number
+          id?: string
+          network_latency_ms?: number | null
+          order_filled_at?: string | null
+          order_placed_at?: string
+          order_type?: string | null
+          symbol?: string | null
+        }
+        Relationships: []
+      }
       trading_config: {
         Row: {
           bot_status: string | null
@@ -1284,6 +1406,7 @@ export type Database = {
           created_at: string | null
           entry_price: number
           exchange: string
+          execution_latency_ms: number | null
           exit_price: number | null
           id: string
           pnl: number | null
@@ -1298,6 +1421,7 @@ export type Database = {
           created_at?: string | null
           entry_price: number
           exchange: string
+          execution_latency_ms?: number | null
           exit_price?: number | null
           id?: string
           pnl?: number | null
@@ -1312,6 +1436,7 @@ export type Database = {
           created_at?: string | null
           entry_price?: number
           exchange?: string
+          execution_latency_ms?: number | null
           exit_price?: number | null
           id?: string
           pnl?: number | null
