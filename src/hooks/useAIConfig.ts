@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface AIConfig {
   id: string;
@@ -54,11 +55,14 @@ export function useAIConfig() {
     const trimmedKey = apiKey?.trim();
     if (!trimmedKey || trimmedKey.length < 10) {
       console.error('[useAIConfig] Local validation failed: API key too short');
+      toast.error('API key must be at least 10 characters');
       return { success: false, error: 'API key must be at least 10 characters' };
     }
     
     try {
       console.log('[useAIConfig] Invoking ai-analyze edge function...');
+      toast.loading('Saving AI configuration...', { id: 'ai-save' });
+      
       const { data, error } = await supabase.functions.invoke('ai-analyze', {
         body: { action: 'save-config', apiKey: trimmedKey, model }
       });
@@ -68,20 +72,25 @@ export function useAIConfig() {
 
       if (error) {
         console.error('[useAIConfig] Function invoke error:', error);
+        toast.error(`Failed to save: ${error.message}`, { id: 'ai-save' });
         throw error;
       }
       
       if (!data?.success) {
         console.error('[useAIConfig] Server returned failure:', data?.error);
+        toast.error(data?.error || 'Save failed', { id: 'ai-save' });
         return { success: false, error: data?.error || 'Save failed' };
       }
       
       await fetchConfig();
       console.log('[useAIConfig] === SAVE SUCCESS ===');
+      toast.success('AI configuration saved!', { id: 'ai-save' });
       return { success: true };
     } catch (err) {
       console.error('[useAIConfig] Caught error:', err);
-      return { success: false, error: err instanceof Error ? err.message : 'Failed to save' };
+      const errorMsg = err instanceof Error ? err.message : 'Failed to save';
+      toast.error(errorMsg, { id: 'ai-save' });
+      return { success: false, error: errorMsg };
     }
   };
 
