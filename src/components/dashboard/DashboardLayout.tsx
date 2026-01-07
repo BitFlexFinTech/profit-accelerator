@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   LineChart, 
@@ -9,7 +10,8 @@ import {
   Bell,
   Power,
   Menu,
-  X
+  X,
+  Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -21,6 +23,7 @@ import { Leaderboard } from './tabs/Leaderboard';
 import { SettingsTab } from './tabs/SettingsTab';
 import { KillSwitchDialog } from './KillSwitchDialog';
 import { SystemHealthBar } from './SystemHealthBar';
+import { initializeAppStore } from '@/store/useAppStore';
 
 const tabs = [
   { id: 'dashboard', label: 'Live Dashboard', icon: LayoutDashboard },
@@ -34,9 +37,16 @@ const tabs = [
 type TabId = typeof tabs[number]['id'];
 
 export function DashboardLayout() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [showKillSwitch, setShowKillSwitch] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Initialize SSOT store on mount
+  useEffect(() => {
+    const cleanup = initializeAppStore();
+    return cleanup;
+  }, []);
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -106,7 +116,18 @@ export function DashboardLayout() {
               <tab.icon className="w-4 h-4" />
               <span className="hidden lg:inline">{tab.label}</span>
             </Button>
-          ))}
+            ))}
+          
+          {/* Setup Link */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/setup')}
+            className="gap-2 text-accent hover:text-accent hover:bg-accent/20 border border-accent/30"
+          >
+            <Zap className="w-4 h-4" />
+            <span className="hidden lg:inline">Setup</span>
+          </Button>
         </nav>
 
         {/* Right Actions */}

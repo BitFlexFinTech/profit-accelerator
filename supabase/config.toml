@@ -129,3 +129,6 @@ verify_jwt = false
 
 [functions.scheduled-ai-scan]
 verify_jwt = false
+
+[functions.provision-vps]
+verify_jwt = false

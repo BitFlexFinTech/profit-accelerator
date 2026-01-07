@@ -30,16 +30,12 @@ export function useExchangeWebSocket() {
   const throttleRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateRef = useRef<number>(0);
   const THROTTLE_MS = 500;
-
-  // Known equity fallback while API whitelists propagate
-  const KNOWN_EQUITY = 2956.79;
   
-  // Throttled state update
+  // Throttled state update - NO MOCK DATA, only real balances
   const throttledUpdate = useCallback((exchanges: ExchangeBalance[]) => {
     const now = Date.now();
     
     if (now - lastUpdateRef.current < THROTTLE_MS) {
-      // Schedule update for later
       if (throttleRef.current) clearTimeout(throttleRef.current);
       throttleRef.current = setTimeout(() => {
         throttledUpdate(exchanges);
@@ -50,15 +46,13 @@ export function useExchangeWebSocket() {
     lastUpdateRef.current = now;
     
     const connectedExchanges = exchanges.filter(e => e.is_connected);
-    const apiBalance = connectedExchanges.reduce((sum, e) => sum + (e.balance_usdt || 0), 0);
-    
-    // Use known equity as fallback if API returns 0 but exchanges are connected
-    const totalBalance = apiBalance > 0 ? apiBalance : (connectedExchanges.length > 0 ? KNOWN_EQUITY : 0);
+    // Real balance only - no fallback to fake numbers
+    const totalBalance = connectedExchanges.reduce((sum, e) => sum + (e.balance_usdt || 0), 0);
 
     setState({
       totalBalance,
       exchanges: connectedExchanges,
-      isLive: true,
+      isLive: connectedExchanges.length > 0,
       lastUpdate: new Date(),
       isLoading: false,
     });
