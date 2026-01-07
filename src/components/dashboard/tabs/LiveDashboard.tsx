@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { BotControlPanel } from '../BotControlPanel';
 import { CompactMetricsBar } from '../panels/CompactMetricsBar';
 import { EquityChartPanel } from '../panels/EquityChartPanel';
@@ -8,6 +8,7 @@ import { SentimentPanel } from '../panels/SentimentPanel';
 import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
+import { supabase } from '@/integrations/supabase/client';
 
 export function LiveDashboard() {
   // Subscribe to real-time trade notifications
@@ -16,9 +17,26 @@ export function LiveDashboard() {
   // Get sync function from WebSocket hook
   const { sync } = useExchangeWebSocket();
 
+  // Auto-sync balances every 30 seconds
+  const syncBalances = useCallback(async () => {
+    console.log('[LiveDashboard] Auto-syncing balances...');
+    try {
+      await supabase.functions.invoke('trade-engine', {
+        body: { action: 'sync-balances' }
+      });
+    } catch (err) {
+      console.error('[LiveDashboard] Balance sync error:', err);
+    }
+  }, []);
+
   useEffect(() => {
     sync();
-  }, [sync]);
+    syncBalances(); // Initial sync
+    
+    // Auto-sync every 30 seconds
+    const interval = setInterval(syncBalances, 30000);
+    return () => clearInterval(interval);
+  }, [sync, syncBalances]);
 
   return (
     <div className="h-[calc(100vh-140px)] flex flex-col gap-3 overflow-hidden animate-fade-in">

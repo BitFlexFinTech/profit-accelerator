@@ -242,6 +242,7 @@ export function initializeAppStore() {
   const channel = supabase
     .channel('app-store-sync')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, () => {
+      console.log('[useAppStore] exchange_connections changed, syncing...');
       store.syncFromDatabase();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_pulse' }, () => {
@@ -251,6 +252,10 @@ export function initializeAppStore() {
       store.syncFromDatabase();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_snapshots' }, () => {
+      store.syncFromDatabase();
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'balance_history' }, () => {
+      console.log('[useAppStore] balance_history INSERT, syncing...');
       store.syncFromDatabase();
     })
     .subscribe();

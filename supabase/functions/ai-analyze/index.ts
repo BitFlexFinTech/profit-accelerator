@@ -21,7 +21,7 @@ serve(async (req) => {
 
     const body = await req.json();
     const { action, symbol, message, apiKey, model } = body;
-    console.log(`AI Analyze action: ${action}, symbol: ${symbol}, hasApiKey: ${!!apiKey}`);
+    console.log(`[ai-analyze] Action: ${action}, symbol: ${symbol}, hasApiKey: ${!!apiKey}, apiKeyLength: ${apiKey?.length || 0}`);
 
     switch (action) {
       case 'validate-key': {
@@ -187,10 +187,10 @@ Keep the analysis professional, actionable, and under 200 words.`;
       }
 
       case 'save-config': {
-        // apiKey and model are already extracted from body at the top
-        console.log(`[ai-analyze] Saving config - apiKey provided: ${!!apiKey}, model: ${model}`);
+        console.log(`[ai-analyze] SAVE-CONFIG: apiKey=${apiKey ? `present (${apiKey.length} chars)` : 'MISSING'}, model=${model}`);
         
-        if (!apiKey) {
+        if (!apiKey || apiKey.trim() === '') {
+          console.log(`[ai-analyze] ERROR: API key is empty or missing`);
           return new Response(
             JSON.stringify({ success: false, error: 'API key is required' }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
