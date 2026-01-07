@@ -19,12 +19,12 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { action, symbol, message } = await req.json();
-    console.log(`AI Analyze action: ${action}, symbol: ${symbol}`);
+    const body = await req.json();
+    const { action, symbol, message, apiKey, model } = body;
+    console.log(`AI Analyze action: ${action}, symbol: ${symbol}, hasApiKey: ${!!apiKey}`);
 
     switch (action) {
       case 'validate-key': {
-        const { apiKey } = await req.json().catch(() => ({}));
         
         // Get API key from request or database
         let keyToValidate = apiKey;
@@ -187,7 +187,15 @@ Keep the analysis professional, actionable, and under 200 words.`;
       }
 
       case 'save-config': {
-        const { apiKey, model } = await req.json().catch(() => ({}));
+        // apiKey and model are already extracted from body at the top
+        console.log(`[ai-analyze] Saving config - apiKey provided: ${!!apiKey}, model: ${model}`);
+        
+        if (!apiKey) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'API key is required' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
         
         const { data: existing } = await supabase
           .from('ai_config')

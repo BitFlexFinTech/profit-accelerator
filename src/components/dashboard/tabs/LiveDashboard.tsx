@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { BotControlPanel } from '../BotControlPanel';
 import { CompactMetricsBar } from '../panels/CompactMetricsBar';
 import { EquityChartPanel } from '../panels/EquityChartPanel';
+import { TradeActivityTerminal } from '../panels/TradeActivityTerminal';
 import { CloudStatusPanel } from '../panels/CloudStatusPanel';
 import { SentimentPanel } from '../panels/SentimentPanel';
 import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
@@ -33,9 +34,14 @@ export function LiveDashboard() {
 
       {/* Main Content Area - Fixed, no scroll */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-3 min-h-0">
-        {/* Left: Equity Chart (60% width) */}
-        <div className="lg:col-span-3 min-h-0">
-          <EquityChartPanel />
+        {/* Left: Equity Chart + Trade Activity (60% width) */}
+        <div className="lg:col-span-3 flex flex-col gap-3 min-h-0">
+          <div className="flex-shrink-0">
+            <EquityChartPanel />
+          </div>
+          <div className="flex-1 min-h-0">
+            <TradeActivityTerminal />
+          </div>
         </div>
 
         {/* Right: Cloud Status + Sentiment + AI Updates (40% width) */}

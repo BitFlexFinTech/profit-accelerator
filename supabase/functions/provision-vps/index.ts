@@ -280,24 +280,35 @@ serve(async (req) => {
 
       case 'oracle': {
         const tenancyOcid = credentials.tenancyOcid;
+        const userOcid = credentials.userOcid;
+        const fingerprint = credentials.fingerprint;
         const privateKey = credentials.privateKey;
+        const subnetOcid = credentials.subnetOcid;
+        const sshPublicKey = credentials.sshPublicKey;
         
-        if (!tenancyOcid || !privateKey) {
-          throw new Error('Oracle Cloud credentials not configured');
+        if (!tenancyOcid || !userOcid || !fingerprint || !privateKey) {
+          throw new Error('Oracle Cloud credentials not configured (tenancyOcid, userOcid, fingerprint, privateKey required)');
         }
 
         console.log('[provision-vps] Invoking oracle-cloud function for real OCI deployment');
         
+        // Call the oracle-cloud function with proper RSA-SHA256 authentication
         const { data: ociData, error: ociError } = await supabase.functions.invoke('oracle-cloud', {
           body: {
             action: 'deploy-instance',
-            credentials: { tenancyOcid, privateKey },
-            specs: { region: optimalRegion }
+            tenancyOcid,
+            userOcid,
+            fingerprint,
+            privateKey,
+            region: optimalRegion,
+            subnetOcid,
+            sshPublicKey,
+            displayName: `hft-${targetExchange || 'tokyo'}-arm`
           }
         });
 
         if (ociError || !ociData?.success) {
-          throw new Error(ociData?.error || ociError?.message || 'Oracle deployment failed');
+          throw new Error(ociData?.error || ociError?.message || 'Oracle OCI deployment failed');
         }
 
         result = {
@@ -313,21 +324,24 @@ serve(async (req) => {
         const accessKeySecret = credentials.accessKeySecret;
         
         if (!accessKeyId || !accessKeySecret) {
-          throw new Error('Alibaba Cloud credentials not configured');
+          throw new Error('Alibaba Cloud credentials not configured (accessKeyId, accessKeySecret required)');
         }
 
-        console.log('[provision-vps] Invoking alibaba-cloud function for real ECS deployment');
+        console.log('[provision-vps] Invoking alibaba-cloud function for real ECS deployment with HMAC-SHA1');
         
+        // Call the alibaba-cloud function with HMAC-SHA1 authentication
         const { data: aliData, error: aliError } = await supabase.functions.invoke('alibaba-cloud', {
           body: {
             action: 'deploy-instance',
-            credentials: { accessKeyId, accessKeySecret },
-            specs: { region: optimalRegion }
+            accessKeyId,
+            accessKeySecret,
+            region: optimalRegion,
+            instanceType: credentials.instanceType || 'ecs.t6-c1m1.large'
           }
         });
 
         if (aliError || !aliData?.success) {
-          throw new Error(aliData?.error || aliError?.message || 'Alibaba deployment failed');
+          throw new Error(aliData?.error || aliError?.message || 'Alibaba ECS deployment failed');
         }
 
         result = {

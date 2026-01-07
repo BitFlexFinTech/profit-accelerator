@@ -132,3 +132,6 @@ verify_jwt = false
 
 [functions.provision-vps]
 verify_jwt = false
+
+[functions.scheduled-vps-health]
+verify_jwt = false
