@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Brain, Loader2, CheckCircle2, ExternalLink, Sparkles, AlertCircle } from 'lucide-react';
+import { Brain, Loader2, CheckCircle2, ExternalLink, Sparkles, AlertCircle, Key } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAIConfig } from '@/hooks/useAIConfig';
-import { useRealtimeConfirmation } from '@/hooks/useRealtimeConfirmation';
+import { supabase } from '@/integrations/supabase/client';
 
 interface GroqWizardProps {
   open: boolean;
@@ -22,72 +21,60 @@ const GROQ_MODELS = [
 ];
 
 export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
-  const { saveConfig, validateKey, config } = useAIConfig();
+  const { validateKey, config, refetch } = useAIConfig();
   const [step, setStep] = useState(1);
-  const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('llama-3.3-70b-versatile');
   const [isValidating, setIsValidating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Realtime confirmation for optimistic UI
-  const confirmation = useRealtimeConfirmation({
-    table: 'ai_config',
-    matchColumn: 'provider',
-    matchValue: 'groq',
-    timeoutMs: 5000,
-  });
-
-  // Auto-advance to success when realtime confirms
-  useEffect(() => {
-    if (confirmation.isConfirmed && step === 3 && isSaving) {
-      setIsSaving(false);
-      setStep(4);
-      toast.success('Groq AI configured successfully!');
-    }
-  }, [confirmation.isConfirmed, step, isSaving]);
-
   const handleValidate = async () => {
-    if (!apiKey.trim()) {
-      toast.error('Please enter your Groq API key');
-      return;
-    }
-
     setIsValidating(true);
     setValidationError(null);
 
-    const result = await validateKey(apiKey);
+    const result = await validateKey();
     setIsValidating(false);
 
     if (result.success) {
-      setStep(3);
-      toast.success('API key validated successfully!');
+      setStep(2);
+      toast.success('Groq API key validated from Supabase secrets!');
     } else {
-      setValidationError('Invalid API key. Please check and try again.');
-      toast.error('API key validation failed');
+      setValidationError(result.error || 'API key not configured or invalid');
+      toast.error(result.error || 'Validation failed');
     }
   };
 
   const handleSave = async () => {
     setIsSaving(true);
-    confirmation.startWaiting(); // Start listening for realtime confirmation
     
-    const result = await saveConfig(apiKey, model);
+    try {
+      // Just save model preference to database
+      const { error } = await supabase
+        .from('ai_config')
+        .upsert({
+          provider: 'groq',
+          model: model,
+          is_active: true,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'provider' });
 
-    if (!result.success) {
+      if (error) throw error;
+
+      await refetch();
+      setStep(3);
+      toast.success('AI configuration activated!');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to save';
+      toast.error(errorMsg);
+    } finally {
       setIsSaving(false);
-      confirmation.reset();
-      toast.error(result.error || 'Failed to save configuration');
     }
-    // Success is handled by the realtime confirmation effect
   };
 
   const handleClose = () => {
     setStep(1);
-    setApiKey('');
     setModel('llama-3.3-70b-versatile');
     setValidationError(null);
-    confirmation.reset();
     onOpenChange(false);
   };
 
@@ -104,7 +91,7 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
         <div className="space-y-6 py-4">
           {/* Progress Steps */}
           <div className="flex items-center justify-between px-2">
-            {[1, 2, 3, 4].map((s) => (
+            {[1, 2, 3].map((s) => (
               <div key={s} className="flex items-center">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
                   step >= s 
@@ -113,49 +100,75 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
                 }`}>
                   {step > s ? <CheckCircle2 className="h-5 w-5" /> : s}
                 </div>
-                {s < 4 && (
-                  <div className={`w-12 h-0.5 ${step > s ? 'bg-primary' : 'bg-muted'}`} />
+                {s < 3 && (
+                  <div className={`w-16 h-0.5 ${step > s ? 'bg-primary' : 'bg-muted'}`} />
                 )}
               </div>
             ))}
           </div>
 
-          {/* Step 1: API Key */}
+          {/* Step 1: Validate Secret */}
           {step === 1 && (
             <div className="space-y-4">
               <div className="text-center space-y-2">
-                <Sparkles className="h-12 w-12 text-primary mx-auto" />
-                <h3 className="font-semibold">Enter Your Groq API Key</h3>
+                <Key className="h-12 w-12 text-primary mx-auto" />
+                <h3 className="font-semibold">Groq API Key</h3>
                 <p className="text-sm text-muted-foreground">
-                  Get AI-powered trade sentiment analysis via Telegram
+                  Your API key is stored securely in Supabase secrets
                 </p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="apiKey">API Key</Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="gsk_..."
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="bg-background/50"
-                />
+              
+              <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                  <span>Secret Name: <code className="bg-background px-1 rounded">Groq-API Key</code></span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Manage this secret in your Supabase Dashboard → Edge Functions → Secrets
+                </p>
               </div>
+
               <a 
-                href="https://console.groq.com/keys" 
+                href="https://supabase.com/dashboard/project/iibdlazwkossyelyroap/settings/functions" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-sm text-primary hover:underline"
               >
                 <ExternalLink className="h-4 w-4" />
-                Get your API key from Groq Console
+                Manage Supabase Secrets
               </a>
+
+              <a 
+                href="https://console.groq.com/keys" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-sm text-muted-foreground hover:underline"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Get API key from Groq Console
+              </a>
+
               <Button 
                 className="w-full" 
-                onClick={() => apiKey.trim() ? setStep(2) : toast.error('Enter API key')}
+                onClick={handleValidate}
+                disabled={isValidating}
               >
-                Continue
+                {isValidating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Validating...
+                  </>
+                ) : (
+                  'Test Connection'
+                )}
               </Button>
+
+              {validationError && (
+                <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 p-3 rounded-lg">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{validationError}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -163,9 +176,10 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
           {step === 2 && (
             <div className="space-y-4">
               <div className="text-center space-y-2">
-                <h3 className="font-semibold">Select AI Model</h3>
+                <CheckCircle2 className="h-12 w-12 text-success mx-auto" />
+                <h3 className="font-semibold">API Key Validated!</h3>
                 <p className="text-sm text-muted-foreground">
-                  Choose the model for trade analysis
+                  Select your preferred AI model
                 </p>
               </div>
               <div className="space-y-2">
@@ -190,55 +204,11 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
                 <Button variant="outline" onClick={() => setStep(1)} className="flex-1">
                   Back
                 </Button>
-                <Button onClick={handleValidate} disabled={isValidating} className="flex-1">
-                  {isValidating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Validating...
-                    </>
-                  ) : (
-                    'Test Connection'
-                  )}
-                </Button>
-              </div>
-              {validationError && (
-                <div className="flex items-center gap-2 text-destructive text-sm">
-                  <AlertCircle className="h-4 w-4" />
-                  {validationError}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Step 3: Confirm */}
-          {step === 3 && (
-            <div className="space-y-4">
-              <div className="text-center space-y-2">
-                <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
-                <h3 className="font-semibold">API Key Validated!</h3>
-                <p className="text-sm text-muted-foreground">
-                  Ready to activate AI analysis
-                </p>
-              </div>
-              <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Model:</span>
-                  <span>{GROQ_MODELS.find(m => m.id === model)?.name}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Commands:</span>
-                  <span>/analyze BTC, /analyze ETH</span>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setStep(2)} className="flex-1">
-                  Back
-                </Button>
                 <Button onClick={handleSave} disabled={isSaving} className="flex-1">
                   {isSaving ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {confirmation.isWaiting ? 'Connecting...' : 'Saving...'}
+                      Activating...
                     </>
                   ) : (
                     'Activate AI'
@@ -248,13 +218,13 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
             </div>
           )}
 
-          {/* Step 4: Success */}
-          {step === 4 && (
+          {/* Step 3: Success */}
+          {step === 3 && (
             <div className="space-y-4">
               <div className="text-center space-y-2">
                 <div className="relative mx-auto w-16 h-16">
                   <Brain className="h-16 w-16 text-primary" />
-                  <CheckCircle2 className="h-6 w-6 text-green-500 absolute -bottom-1 -right-1" />
+                  <CheckCircle2 className="h-6 w-6 text-success absolute -bottom-1 -right-1" />
                 </div>
                 <h3 className="font-semibold text-lg">AI Analysis Active!</h3>
                 <p className="text-sm text-muted-foreground">

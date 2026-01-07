@@ -94,23 +94,22 @@ export function useAIConfig() {
     }
   };
 
-  const validateKey = async (apiKey: string) => {
+  const validateKey = async () => {
+    // Validate via edge function (uses Supabase secret)
     try {
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: 'Say OK' }],
-          max_tokens: 5,
-        }),
+      console.log('[useAIConfig] Validating API key via edge function...');
+      const { data, error } = await supabase.functions.invoke('ai-analyze', {
+        body: { action: 'validate-key' }
       });
 
-      return { success: response.ok };
+      if (error) {
+        console.error('[useAIConfig] Validation error:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: data?.success || false, error: data?.error };
     } catch (err) {
+      console.error('[useAIConfig] Validation failed:', err);
       return { success: false, error: 'Validation failed' };
     }
   };

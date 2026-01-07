@@ -8,6 +8,9 @@ const corsHeaders = {
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
+// Get Groq API key from Supabase secrets
+const GROQ_API_KEY = Deno.env.get('Groq-API Key');
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -21,25 +24,14 @@ serve(async (req) => {
 
     const body = await req.json();
     const { action, symbol, message, apiKey, model } = body;
-    console.log(`[ai-analyze] Action: ${action}, symbol: ${symbol}, hasApiKey: ${!!apiKey}, apiKeyLength: ${apiKey?.length || 0}`);
+    console.log(`[ai-analyze] Action: ${action}, symbol: ${symbol}, hasEnvKey: ${!!GROQ_API_KEY}`);
 
     switch (action) {
       case 'validate-key': {
-        
-        // Get API key from request or database
-        let keyToValidate = apiKey;
-        if (!keyToValidate) {
-          const { data: aiConfig } = await supabase
-            .from('ai_config')
-            .select('api_key')
-            .eq('provider', 'groq')
-            .single();
-          keyToValidate = aiConfig?.api_key;
-        }
-
-        if (!keyToValidate) {
+        // Use the secret from Supabase secrets
+        if (!GROQ_API_KEY) {
           return new Response(
-            JSON.stringify({ success: false, error: 'No API key provided' }),
+            JSON.stringify({ success: false, error: 'Groq API key not configured in Supabase secrets' }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -48,7 +40,7 @@ serve(async (req) => {
         const testResponse = await fetch(GROQ_API_URL, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${keyToValidate}`,
+            'Authorization': `Bearer ${GROQ_API_KEY}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -73,21 +65,22 @@ serve(async (req) => {
       }
 
       case 'analyze': {
-        // Get AI config from database
-        const { data: aiConfig, error: configError } = await supabase
-          .from('ai_config')
-          .select('*')
-          .eq('provider', 'groq')
-          .single();
-
-        if (configError || !aiConfig?.api_key) {
+        // Use the secret from Supabase secrets
+        if (!GROQ_API_KEY) {
           return new Response(
-            JSON.stringify({ success: false, error: 'Groq AI not configured' }),
+            JSON.stringify({ success: false, error: 'Groq API key not configured in Supabase secrets' }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        if (!aiConfig.is_active) {
+        // Get model preference from database
+        const { data: aiConfig } = await supabase
+          .from('ai_config')
+          .select('model, is_active, id')
+          .eq('provider', 'groq')
+          .single();
+
+        if (aiConfig && !aiConfig.is_active) {
           return new Response(
             JSON.stringify({ success: false, error: 'AI Analysis is not active' }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -135,11 +128,11 @@ Keep the analysis professional, actionable, and under 200 words.`;
         const groqResponse = await fetch(GROQ_API_URL, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${aiConfig.api_key}`,
+            'Authorization': `Bearer ${GROQ_API_KEY}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: aiConfig.model || 'llama-3.3-70b-versatile',
+            model: aiConfig?.model || 'llama-3.3-70b-versatile',
             messages: [
               { role: 'system', content: 'You are a professional crypto trading analyst. Be concise and actionable.' },
               { role: 'user', content: analysisPrompt }
@@ -161,18 +154,20 @@ Keep the analysis professional, actionable, and under 200 words.`;
         const groqData = await groqResponse.json();
         const analysis = groqData.choices?.[0]?.message?.content || 'Analysis unavailable';
 
-        // Update last_used_at
-        await supabase
-          .from('ai_config')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('id', aiConfig.id);
+        // Update last_used_at if config exists
+        if (aiConfig?.id) {
+          await supabase
+            .from('ai_config')
+            .update({ last_used_at: new Date().toISOString() })
+            .eq('id', aiConfig.id);
+        }
 
         // Log to audit
         await supabase.from('audit_logs').insert({
           action: 'ai_analysis',
           entity_type: 'ai',
           entity_id: symbolUpper,
-          new_value: { symbol: symbolUpper, model: aiConfig.model },
+          new_value: { symbol: symbolUpper, model: aiConfig?.model || 'llama-3.3-70b-versatile' },
         });
 
         return new Response(
@@ -180,7 +175,7 @@ Keep the analysis professional, actionable, and under 200 words.`;
             success: true, 
             symbol: symbolUpper,
             analysis,
-            model: aiConfig.model 
+            model: aiConfig?.model || 'llama-3.3-70b-versatile'
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -280,19 +275,20 @@ Keep the analysis professional, actionable, and under 200 words.`;
           );
         }
 
-        // 2. Get AI config
-        const { data: aiConfig } = await supabase
-          .from('ai_config')
-          .select('*')
-          .eq('provider', 'groq')
-          .single();
-
-        if (!aiConfig?.api_key || !aiConfig?.is_active) {
+        // 2. Check Groq API key from secrets
+        if (!GROQ_API_KEY) {
           return new Response(
-            JSON.stringify({ success: false, error: 'AI not configured or inactive' }),
+            JSON.stringify({ success: false, error: 'Groq API key not configured in Supabase secrets' }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
+
+        // 3. Get AI model preference from database
+        const { data: aiConfig } = await supabase
+          .from('ai_config')
+          .select('model, is_active, id')
+          .eq('provider', 'groq')
+          .single();
 
         // 3. Fetch top crypto prices from first connected exchange
         const firstExchange = exchanges[0].exchange_name.toLowerCase();
@@ -356,11 +352,11 @@ Respond in JSON format only: {"sentiment": "BULLISH" or "BEARISH" or "NEUTRAL", 
             const groqResponse = await fetch(GROQ_API_URL, {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${aiConfig.api_key}`,
+                'Authorization': `Bearer ${GROQ_API_KEY}`,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: aiConfig.model || 'llama-3.3-70b-versatile',
+                model: aiConfig?.model || 'llama-3.3-70b-versatile',
                 messages: [
                   { role: 'system', content: 'You are a crypto trading analyst. Respond only in valid JSON format.' },
                   { role: 'user', content: analysisPrompt }
@@ -413,11 +409,13 @@ Respond in JSON format only: {"sentiment": "BULLISH" or "BEARISH" or "NEUTRAL", 
           }
         }
 
-        // Update AI config last_used_at
-        await supabase
-          .from('ai_config')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('id', aiConfig.id);
+        // Update AI config last_used_at if exists
+        if (aiConfig?.id) {
+          await supabase
+            .from('ai_config')
+            .update({ last_used_at: new Date().toISOString() })
+            .eq('id', aiConfig.id);
+        }
 
         return new Response(
           JSON.stringify({ 
