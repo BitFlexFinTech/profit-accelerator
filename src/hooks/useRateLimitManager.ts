@@ -24,18 +24,35 @@ interface QueuedRequest {
 
 const EXCHANGE_LIMITS: Record<string, RateLimitConfig> = {
   binance: {
-    maxRequestsPerMinute: 1200, // Official: 1200/min
-    safetyMarginPercent: 80,   // Use only 80% = 960/min
-    burstReservePercent: 20,   // Reserve 20% for critical
+    maxRequestsPerMinute: 1200,
+    safetyMarginPercent: 80,
+    burstReservePercent: 20,
   },
   okx: {
-    maxRequestsPerMinute: 3000, // Official: 3000/min
-    safetyMarginPercent: 80,    // Use only 80% = 2400/min
+    maxRequestsPerMinute: 3000,
+    safetyMarginPercent: 80,
+    burstReservePercent: 20,
+  },
+  groq: {
+    maxRequestsPerMinute: 30,
+    safetyMarginPercent: 80,
+    burstReservePercent: 30,
+  },
+  vultr: {
+    maxRequestsPerMinute: 100,
+    safetyMarginPercent: 80,
+    burstReservePercent: 20,
+  },
+  digitalocean: {
+    maxRequestsPerMinute: 250,
+    safetyMarginPercent: 80,
     burstReservePercent: 20,
   },
 };
 
-export function useRateLimitManager(exchange: 'binance' | 'okx') {
+export type RateLimitService = 'binance' | 'okx' | 'groq' | 'vultr' | 'digitalocean';
+
+export function useRateLimitManager(exchange: RateLimitService) {
   const config = EXCHANGE_LIMITS[exchange];
   const effectiveLimit = Math.floor(config.maxRequestsPerMinute * (config.safetyMarginPercent / 100));
   const effectiveLimitPerSecond = Math.floor(effectiveLimit / 60);

@@ -88,14 +88,7 @@ export function LogViewer({ provider, ip }: LogViewerProps) {
       }
     } catch (err) {
       console.error('[LogViewer] Error fetching logs:', err);
-      // Add mock logs for demo
-      setLogs([
-        { id: '1', timestamp: new Date().toISOString(), level: 'info', message: 'Bot started successfully' },
-        { id: '2', timestamp: new Date().toISOString(), level: 'info', message: 'Connected to exchange WebSocket' },
-        { id: '3', timestamp: new Date().toISOString(), level: 'debug', message: 'Heartbeat sent' },
-        { id: '4', timestamp: new Date().toISOString(), level: 'info', message: 'Order book synchronized' },
-        { id: '5', timestamp: new Date().toISOString(), level: 'warn', message: 'High latency detected: 145ms' },
-      ]);
+      setLogs([]);
     } finally {
       setIsLoading(false);
     }
