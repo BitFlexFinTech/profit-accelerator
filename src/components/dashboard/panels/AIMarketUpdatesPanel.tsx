@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Brain, TrendingUp, TrendingDown, Minus, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
@@ -21,6 +21,46 @@ export function AIMarketUpdatesPanel() {
   const [updates, setUpdates] = useState<AIUpdate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
+  const hasAutoScanned = useRef(false);
+
+  // Auto-scan on mount if AI is configured and no recent updates exist
+  const triggerAutoScan = async () => {
+    if (hasAutoScanned.current) return;
+    hasAutoScanned.current = true;
+    
+    try {
+      // Check if AI is configured
+      const { data: aiConfig } = await supabase
+        .from('ai_config')
+        .select('api_key, is_active')
+        .eq('provider', 'groq')
+        .single();
+      
+      if (!aiConfig?.api_key || !aiConfig?.is_active) {
+        console.log('[AIMarketUpdatesPanel] AI not configured, skipping auto-scan');
+        return;
+      }
+      
+      // Check if there are recent updates (within last 5 minutes)
+      const { data: recentUpdates } = await supabase
+        .from('ai_market_updates')
+        .select('id')
+        .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+        .limit(1);
+      
+      if (recentUpdates?.length) {
+        console.log('[AIMarketUpdatesPanel] Recent updates exist, skipping auto-scan');
+        return;
+      }
+      
+      console.log('[AIMarketUpdatesPanel] Triggering auto-scan...');
+      await supabase.functions.invoke('ai-analyze', {
+        body: { action: 'market-scan' }
+      });
+    } catch (err) {
+      console.error('[AIMarketUpdatesPanel] Auto-scan error:', err);
+    }
+  };
 
   useEffect(() => {
     const fetchUpdates = async () => {
@@ -33,6 +73,11 @@ export function AIMarketUpdatesPanel() {
 
         if (error) throw error;
         setUpdates((data as AIUpdate[]) || []);
+        
+        // Trigger auto-scan after initial fetch if no updates
+        if (!data?.length) {
+          triggerAutoScan();
+        }
       } catch (err) {
         console.error('[AIMarketUpdatesPanel] Error:', err);
       } finally {
