@@ -809,6 +809,86 @@ serve(async (req) => {
         );
       }
 
+      case 'ping-all-exchanges': {
+        // Ping all 11 exchanges and update exchange_pulse table
+        console.log('[trade-engine] Pinging all exchanges');
+        
+        const exchangeEndpoints: Record<string, string> = {
+          binance: 'https://api.binance.com/api/v3/ping',
+          okx: 'https://www.okx.com/api/v5/public/time',
+          bybit: 'https://api.bybit.com/v5/market/time',
+          bitget: 'https://api.bitget.com/api/v2/public/time',
+          bingx: 'https://open-api.bingx.com/openApi/swap/v2/server/time',
+          mexc: 'https://api.mexc.com/api/v3/ping',
+          gateio: 'https://api.gateio.ws/api/v4/spot/time',
+          kucoin: 'https://api.kucoin.com/api/v1/timestamp',
+          kraken: 'https://api.kraken.com/0/public/Time',
+          nexo: 'https://api.nexo.io/api/v1/pairs',
+          hyperliquid: 'https://api.hyperliquid.xyz/info'
+        };
+
+        const results: Array<{ exchange: string; latency: number; status: string; error?: string }> = [];
+
+        for (const [exchange, endpoint] of Object.entries(exchangeEndpoints)) {
+          const start = Date.now();
+          let status = 'error';
+          let latency = 999;
+          let errorMessage = null;
+
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            
+            const resp = await fetch(endpoint, { 
+              signal: controller.signal,
+              method: exchange === 'hyperliquid' ? 'POST' : 'GET',
+              headers: exchange === 'hyperliquid' ? { 'Content-Type': 'application/json' } : undefined,
+              body: exchange === 'hyperliquid' ? JSON.stringify({ type: 'meta' }) : undefined
+            });
+            clearTimeout(timeout);
+            
+            latency = Date.now() - start;
+            
+            if (resp.ok) {
+              status = latency < 20 ? 'healthy' : latency < 50 ? 'jitter' : 'error';
+            } else {
+              status = 'error';
+              errorMessage = `HTTP ${resp.status}`;
+            }
+          } catch (err) {
+            latency = Date.now() - start;
+            status = 'error';
+            errorMessage = err instanceof Error ? err.message : 'Connection failed';
+          }
+
+          results.push({ exchange, latency, status, error: errorMessage || undefined });
+
+          // Update exchange_pulse table
+          await supabase
+            .from('exchange_pulse')
+            .update({
+              status,
+              latency_ms: latency,
+              last_check: new Date().toISOString(),
+              error_message: errorMessage
+            })
+            .eq('exchange_name', exchange);
+        }
+
+        const healthyCount = results.filter(r => r.status === 'healthy').length;
+        console.log(`[trade-engine] Ping complete: ${healthyCount}/${results.length} healthy`);
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            checked: results.length,
+            healthy: healthyCount,
+            results 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       default:
         return new Response(
           JSON.stringify({ success: false, error: 'Unknown action' }),
