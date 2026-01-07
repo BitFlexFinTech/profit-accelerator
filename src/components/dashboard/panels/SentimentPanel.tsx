@@ -1,148 +1,149 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, Minus, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { TrendingUp, TrendingDown, Minus, Activity } from 'lucide-react';
+
+interface PriceChange {
+  symbol: string;
+  change: number;
+}
 
 export function SentimentPanel() {
   const [fearGreedIndex, setFearGreedIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [priceChanges, setPriceChanges] = useState<{ symbol: string; change: number }[]>([]);
+  const [priceChanges, setPriceChanges] = useState<PriceChange[]>([]);
 
-  // Fetch real Fear & Greed Index from Alternative.me API
   useEffect(() => {
     const fetchSentiment = async () => {
       try {
-        // Try to get from our database first (if we store it)
-        const { data: sentimentData } = await supabase
-          .from('sentiment_data')
-          .select('fear_greed_index, symbol, sentiment_score')
-          .order('recorded_at', { ascending: false })
-          .limit(5);
-
-        if (sentimentData && sentimentData.length > 0) {
-          const fgi = sentimentData.find(s => s.fear_greed_index !== null);
-          if (fgi?.fear_greed_index) {
-            setFearGreedIndex(fgi.fear_greed_index);
+        // Fetch real Fear & Greed Index from Alternative.me API
+        const fgiResponse = await fetch('https://api.alternative.me/fng/?limit=1');
+        if (fgiResponse.ok) {
+          const fgiData = await fgiResponse.json();
+          if (fgiData?.data?.[0]?.value) {
+            setFearGreedIndex(parseInt(fgiData.data[0].value));
           }
         }
 
-        // Get exchange price changes if available
-        const { data: exchangeData } = await supabase
-          .from('exchange_connections')
-          .select('exchange_name, balance_usdt, balance_updated_at')
-          .eq('is_connected', true);
-
-        if (exchangeData) {
-          // We don't have price change data, so we'll show N/A
+        // Fetch real 24h price changes from CoinGecko (free, no API key required)
+        const priceResponse = await fetch(
+          'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true'
+        );
+        if (priceResponse.ok) {
+          const priceData = await priceResponse.json();
           setPriceChanges([
-            { symbol: 'BTC', change: 0 },
-            { symbol: 'ETH', change: 0 },
-            { symbol: 'SOL', change: 0 },
+            { symbol: 'BTC', change: priceData.bitcoin?.usd_24h_change || 0 },
+            { symbol: 'ETH', change: priceData.ethereum?.usd_24h_change || 0 },
+            { symbol: 'SOL', change: priceData.solana?.usd_24h_change || 0 },
           ]);
         }
       } catch (error) {
-        console.error('Failed to fetch sentiment data:', error);
+        console.error('Sentiment API error:', error);
+        setFearGreedIndex(null);
+        setPriceChanges([]);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchSentiment();
+    // Auto-refresh every 5 minutes
+    const interval = setInterval(fetchSentiment, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const getSentimentLabel = (index: number | null) => {
     if (index === null) return 'N/A';
-    if (index > 75) return 'Extreme Greed';
-    if (index > 55) return 'Greed';
-    if (index > 45) return 'Neutral';
-    if (index > 25) return 'Fear';
-    return 'Extreme Fear';
+    if (index <= 25) return 'Extreme Fear';
+    if (index <= 45) return 'Fear';
+    if (index <= 55) return 'Neutral';
+    if (index <= 75) return 'Greed';
+    return 'Extreme Greed';
   };
 
   const getSentimentColor = (index: number | null) => {
     if (index === null) return 'text-muted-foreground';
-    if (index > 55) return 'text-success';
-    if (index < 45) return 'text-destructive';
-    return 'text-warning';
+    if (index <= 25) return 'text-red-500';
+    if (index <= 45) return 'text-orange-500';
+    if (index <= 55) return 'text-yellow-500';
+    if (index <= 75) return 'text-lime-500';
+    return 'text-emerald-500';
   };
 
   const getTrendIcon = (change: number) => {
-    if (change > 0) return <TrendingUp className="w-5 h-5 mx-auto mb-1 text-success" />;
-    if (change < 0) return <TrendingDown className="w-5 h-5 mx-auto mb-1 text-destructive" />;
-    return <Minus className="w-5 h-5 mx-auto mb-1 text-muted-foreground" />;
+    if (change > 0.5) return <TrendingUp className="w-3 h-3 text-emerald-500" />;
+    if (change < -0.5) return <TrendingDown className="w-3 h-3 text-red-500" />;
+    return <Minus className="w-3 h-3 text-muted-foreground" />;
   };
 
   const getTrendColor = (change: number) => {
-    if (change > 0) return 'text-success';
-    if (change < 0) return 'text-destructive';
+    if (change > 0.5) return 'text-emerald-500';
+    if (change < -0.5) return 'text-red-500';
     return 'text-muted-foreground';
   };
 
   return (
-    <div className="glass-card p-6">
-      <h3 className="text-lg font-semibold mb-4">Market Sentiment</h3>
-      
-      {/* Fear & Greed Gauge */}
-      <div className="relative h-32 mb-4">
-        <div className="absolute inset-0 flex items-center justify-center">
-          {isLoading ? (
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-          ) : (
-            <div className="text-center">
-              <span className={`text-4xl font-bold ${getSentimentColor(fearGreedIndex)}`}>
-                {fearGreedIndex ?? '—'}
-              </span>
-              <p className={`text-sm font-medium ${getSentimentColor(fearGreedIndex)}`}>
-                {getSentimentLabel(fearGreedIndex)}
-              </p>
-            </div>
-          )}
-        </div>
-        
-        {/* Gauge background */}
-        <svg viewBox="0 0 200 100" className="w-full h-full">
-          <defs>
-            <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="hsl(340 100% 45%)" />
-              <stop offset="50%" stopColor="hsl(45 100% 50%)" />
-              <stop offset="100%" stopColor="hsl(160 100% 40%)" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M 20 90 A 80 80 0 0 1 180 90"
-            fill="none"
-            stroke="hsl(var(--secondary))"
-            strokeWidth="12"
-            strokeLinecap="round"
-          />
-          <path
-            d="M 20 90 A 80 80 0 0 1 180 90"
-            fill="none"
-            stroke="url(#gaugeGradient)"
-            strokeWidth="12"
-            strokeLinecap="round"
-            strokeDasharray={`${((fearGreedIndex ?? 0) / 100) * 251} 251`}
-          />
-        </svg>
+    <div className="glass-card p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Activity className="w-4 h-4 text-violet-400" />
+        <span className="font-medium text-sm">Market Sentiment</span>
       </div>
 
-      {/* Trend Indicators */}
-      <div className="grid grid-cols-3 gap-3">
-        {priceChanges.length > 0 ? (
-          priceChanges.map((item) => (
-            <div key={item.symbol} className="p-3 rounded-lg bg-secondary/30 text-center">
-              {getTrendIcon(item.change)}
-              <p className="text-xs text-muted-foreground">{item.symbol}</p>
-              <p className={`text-sm font-medium ${getTrendColor(item.change)}`}>
-                {item.change === 0 ? 'N/A' : `${item.change > 0 ? '+' : ''}${item.change.toFixed(1)}%`}
-              </p>
+      {isLoading ? (
+        <div className="animate-pulse space-y-2">
+          <div className="h-8 bg-secondary/50 rounded w-16" />
+          <div className="h-4 bg-secondary/50 rounded w-24" />
+        </div>
+      ) : (
+        <>
+          {/* Fear & Greed Index */}
+          <div className="mb-3">
+            <div className="flex items-baseline gap-2">
+              <span className={`text-2xl font-bold ${getSentimentColor(fearGreedIndex)}`}>
+                {fearGreedIndex ?? '--'}
+              </span>
+              <span className={`text-xs ${getSentimentColor(fearGreedIndex)}`}>
+                {getSentimentLabel(fearGreedIndex)}
+              </span>
             </div>
-          ))
-        ) : (
-          <div className="col-span-3 text-center text-sm text-muted-foreground py-4">
-            No price data available
+            
+            {/* Gauge bar */}
+            <div className="mt-2 h-1.5 bg-secondary rounded-full overflow-hidden">
+              <div 
+                className="h-full transition-all duration-500 rounded-full"
+                style={{ 
+                  width: `${fearGreedIndex ?? 0}%`,
+                  background: fearGreedIndex !== null 
+                    ? `linear-gradient(90deg, 
+                        rgb(239, 68, 68) 0%, 
+                        rgb(249, 115, 22) 25%, 
+                        rgb(234, 179, 8) 50%, 
+                        rgb(132, 204, 22) 75%, 
+                        rgb(34, 197, 94) 100%)`
+                    : 'hsl(var(--muted))'
+                }}
+              />
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Price Changes */}
+          <div className="space-y-1.5">
+            {priceChanges.length > 0 ? (
+              priceChanges.map(({ symbol, change }) => (
+                <div key={symbol} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{symbol}</span>
+                  <div className="flex items-center gap-1">
+                    {getTrendIcon(change)}
+                    <span className={getTrendColor(change)}>
+                      {change > 0 ? '+' : ''}{change.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground">No price data available</p>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
