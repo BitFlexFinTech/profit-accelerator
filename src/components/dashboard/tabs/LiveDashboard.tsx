@@ -6,6 +6,7 @@ import { TradeActivityTerminal } from '../panels/TradeActivityTerminal';
 import { CloudStatusPanel } from '../panels/CloudStatusPanel';
 import { SentimentPanel } from '../panels/SentimentPanel';
 import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
+import { PortfolioBreakdownPanel } from '../panels/PortfolioBreakdownPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { supabase } from '@/integrations/supabase/client';
@@ -62,11 +63,16 @@ export function LiveDashboard() {
           </div>
         </div>
 
-        {/* Right: Cloud Status + Sentiment + AI Updates (40% width) */}
+        {/* Right: Cloud Status + Portfolio + Sentiment + AI Updates (40% width) */}
         <div className="lg:col-span-2 flex flex-col gap-3 min-h-0">
           {/* Cloud Status - Compact 8-provider row */}
           <div className="flex-shrink-0">
             <CloudStatusPanel />
+          </div>
+
+          {/* Portfolio Breakdown - Pie chart */}
+          <div className="flex-shrink-0">
+            <PortfolioBreakdownPanel />
           </div>
 
           {/* Sentiment Panel - Exchange data only */}
