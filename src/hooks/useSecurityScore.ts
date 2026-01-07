@@ -54,38 +54,9 @@ export function useSecurityScore() {
       toast.success('Security scan complete');
     } catch (err) {
       console.error('Security scan failed:', err);
-      // Use mock data for demo
-      const mockIssues: SecurityIssue[] = [
-        {
-          id: 'binance-withdraw',
-          provider: 'Binance',
-          credentialType: 'exchange',
-          severity: 'critical',
-          message: 'Withdrawal permission enabled',
-          recommendation: 'Disable withdrawal permission for trading API',
-          canAutoFix: true,
-        },
-        {
-          id: 'bybit-no-ip',
-          provider: 'Bybit',
-          credentialType: 'exchange',
-          severity: 'warning',
-          message: 'No IP restriction configured',
-          recommendation: 'Add VPS IP 167.179.83.239 to whitelist',
-          canAutoFix: true,
-        },
-        {
-          id: 'vultr-rotation',
-          provider: 'Vultr',
-          credentialType: 'cloud',
-          severity: 'info',
-          message: 'API key not rotated in 45 days',
-          recommendation: 'Rotate API key for security best practices',
-          canAutoFix: false,
-        },
-      ];
-      setIssues(mockIssues);
-      setScore(calculateScore(mockIssues));
+      // No mock data - show empty state
+      setIssues([]);
+      setScore(100); // Default score when no issues found
     } finally {
       setIsScanning(false);
     }

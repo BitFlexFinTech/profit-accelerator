@@ -86,13 +86,8 @@ export function FailoverStatusPanel() {
 
   useEffect(() => {
     fetchData();
-
-    // Initialize health statuses with demo data
-    setHealthStatuses(new Map([
-      ['vultr', { provider: 'vultr', status: 'healthy', latency: 18, lastCheck: new Date() }],
-      ['oracle', { provider: 'oracle', status: 'healthy', latency: 22, lastCheck: new Date() }],
-      ['aws', { provider: 'aws', status: 'healthy', latency: 35, lastCheck: new Date() }],
-    ]));
+    // Fetch real health check results from database
+    fetchHealthStatuses();
 
     // Health check every 30 seconds
     const interval = setInterval(() => {
@@ -102,34 +97,67 @@ export function FailoverStatusPanel() {
     return () => clearInterval(interval);
   }, []);
 
+  const fetchHealthStatuses = async () => {
+    try {
+      const { data } = await supabase
+        .from('health_check_results')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (data && data.length > 0) {
+        const newStatuses = new Map<string, HealthStatus>();
+        data.forEach(result => {
+          if (result.provider && !newStatuses.has(result.provider)) {
+            newStatuses.set(result.provider, {
+              provider: result.provider,
+              status: result.status === 'ok' ? 'healthy' : result.status === 'warning' ? 'warning' : 'down',
+              latency: (result.details as any)?.latency || 0,
+              lastCheck: new Date(result.created_at || Date.now()),
+            });
+          }
+        });
+        if (newStatuses.size > 0) {
+          setHealthStatuses(newStatuses);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch health statuses:', err);
+    }
+  };
+
   const runHealthCheck = async () => {
     setIsChecking(true);
     
-    // Simulate health checks
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const newStatuses = new Map<string, HealthStatus>();
-    configs.forEach(config => {
-      const latency = Math.floor(Math.random() * 40) + 10;
-      newStatuses.set(config.provider, {
-        provider: config.provider,
-        status: latency < 100 ? 'healthy' : latency < 300 ? 'warning' : 'down',
-        latency,
-        lastCheck: new Date(),
+    try {
+      // Call real health check edge function
+      const { data, error } = await supabase.functions.invoke('check-vps-health', {
+        body: { action: 'check-all' }
       });
-    });
-    
-    // Ensure we have defaults
-    if (!newStatuses.has('vultr')) {
-      newStatuses.set('vultr', { provider: 'vultr', status: 'healthy', latency: 18, lastCheck: new Date() });
+
+      if (error) throw error;
+
+      if (data?.results) {
+        const newStatuses = new Map<string, HealthStatus>();
+        Object.entries(data.results).forEach(([provider, result]: [string, any]) => {
+          newStatuses.set(provider, {
+            provider,
+            status: result.status === 'ok' ? 'healthy' : result.status === 'warning' ? 'warning' : 'down',
+            latency: result.latency || 0,
+            lastCheck: new Date(),
+          });
+        });
+        setHealthStatuses(newStatuses);
+      }
+      
+      setLastCheck(new Date());
+    } catch (err) {
+      console.error('Health check failed:', err);
+      // Refresh from database on failure
+      fetchHealthStatuses();
+    } finally {
+      setIsChecking(false);
     }
-    if (!newStatuses.has('oracle')) {
-      newStatuses.set('oracle', { provider: 'oracle', status: 'healthy', latency: 22, lastCheck: new Date() });
-    }
-    
-    setHealthStatuses(newStatuses);
-    setLastCheck(new Date());
-    setIsChecking(false);
   };
 
   const testHealthEndpoint = async () => {

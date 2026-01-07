@@ -21,13 +21,10 @@ export function ExchangePingPanel() {
     return 'status-offline';
   };
 
-  // Generate mock ping values for demo (in production, this would come from actual ping tests)
+  // Only use real ping data from database - no mock data
   const getDisplayPing = (exchange: typeof exchanges[0]) => {
     if (!exchange.is_connected) return null;
-    // Use last_ping_ms if available, otherwise generate based on exchange name hash
-    if (exchange.last_ping_ms) return exchange.last_ping_ms;
-    const hash = exchange.exchange_name.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-    return 20 + (hash % 180);
+    return exchange.last_ping_ms ?? null; // Real data only, null if not available
   };
 
   return (
