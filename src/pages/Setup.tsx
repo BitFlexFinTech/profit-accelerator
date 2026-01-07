@@ -120,11 +120,15 @@ export default function Setup() {
 
     setIsConnecting(true);
     try {
-      // Save all credentials to cloud_config
+      let successCount = 0;
+      let failCount = 0;
+
+      // Deploy each provider with real API
       for (const provider of CLOUD_PROVIDERS) {
         const cred = credentials[provider.id];
         if (!cred?.apiKey) continue;
 
+        // Save credentials first
         const credentialsObj: Record<string, string> = {
           [provider.apiKeyField]: cred.apiKey,
         };
@@ -136,29 +140,48 @@ export default function Setup() {
           provider: provider.id,
           region: provider.region,
           credentials: credentialsObj,
-          is_active: true,
-          status: 'configured',
+          is_active: false,
+          status: 'provisioning',
         }, { onConflict: 'provider' });
 
-        // Update local state
-        setCredentials(prev => ({
-          ...prev,
-          [provider.id]: {
-            ...prev[provider.id],
-            isActive: true,
+        // Call real provisioning endpoint
+        try {
+          const { data, error } = await supabase.functions.invoke('provision-vps', {
+            body: { 
+              provider: provider.id,
+              targetExchange: 'binance', // Default to Tokyo mesh
+              credentials: credentialsObj
+            }
+          });
+
+          if (error || !data?.success) {
+            console.error(`[Setup] ${provider.id} deploy failed:`, error || data?.error);
+            failCount++;
+          } else {
+            successCount++;
+            toast.success(`${provider.shortName} deployed: ${data.publicIp || 'Provisioning...'}`);
+            
+            // Update local state
+            setCredentials(prev => ({
+              ...prev,
+              [provider.id]: {
+                ...prev[provider.id],
+                isActive: true,
+              }
+            }));
           }
-        }));
+        } catch (deployError) {
+          console.error(`[Setup] ${provider.id} deploy error:`, deployError);
+          failCount++;
+        }
       }
 
-      toast.success('All cloud providers connected successfully!');
-
-      // Trigger mesh deployment
-      const { data, error } = await supabase.functions.invoke('auto-provision-mesh', {
-        body: { action: 'deploy-all' }
-      });
-
-      if (error) throw error;
-      toast.success(`Mesh deployment started: ${data?.deployed?.length || 0} providers`);
+      if (successCount > 0) {
+        toast.success(`Successfully deployed ${successCount} VPS instances!`);
+      }
+      if (failCount > 0) {
+        toast.warning(`${failCount} providers failed - check API keys`);
+      }
     } catch (err) {
       console.error('Connect all error:', err);
       toast.error('Failed to connect providers');
