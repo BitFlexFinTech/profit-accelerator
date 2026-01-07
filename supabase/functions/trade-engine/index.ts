@@ -102,29 +102,130 @@ serve(async (req) => {
           );
         }
 
-        // Fetch real balance from exchange API
+        // Fetch real balance from exchange API with proper authentication
         let balance = 0;
+        let pingMs = 0;
+        const startTime = Date.now();
+        
         try {
-          const exchangeApi = EXCHANGE_APIS[exchangeName.toLowerCase()];
-          if (exchangeApi && apiKey && apiSecret) {
-            // For real implementation, would sign request and fetch actual balance
-            // For now, get stored balance from DB
-            const { data: existingExchange } = await supabase
-              .from('exchange_connections')
-              .select('balance_usdt')
-              .eq('exchange_name', exchangeName)
-              .single();
+          const exchangeKey = exchangeName.toLowerCase();
+          
+          if (exchangeKey === 'binance' && apiKey && apiSecret) {
+            // Binance HMAC-SHA256 signature
+            const timestamp = Date.now();
+            const queryString = `timestamp=${timestamp}`;
+            const encoder = new TextEncoder();
+            const key = await crypto.subtle.importKey(
+              'raw', encoder.encode(apiSecret),
+              { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+            );
+            const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(queryString));
+            const signatureHex = Array.from(new Uint8Array(signature))
+              .map(b => b.toString(16).padStart(2, '0')).join('');
             
-            balance = existingExchange?.balance_usdt || 0;
+            const response = await fetch(
+              `https://api.binance.com/api/v3/account?${queryString}&signature=${signatureHex}`,
+              { headers: { 'X-MBX-APIKEY': apiKey } }
+            );
+            pingMs = Date.now() - startTime;
+            
+            if (response.ok) {
+              const data = await response.json();
+              const usdtBalance = data.balances?.find((b: { asset: string }) => b.asset === 'USDT');
+              balance = parseFloat(usdtBalance?.free || '0') + parseFloat(usdtBalance?.locked || '0');
+            } else {
+              const error = await response.json();
+              throw new Error(error.msg || 'Binance API error');
+            }
+          } else if (exchangeKey === 'okx' && apiKey && apiSecret && apiPassphrase) {
+            // OKX signature
+            const timestamp = new Date().toISOString();
+            const method = 'GET';
+            const requestPath = '/api/v5/account/balance';
+            const message = timestamp + method + requestPath;
+            
+            const encoder = new TextEncoder();
+            const key = await crypto.subtle.importKey(
+              'raw', encoder.encode(apiSecret),
+              { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+            );
+            const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+            const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+            
+            const response = await fetch(`https://www.okx.com${requestPath}`, {
+              headers: {
+                'OK-ACCESS-KEY': apiKey,
+                'OK-ACCESS-SIGN': signatureB64,
+                'OK-ACCESS-TIMESTAMP': timestamp,
+                'OK-ACCESS-PASSPHRASE': apiPassphrase,
+                'Content-Type': 'application/json'
+              }
+            });
+            pingMs = Date.now() - startTime;
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data.code === '0' && data.data?.[0]) {
+                balance = parseFloat(data.data[0].totalEq || '0');
+              }
+            } else {
+              throw new Error('OKX API error');
+            }
+          } else if (exchangeKey === 'bybit' && apiKey && apiSecret) {
+            // Bybit signature
+            const timestamp = Date.now().toString();
+            const recvWindow = '5000';
+            const queryString = `accountType=UNIFIED`;
+            const message = timestamp + apiKey + recvWindow + queryString;
+            
+            const encoder = new TextEncoder();
+            const key = await crypto.subtle.importKey(
+              'raw', encoder.encode(apiSecret),
+              { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+            );
+            const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+            const signatureHex = Array.from(new Uint8Array(signature))
+              .map(b => b.toString(16).padStart(2, '0')).join('');
+            
+            const response = await fetch(
+              `https://api.bybit.com/v5/account/wallet-balance?${queryString}`,
+              {
+                headers: {
+                  'X-BAPI-API-KEY': apiKey,
+                  'X-BAPI-SIGN': signatureHex,
+                  'X-BAPI-TIMESTAMP': timestamp,
+                  'X-BAPI-RECV-WINDOW': recvWindow
+                }
+              }
+            );
+            pingMs = Date.now() - startTime;
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data.retCode === 0 && data.result?.list?.[0]) {
+                balance = parseFloat(data.result.list[0].totalEquity || '0');
+              }
+            } else {
+              throw new Error('Bybit API error');
+            }
+          } else {
+            // Fallback: validate format only
+            pingMs = Date.now() - startTime;
           }
-        } catch (balanceError) {
+        } catch (balanceError: unknown) {
+          const errorMessage = balanceError instanceof Error ? balanceError.message : 'Failed to connect';
           console.error(`[trade-engine] Balance fetch error for ${exchangeName}:`, balanceError);
+          return new Response(
+            JSON.stringify({ success: false, error: errorMessage }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
 
         return new Response(
           JSON.stringify({ 
             success: true, 
             balance: balance.toFixed(2),
+            pingMs,
             message: `Connected to ${exchangeName} successfully`
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -295,7 +396,7 @@ serve(async (req) => {
       }
 
       case 'sync-balances': {
-        // Sync balances for all connected exchanges
+        // Sync balances for all connected exchanges with real API calls
         console.log('[trade-engine] Syncing all balances');
         
         const { data: exchanges } = await supabase
@@ -310,23 +411,125 @@ serve(async (req) => {
           );
         }
 
-        // For demo, simulate balance updates
         const updatedBalances: Record<string, number> = {};
+        const errors: Record<string, string> = {};
+        
         for (const exchange of exchanges) {
-          const newBalance = (exchange.balance_usdt || 0) + (Math.random() * 10 - 5);
-          updatedBalances[exchange.exchange_name] = Math.max(0, newBalance);
+          const exchangeKey = exchange.exchange_name.toLowerCase();
+          let newBalance = exchange.balance_usdt || 0;
+          const startTime = Date.now();
+          
+          try {
+            if (exchangeKey === 'binance' && exchange.api_key && exchange.api_secret) {
+              const timestamp = Date.now();
+              const queryString = `timestamp=${timestamp}`;
+              const encoder = new TextEncoder();
+              const key = await crypto.subtle.importKey(
+                'raw', encoder.encode(exchange.api_secret),
+                { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+              );
+              const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(queryString));
+              const signatureHex = Array.from(new Uint8Array(signature))
+                .map(b => b.toString(16).padStart(2, '0')).join('');
+              
+              const response = await fetch(
+                `https://api.binance.com/api/v3/account?${queryString}&signature=${signatureHex}`,
+                { headers: { 'X-MBX-APIKEY': exchange.api_key } }
+              );
+              
+              if (response.ok) {
+                const data = await response.json();
+                const usdtBalance = data.balances?.find((b: { asset: string }) => b.asset === 'USDT');
+                newBalance = parseFloat(usdtBalance?.free || '0') + parseFloat(usdtBalance?.locked || '0');
+              }
+            } else if (exchangeKey === 'okx' && exchange.api_key && exchange.api_secret && exchange.api_passphrase) {
+              const timestamp = new Date().toISOString();
+              const method = 'GET';
+              const requestPath = '/api/v5/account/balance';
+              const message = timestamp + method + requestPath;
+              
+              const encoder = new TextEncoder();
+              const key = await crypto.subtle.importKey(
+                'raw', encoder.encode(exchange.api_secret),
+                { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+              );
+              const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+              const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+              
+              const response = await fetch(`https://www.okx.com${requestPath}`, {
+                headers: {
+                  'OK-ACCESS-KEY': exchange.api_key,
+                  'OK-ACCESS-SIGN': signatureB64,
+                  'OK-ACCESS-TIMESTAMP': timestamp,
+                  'OK-ACCESS-PASSPHRASE': exchange.api_passphrase,
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data.code === '0' && data.data?.[0]) {
+                  newBalance = parseFloat(data.data[0].totalEq || '0');
+                }
+              }
+            } else if (exchangeKey === 'bybit' && exchange.api_key && exchange.api_secret) {
+              const timestamp = Date.now().toString();
+              const recvWindow = '5000';
+              const queryString = `accountType=UNIFIED`;
+              const message = timestamp + exchange.api_key + recvWindow + queryString;
+              
+              const encoder = new TextEncoder();
+              const key = await crypto.subtle.importKey(
+                'raw', encoder.encode(exchange.api_secret),
+                { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+              );
+              const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+              const signatureHex = Array.from(new Uint8Array(signature))
+                .map(b => b.toString(16).padStart(2, '0')).join('');
+              
+              const response = await fetch(
+                `https://api.bybit.com/v5/account/wallet-balance?${queryString}`,
+                {
+                  headers: {
+                    'X-BAPI-API-KEY': exchange.api_key,
+                    'X-BAPI-SIGN': signatureHex,
+                    'X-BAPI-TIMESTAMP': timestamp,
+                    'X-BAPI-RECV-WINDOW': recvWindow
+                  }
+                }
+              );
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data.retCode === 0 && data.result?.list?.[0]) {
+                  newBalance = parseFloat(data.result.list[0].totalEquity || '0');
+                }
+              }
+            }
+            
+            const pingMs = Date.now() - startTime;
+            updatedBalances[exchange.exchange_name] = newBalance;
 
-          await supabase
-            .from('exchange_connections')
-            .update({
-              balance_usdt: updatedBalances[exchange.exchange_name],
-              balance_updated_at: new Date().toISOString()
-            })
-            .eq('id', exchange.id);
+            await supabase
+              .from('exchange_connections')
+              .update({
+                balance_usdt: newBalance,
+                balance_updated_at: new Date().toISOString(),
+                last_ping_ms: pingMs,
+                last_ping_at: new Date().toISOString()
+              })
+              .eq('id', exchange.id);
+              
+          } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            console.error(`[trade-engine] Sync error for ${exchange.exchange_name}:`, err);
+            errors[exchange.exchange_name] = errorMessage;
+            updatedBalances[exchange.exchange_name] = exchange.balance_usdt || 0;
+          }
         }
 
         return new Response(
-          JSON.stringify({ success: true, balances: updatedBalances }),
+          JSON.stringify({ success: true, balances: updatedBalances, errors: Object.keys(errors).length ? errors : undefined }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
