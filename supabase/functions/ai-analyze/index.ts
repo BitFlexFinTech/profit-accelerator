@@ -87,7 +87,8 @@ serve(async (req) => {
       
       const { data: cfg } = await supabase.from('ai_config').select('model, id').eq('provider', 'groq').single();
       const exName = ex[0].exchange_name.toLowerCase();
-      const syms = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+      // Expanded asset coverage: BTC, ETH, SOL, DOGE, XRP, ADA, AVAX, LINK
+      const syms = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT'];
       let count = 0;
 
       for (const s of syms) {

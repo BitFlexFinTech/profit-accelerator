@@ -80,13 +80,7 @@ export function useSecurityScore() {
       toast.success('Security issue fixed!');
     } catch (err) {
       console.error('Auto-fix failed:', err);
-      // Simulate fix for demo
-      setIssues(prev => {
-        const updated = prev.filter(i => i.id !== issueId);
-        setScore(calculateScore(updated));
-        return updated;
-      });
-      toast.success('Security issue fixed!');
+      toast.error('Security fix failed - check settings');
     }
   };
 

@@ -38,7 +38,7 @@ export function SentimentPanel() {
       const { data, error } = await supabase.functions.invoke('trade-engine', {
         body: { 
           action: 'get-tickers',
-          symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+          symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT']
         }
       });
 
