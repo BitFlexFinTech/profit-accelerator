@@ -69,13 +69,17 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
   }, [status]);
 
   const isDeploying = status.vps.status === 'deploying';
+  const isReadyForSetup = !status.vps.ip && botStatus === 'stopped';
 
   const getVpsTooltip = () => {
+    if (isReadyForSetup) {
+      return 'Ready for Setup - Configure VPS in Settings';
+    }
     if (botStatus === 'running') {
       const provider = status.vps.provider 
         ? `${status.vps.provider.charAt(0).toUpperCase()}${status.vps.provider.slice(1)}` 
         : '';
-      return `Running on ${status.vps.ip || 'Tokyo VPS'}${provider ? ` - ${provider}` : ''}`;
+      return `Running on ${status.vps.ip || 'VPS'}${provider ? ` - ${provider}` : ''}`;
     }
     if (status.vps.status === 'idle' && status.vps.ip) {
       return `Connected (Idle) - ${status.vps.ip}`;

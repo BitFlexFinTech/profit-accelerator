@@ -12,7 +12,6 @@ import {
   Loader2,
   Brain,
   Cloud,
-  Globe,
   ArrowLeftRight,
   ArrowRight,
   ArrowLeft
@@ -22,26 +21,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
 import { TelegramWizard } from '../wizards/TelegramWizard';
 import { ExchangeWizard } from '../wizards/ExchangeWizard';
 import { TradeCopierWizard } from '../wizards/TradeCopierWizard';
 import { GroqWizard } from '../wizards/GroqWizard';
-import { CloudWizard } from '../wizards/CloudWizard';
-import { OracleWizard } from '../wizards/OracleWizard';
-import { GCPWizard } from '../wizards/GCPWizard';
-import { VultrWizard } from '../wizards/VultrWizard';
-import { LinodeWizard } from '../wizards/LinodeWizard';
-import { AWSWizard } from '../wizards/AWSWizard';
-import { CloudwaysWizard } from '../wizards/CloudwaysWizard';
-import { BitLaunchWizard } from '../wizards/BitLaunchWizard';
+import { ContaboWizard } from '../wizards/ContaboWizard';
 import { SecurityHardeningWizard } from '../wizards/SecurityHardeningWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
 import { useHFTSettings } from '@/hooks/useHFTSettings';
 import { useAIConfig } from '@/hooks/useAIConfig';
-import { useCloudConfig } from '@/hooks/useCloudConfig';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -66,7 +56,7 @@ function VPSStatusSection() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 rounded-lg bg-secondary/30">
           <p className="text-muted-foreground text-sm">Region</p>
-          <p className="font-medium text-accent">Tokyo ({vps.region || 'nrt'})</p>
+          <p className="font-medium text-accent">Singapore ({vps.region || 'sgp'})</p>
         </div>
         <div className="p-4 rounded-lg bg-secondary/30">
           <p className="text-muted-foreground text-sm">Status</p>
@@ -197,26 +187,18 @@ function WalletTransferSection() {
 
 export function SettingsTab() {
   const [activeWizard, setActiveWizard] = useState<string | null>(null);
-  const [cloudProvider, setCloudProvider] = useState<'digitalocean' | 'aws' | 'gcp' | null>(null);
   const telegramStatus = useTelegramStatus();
   const exchangeStatus = useExchangeStatus();
   const { settings, setSettings, isLoading, isSaving, saveSettings } = useHFTSettings();
   const { config: aiConfig, isActive: aiIsActive } = useAIConfig();
-  const { configs: cloudConfigs, updateFreeTierPreference } = useCloudConfig();
+  const { vps } = useSystemStatus();
 
   // Local state for form values
   const [localSettings, setLocalSettings] = useState(settings);
-  const [useFreeTier, setUseFreeTier] = useState(true);
 
   useEffect(() => {
     setLocalSettings(settings);
   }, [settings]);
-
-  useEffect(() => {
-    if (cloudConfigs.length > 0) {
-      setUseFreeTier(cloudConfigs[0]?.use_free_tier ?? true);
-    }
-  }, [cloudConfigs]);
 
   const handleSaveRiskSettings = async () => {
     await saveSettings({
@@ -236,15 +218,7 @@ export function SettingsTab() {
     });
   };
 
-  const handleFreeTierChange = async (checked: boolean) => {
-    setUseFreeTier(checked);
-    await updateFreeTierPreference(checked);
-  };
-
-  const getCloudProviderStatus = (provider: string) => {
-    const config = cloudConfigs.find(c => c.provider === provider);
-    return config?.status === 'configured';
-  };
+  const isVpsConnected = vps.status === 'running' || vps.status === 'idle';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -387,7 +361,7 @@ export function SettingsTab() {
         )}
       </div>
 
-      {/* Cloud Infrastructure Section */}
+      {/* Cloud Infrastructure Section - Contabo Only */}
       <div className="glass-card p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-lg bg-sky-500/20 flex items-center justify-center">
@@ -395,159 +369,35 @@ export function SettingsTab() {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold">Cloud Infrastructure</h3>
-            <p className="text-sm text-muted-foreground">One-click VPS setup for HFT deployment</p>
+            <p className="text-sm text-muted-foreground">Register your Contabo VPS for HFT deployment</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-          {/* DigitalOcean - Recommended */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Contabo Singapore - Single Provider */}
           <button
-            onClick={() => { setCloudProvider('digitalocean'); setActiveWizard('cloud'); }}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group relative"
+            onClick={() => setActiveWizard('contabo')}
+            className="p-6 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group relative"
           >
             <div className="absolute -top-2 -right-2">
-              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">Recommended</span>
-            </div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">🌊</span>
-              {getCloudProviderStatus('digitalocean') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
+              {isVpsConnected ? (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success font-medium">Connected</span>
+              ) : (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">Ready</span>
               )}
             </div>
-            <p className="font-medium">DigitalOcean</p>
-            <p className="text-xs text-muted-foreground">Singapore (sgp1) - Near Tokyo</p>
-            <span className="text-xs text-warning">$200 Credit - 60 days</span>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-3xl">🌏</span>
+            </div>
+            <p className="font-medium text-lg">Contabo Singapore</p>
+            <p className="text-sm text-muted-foreground mt-1">Register your Contabo VPS</p>
+            <span className="text-xs text-accent mt-2 block">Enter IP Address to connect</span>
           </button>
 
-          {/* AWS - Recommended */}
-          <button
-            onClick={() => setActiveWizard('aws-wizard')}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group relative"
-          >
-            <div className="absolute -top-2 -right-2">
-              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">Recommended</span>
-            </div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">☁️</span>
-              {getCloudProviderStatus('aws') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
-              )}
-            </div>
-            <p className="font-medium">AWS</p>
-            <p className="text-xs text-muted-foreground">Tokyo (ap-northeast-1)</p>
-            <span className="text-xs text-warning">$200 Credit - t4g.micro</span>
-          </button>
-
-          {/* Google Cloud */}
-          <button
-            onClick={() => setActiveWizard('gcp-wizard')}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">🔷</span>
-              {getCloudProviderStatus('gcp') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
-              )}
-            </div>
-            <p className="font-medium">Google Cloud</p>
-            <p className="text-xs text-muted-foreground">Tokyo (asia-northeast1)</p>
-            <span className="text-xs text-success">Free Tier - e2-micro</span>
-          </button>
-
-          {/* Oracle Cloud */}
-          <button
-            onClick={() => setActiveWizard('oracle')}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">🔴</span>
-              {getCloudProviderStatus('oracle') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
-              )}
-            </div>
-            <p className="font-medium">Oracle Cloud</p>
-            <p className="text-xs text-muted-foreground">Tokyo (ap-tokyo-1)</p>
-            <span className="text-xs text-success">Always Free - 4 OCPU, 24GB</span>
-          </button>
-
-          {/* Linode */}
-          <button
-            onClick={() => setActiveWizard('linode-wizard')}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <Globe className="w-6 h-6 text-green-500" />
-              {getCloudProviderStatus('linode') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
-              )}
-            </div>
-            <p className="font-medium">Linode / Akamai</p>
-            <p className="text-xs text-muted-foreground">Tokyo 2 (ap-northeast)</p>
-            <span className="text-xs text-warning">$100 Credit - Nanode</span>
-          </button>
-
-          {/* Cloudways */}
-          <button
-            onClick={() => setActiveWizard('cloudways-wizard')}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">🚀</span>
-              {getCloudProviderStatus('cloudways') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
-              )}
-            </div>
-            <p className="font-medium">Cloudways</p>
-            <p className="text-xs text-muted-foreground">Managed Hosting</p>
-            <span className="text-xs text-warning">$14+/mo</span>
-          </button>
-
-          {/* BitLaunch */}
-          <button
-            onClick={() => setActiveWizard('bitlaunch-wizard')}
-            className="p-4 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-2xl">₿</span>
-              {getCloudProviderStatus('bitlaunch') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
-              )}
-            </div>
-            <p className="font-medium">BitLaunch</p>
-            <p className="text-xs text-muted-foreground">Crypto VPS</p>
-            <span className="text-xs text-warning">Pay with Crypto</span>
-          </button>
-
-          {/* Vultr - De-emphasized, moved to last */}
-          <button
-            onClick={() => setActiveWizard('vultr-wizard')}
-            className="p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors text-left group opacity-60"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <Zap className="w-6 h-6 text-muted-foreground" />
-              {getCloudProviderStatus('vultr') && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">Connected</span>
-              )}
-            </div>
-            <p className="font-medium text-muted-foreground">Vultr</p>
-            <p className="text-xs text-muted-foreground">Tokyo (NRT)</p>
-            <span className="text-xs text-muted-foreground">$250 Credit</span>
-          </button>
-
-          <div className="flex items-center gap-3">
-            <Checkbox 
-              id="freeTier" 
-              checked={useFreeTier}
-              onCheckedChange={handleFreeTierChange}
-            />
-            <div>
-              <label htmlFor="freeTier" className="font-medium cursor-pointer">Use Free Tier eligible instances</label>
-              <p className="text-xs text-muted-foreground">t4g.micro (AWS), e2-micro (GCP), $4 Droplet (DO)</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Lock className="w-4 h-4" />
-            <span>Region locked to Tokyo</span>
+          <div className="p-6 rounded-lg bg-muted/20 border border-dashed border-muted-foreground/30 flex flex-col items-center justify-center text-center">
+            <Lock className="w-6 h-6 text-muted-foreground mb-2" />
+            <p className="text-sm text-muted-foreground">Region locked to Singapore</p>
+            <p className="text-xs text-muted-foreground mt-1">Optimized for Asian exchange latency</p>
           </div>
         </div>
       </div>
@@ -636,7 +486,7 @@ export function SettingsTab() {
             <Zap className="w-5 h-5 text-warning" />
           </div>
           <div>
-            <h3 className="font-semibold">Tokyo Latency Optimizer</h3>
+            <h3 className="font-semibold">Latency Optimizer</h3>
             <p className="text-sm text-muted-foreground">Ultra-low latency HFT settings</p>
           </div>
         </div>
@@ -645,11 +495,11 @@ export function SettingsTab() {
           <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
             <div>
               <p className="font-medium">Regional Routing</p>
-              <p className="text-xs text-muted-foreground">Locked to Tokyo for lowest latency</p>
+              <p className="text-xs text-muted-foreground">Locked to Singapore for lowest latency</p>
             </div>
             <div className="flex items-center gap-2">
               <Lock className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-mono text-accent">ap-northeast-1</span>
+              <span className="text-sm font-mono text-accent">ap-southeast-1</span>
             </div>
           </div>
 
@@ -799,6 +649,8 @@ export function SettingsTab() {
 
       {/* Wallet Transfers */}
       <WalletTransferSection />
+
+      {/* Wizards */}
       <TelegramWizard 
         open={activeWizard === 'telegram'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
@@ -815,37 +667,8 @@ export function SettingsTab() {
         open={activeWizard === 'groq'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
-      <CloudWizard 
-        open={activeWizard === 'cloud'} 
-        onOpenChange={(open) => { if (!open) { setActiveWizard(null); setCloudProvider(null); } }}
-        provider={cloudProvider}
-      />
-      <OracleWizard 
-        open={activeWizard === 'oracle'} 
-        onOpenChange={(open) => !open && setActiveWizard(null)} 
-      />
-      <GCPWizard 
-        open={activeWizard === 'gcp-wizard'} 
-        onOpenChange={(open) => !open && setActiveWizard(null)} 
-      />
-      <VultrWizard 
-        open={activeWizard === 'vultr-wizard'} 
-        onOpenChange={(open) => !open && setActiveWizard(null)} 
-      />
-      <LinodeWizard 
-        open={activeWizard === 'linode-wizard'} 
-        onOpenChange={(open) => !open && setActiveWizard(null)} 
-      />
-      <AWSWizard 
-        open={activeWizard === 'aws-wizard'} 
-        onOpenChange={(open) => !open && setActiveWizard(null)} 
-      />
-      <CloudwaysWizard 
-        open={activeWizard === 'cloudways-wizard'} 
-        onOpenChange={(open) => !open && setActiveWizard(null)} 
-      />
-      <BitLaunchWizard 
-        open={activeWizard === 'bitlaunch-wizard'} 
+      <ContaboWizard 
+        open={activeWizard === 'contabo'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
       <SecurityHardeningWizard 

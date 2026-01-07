@@ -13,8 +13,8 @@ SERVER_IP=$(hostname -I | awk '{print $1}')
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║          HFT Bot Installation - Cloud VPS                  ║"
-echo "║          Server: \$SERVER_IP                                ║"
+echo "║          HFT Bot Installation - Contabo VPS                ║"
+echo "║          Region: Singapore | Server: \$SERVER_IP            ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
