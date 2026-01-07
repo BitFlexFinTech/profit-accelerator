@@ -6,6 +6,17 @@ import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
+import { useAppStore } from '@/store/useAppStore';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 type BotStatus = 'idle' | 'running' | 'stopped';
 
@@ -22,8 +33,10 @@ export function BotControlPanel() {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showLiveConfirm, setShowLiveConfirm] = useState(false);
   
   const { sync } = useExchangeWebSocket();
+  const getTotalEquity = useAppStore(state => state.getTotalEquity);
 
   const handleSyncBalances = async () => {
     setIsSyncing(true);
@@ -55,7 +68,6 @@ export function BotControlPanel() {
 
     fetchStatus();
 
-    // Subscribe to realtime changes
     const channel = supabase
       .channel('bot-control-changes')
       .on('postgres_changes', {
@@ -81,7 +93,6 @@ export function BotControlPanel() {
   const handleStartBot = async () => {
     setIsStarting(true);
     try {
-      // Get active VPS IP dynamically
       const { data: vpsConfig } = await supabase
         .from('vps_config')
         .select('outbound_ip, provider')
@@ -92,7 +103,6 @@ export function BotControlPanel() {
       const serverIp = vpsConfig?.outbound_ip;
       const provider = vpsConfig?.provider;
 
-      // 1. Signal VPS to start (if IP configured)
       if (serverIp) {
         const { error: vpsError } = await supabase.functions.invoke('install-hft-bot', {
           body: { action: 'start-bot', serverIp }
@@ -103,7 +113,6 @@ export function BotControlPanel() {
         }
       }
 
-      // 2. Update database
       await supabase.from('trading_config')
         .update({ 
           bot_status: 'running', 
@@ -128,10 +137,17 @@ export function BotControlPanel() {
     }
   };
 
+  const handleStartClick = () => {
+    if (!testMode) {
+      setShowLiveConfirm(true);
+    } else {
+      handleStartBot();
+    }
+  };
+
   const handleStopBot = async () => {
     setIsStopping(true);
     try {
-      // Get active VPS IP dynamically
       const { data: vpsConfig } = await supabase
         .from('vps_config')
         .select('outbound_ip, provider')
@@ -142,7 +158,6 @@ export function BotControlPanel() {
       const serverIp = vpsConfig?.outbound_ip;
       const provider = vpsConfig?.provider;
 
-      // 1. Signal VPS to stop (if IP configured)
       if (serverIp) {
         const { error: vpsError } = await supabase.functions.invoke('install-hft-bot', {
           body: { action: 'stop-bot', serverIp }
@@ -153,7 +168,6 @@ export function BotControlPanel() {
         }
       }
 
-      // 2. Update database
       await supabase.from('trading_config')
         .update({ 
           bot_status: 'stopped', 
@@ -221,6 +235,8 @@ export function BotControlPanel() {
     }
   };
 
+  const totalEquity = getTotalEquity();
+
   if (isLoading) {
     return (
       <div className="glass-card p-4 flex items-center justify-center">
@@ -230,88 +246,120 @@ export function BotControlPanel() {
   }
 
   return (
-    <div className="glass-card p-4">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        {/* Status Section */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-muted-foreground">Bot Status:</span>
-            {getStatusBadge()}
-          </div>
-          
-          {testMode && (
-            <Badge variant="outline" className="bg-warning/10 text-warning border-warning/40 gap-1">
-              <FlaskConical className="w-3 h-3" />
-              TEST MODE
-            </Badge>
-          )}
-        </div>
-
-        {/* Controls Section */}
-        <div className="flex items-center gap-4">
-          {/* Sync Balances Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSyncBalances}
-            disabled={isSyncing}
-            className="gap-2"
-          >
-            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            Sync
-          </Button>
-          
-          {/* Test Mode Toggle */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Test Mode:</span>
-            <Switch 
-              checked={testMode} 
-              onCheckedChange={handleTestModeToggle}
-              disabled={botStatus === 'running'}
-            />
+    <>
+      <div className="glass-card p-4">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Bot Status:</span>
+              {getStatusBadge()}
+            </div>
+            
+            {testMode && (
+              <Badge variant="outline" className="bg-warning/10 text-warning border-warning/40 gap-1">
+                <FlaskConical className="w-3 h-3" />
+                TEST MODE
+              </Badge>
+            )}
           </div>
 
-          {/* Start/Stop Buttons */}
-          {botStatus === 'running' ? (
-            <Button 
-              variant="destructive" 
-              onClick={handleStopBot}
-              disabled={isStopping}
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncBalances}
+              disabled={isSyncing}
               className="gap-2"
             >
-              {isStopping ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Square className="w-4 h-4" />
-              )}
-              STOP BOT
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+              Sync
             </Button>
-          ) : (
-            <Button 
-              onClick={handleStartBot}
-              disabled={isStarting}
-              className={`gap-2 ${!testMode ? 'bg-destructive hover:bg-destructive/90' : 'bg-success hover:bg-success/90'}`}
-            >
-              {isStarting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Play className="w-4 h-4" />
-              )}
-              {!testMode && <AlertTriangle className="w-4 h-4" />}
-              START BOT
-            </Button>
-          )}
+            
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Test Mode:</span>
+              <Switch 
+                checked={testMode} 
+                onCheckedChange={handleTestModeToggle}
+                disabled={botStatus === 'running'}
+              />
+            </div>
+
+            {botStatus === 'running' ? (
+              <Button 
+                variant="destructive" 
+                onClick={handleStopBot}
+                disabled={isStopping}
+                className="gap-2"
+              >
+                {isStopping ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                STOP BOT
+              </Button>
+            ) : (
+              <Button 
+                onClick={handleStartClick}
+                disabled={isStarting}
+                className={`gap-2 ${!testMode ? 'bg-destructive hover:bg-destructive/90' : 'bg-success hover:bg-success/90'}`}
+              >
+                {isStarting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                {!testMode && <AlertTriangle className="w-4 h-4" />}
+                START BOT
+              </Button>
+            )}
+          </div>
         </div>
+
+        {!testMode && botStatus !== 'running' && (
+          <div className="mt-3 p-2 rounded-lg bg-destructive/10 border border-destructive/30 flex items-center gap-2 animate-pulse">
+            <AlertTriangle className="w-4 h-4 text-destructive" />
+            <span className="text-sm text-destructive font-medium">
+              ⚠️ LIVE MODE ACTIVE: Starting the bot will execute REAL trades with your ${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} equity.
+            </span>
+          </div>
+        )}
       </div>
 
-      {!testMode && botStatus !== 'running' && (
-        <div className="mt-3 p-2 rounded-lg bg-destructive/10 border border-destructive/30 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-destructive" />
-          <span className="text-sm text-destructive">
-            WARNING: Test mode is OFF. Starting the bot will execute REAL trades with your $2,956.79 equity.
-          </span>
-        </div>
-      )}
-    </div>
+      <AlertDialog open={showLiveConfirm} onOpenChange={setShowLiveConfirm}>
+        <AlertDialogContent className="border-destructive">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              Confirm LIVE Trading
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p className="font-semibold text-foreground">
+                You are about to start the bot in LIVE MODE.
+              </p>
+              <p>
+                This will execute <span className="text-destructive font-bold">REAL trades</span> with your{' '}
+                <span className="text-destructive font-bold">
+                  ${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>{' '}
+                equity on connected exchanges.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Are you absolutely sure you want to proceed?
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleStartBot}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Yes, Start LIVE Trading
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
