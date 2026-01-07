@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCloudCredentials } from '@/hooks/useCloudCredentials';
+import { useVPSInstances } from '@/hooks/useVPSInstances';
 import { PROVIDER_CONFIGS, Provider } from '@/types/cloudCredentials';
 import { DeploymentWizard } from '@/components/deployment/DeploymentWizard';
 import { cn } from '@/lib/utils';
@@ -24,17 +25,9 @@ const PROVIDER_ICONS: Record<Provider, string> = {
 export default function VPSSetup() {
   const navigate = useNavigate();
   const { getProviderStatus, isLoading } = useCloudCredentials();
+  const { getProviderStats, loading: instancesLoading } = useVPSInstances();
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [showWizard, setShowWizard] = useState(false);
-
-  // Mock instance counts and costs (would come from database)
-  const getProviderStats = (provider: Provider) => {
-    // This would be fetched from vps_instances table
-    return {
-      instanceCount: 0,
-      monthlyCost: 0,
-    };
-  };
 
   const handleDeployClick = (provider: Provider) => {
     setSelectedProvider(provider);
@@ -46,7 +39,7 @@ export default function VPSSetup() {
     setSelectedProvider(null);
   };
 
-  if (isLoading) {
+  if (isLoading || instancesLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -129,11 +122,11 @@ export default function VPSSetup() {
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div className="flex items-center gap-1 text-muted-foreground">
                       <Server className="h-4 w-4" />
-                      <span>{stats.instanceCount} instances</span>
+                      <span>{stats.instanceCount} instance{stats.instanceCount !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="flex items-center gap-1 text-muted-foreground">
                       <DollarSign className="h-4 w-4" />
-                      <span>${stats.monthlyCost}/mo</span>
+                      <span>${stats.totalMonthlyCost.toFixed(2)}/mo</span>
                     </div>
                   </div>
 

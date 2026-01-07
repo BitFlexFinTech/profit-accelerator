@@ -14,62 +14,38 @@ import {
   LayoutGrid
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useRealtimeMesh } from '@/hooks/useRealtimeMesh';
-import { useVPSStatusPolling } from '@/hooks/useVPSStatusPolling';
-import { InstanceCard } from '@/components/vps/InstanceCard';
-import { InstanceDetails } from '@/components/vps/InstanceDetails';
+import { useVPSInstances } from '@/hooks/useVPSInstances';
+import { ServerManagementCard } from '@/components/vps/ServerManagementCard';
+import { LogViewerModal } from '@/components/vps/LogViewerModal';
+import { SSHTerminalModal } from '@/components/vps/SSHTerminalModal';
 import { CostTrackingDashboard } from '@/components/dashboard/panels/CostTrackingDashboard';
 import { VPSAlertConfig } from '@/components/dashboard/panels/VPSAlertConfig';
+import { VPSInstance } from '@/types/cloudCredentials';
 import { cn } from '@/lib/utils';
 
 export default function VPSDashboard() {
-  const { nodes, metrics, activeProvider, isConnected, isLoading, refresh } = useRealtimeMesh();
-  const { statuses, refresh: refreshStatus, isPolling } = useVPSStatusPolling();
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const { instances, loading, error, refetch, getTotalStats } = useVPSInstances();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [logViewerInstance, setLogViewerInstance] = useState<VPSInstance | null>(null);
+  const [sshTerminalInstance, setSSHTerminalInstance] = useState<VPSInstance | null>(null);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    refresh();
-    refreshStatus();
-    setTimeout(() => setIsRefreshing(false), 1500);
+    await refetch();
+    setTimeout(() => setIsRefreshing(false), 1000);
   };
 
-  const handleSelectInstance = (provider: string) => {
-    setSelectedProvider(provider);
-  };
-
-  const handleCloseDetails = () => {
-    setSelectedProvider(null);
-  };
-
-  const selectedNode = nodes.find(n => n.provider === selectedProvider);
-  const selectedMetric = selectedProvider ? metrics[selectedProvider] : null;
-  const selectedStatus = selectedProvider ? statuses[selectedProvider] : null;
-
-  // Calculate totals
-  const runningCount = nodes.filter(n => n.status === 'running' || n.status === 'idle').length;
-  const totalNodes = nodes.length;
+  // Calculate totals from real data
+  const totalStats = getTotalStats();
+  const runningCount = totalStats.runningCount;
+  const totalNodes = totalStats.instanceCount;
+  const estimatedMonthlyCost = totalStats.totalMonthlyCost;
   
-  // Estimate monthly cost (simplified - in production, pull from cost_analysis table)
-  const estimatedMonthlyCost = nodes
-    .filter(n => n.status === 'running' || n.status === 'idle')
-    .reduce((acc, n) => {
-      // Rough estimates per provider
-      const costs: Record<string, number> = {
-        contabo: 8,
-        vultr: 24,
-        digitalocean: 24,
-        aws: 35,
-        gcp: 30,
-        azure: 32,
-        oracle: 0, // Free tier
-        alibaba: 25,
-      };
-      return acc + (costs[n.provider] || 20);
-    }, 0);
+  // Find primary node (first running instance)
+  const primaryNode = instances.find(i => i.status === 'running');
+  const activeProvider = primaryNode?.provider || null;
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-background p-6">
         <div className="max-w-7xl mx-auto">
@@ -107,10 +83,10 @@ export default function VPSDashboard() {
                   variant="outline" 
                   className={cn(
                     "text-xs",
-                    isConnected ? "bg-success/10 text-success border-success/40" : "bg-muted"
+                    instances.length > 0 ? "bg-success/10 text-success border-success/40" : "bg-muted"
                   )}
                 >
-                  {isConnected ? '● Live' : '○ Connecting...'}
+                  {instances.length > 0 ? `● ${runningCount} Live` : '○ No Instances'}
                 </Badge>
               </div>
             </div>
@@ -119,12 +95,12 @@ export default function VPSDashboard() {
                 variant="outline"
                 size="sm"
                 onClick={handleRefresh}
-                disabled={isRefreshing || isPolling}
+                disabled={isRefreshing}
               >
-                <RefreshCw className={cn("h-4 w-4 mr-2", (isRefreshing || isPolling) && "animate-spin")} />
+                <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
                 Refresh
               </Button>
-              <Link to="/setup">
+              <Link to="/vps-setup">
                 <Button size="sm">
                   <Plus className="h-4 w-4 mr-2" />
                   Add VPS
@@ -175,7 +151,7 @@ export default function VPSDashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">Est. Monthly Cost</p>
                 <p className="text-2xl font-bold">
-                  ${estimatedMonthlyCost}<span className="text-muted-foreground text-sm">/mo</span>
+                  ${estimatedMonthlyCost.toFixed(2)}<span className="text-muted-foreground text-sm">/mo</span>
                 </p>
               </div>
             </div>
@@ -200,14 +176,14 @@ export default function VPSDashboard() {
           </TabsList>
 
           <TabsContent value="instances">
-            {nodes.length === 0 ? (
+            {instances.length === 0 ? (
               <Card className="p-12 bg-card/50 border-border/50 text-center">
                 <Server className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No VPS Instances Configured</h3>
                 <p className="text-muted-foreground mb-4">
                   Connect a cloud provider to deploy your first HFT bot instance.
                 </p>
-                <Link to="/setup">
+                <Link to="/vps-setup">
                   <Button>
                     <Plus className="h-4 w-4 mr-2" />
                     Setup Cloud Provider
@@ -216,14 +192,12 @@ export default function VPSDashboard() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {nodes.map(node => (
-                  <InstanceCard
-                    key={node.provider}
-                    node={node}
-                    metric={metrics[node.provider]}
-                    liveStatus={statuses[node.provider]}
-                    isPrimary={node.provider === activeProvider}
-                    onClick={() => handleSelectInstance(node.provider)}
+                {instances.map(instance => (
+                  <ServerManagementCard
+                    key={instance.id}
+                    instance={instance}
+                    onViewLogs={setLogViewerInstance}
+                    onSSH={setSSHTerminalInstance}
                   />
                 ))}
               </div>
@@ -240,14 +214,19 @@ export default function VPSDashboard() {
         </Tabs>
       </main>
 
-      {/* Instance Details Side Panel */}
-      {selectedNode && (
-        <InstanceDetails
-          node={selectedNode}
-          metric={selectedMetric}
-          liveStatus={selectedStatus}
-          isPrimary={selectedNode.provider === activeProvider}
-          onClose={handleCloseDetails}
+      {/* Log Viewer Modal */}
+      {logViewerInstance && (
+        <LogViewerModal
+          instance={logViewerInstance}
+          onClose={() => setLogViewerInstance(null)}
+        />
+      )}
+
+      {/* SSH Terminal Modal */}
+      {sshTerminalInstance && (
+        <SSHTerminalModal
+          instance={sshTerminalInstance}
+          onClose={() => setSSHTerminalInstance(null)}
         />
       )}
     </div>
