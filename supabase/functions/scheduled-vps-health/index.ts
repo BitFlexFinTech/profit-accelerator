@@ -6,6 +6,143 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface AlertConfig {
+  alert_type: string;
+  is_enabled: boolean;
+  threshold_value: number | null;
+  cooldown_minutes: number;
+}
+
+interface TelegramConfig {
+  bot_token: string | null;
+  chat_id: string | null;
+  notifications_enabled: boolean;
+  notify_on_error: boolean;
+}
+
+async function sendTelegramAlert(
+  botToken: string,
+  chatId: string,
+  message: string
+): Promise<boolean> {
+  try {
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'HTML',
+      }),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('[telegram-alert] Failed to send:', error);
+    return false;
+  }
+}
+
+async function checkAndSendAlerts(
+  supabase: any,
+  provider: string,
+  status: string,
+  cpuPercent: number,
+  ramPercent: number,
+  diskPercent: number,
+  latencyMs: number
+): Promise<void> {
+  // Fetch alert configs
+  const { data: alertConfigs } = await supabase
+    .from('alert_config')
+    .select('*')
+    .eq('is_enabled', true);
+
+  if (!alertConfigs || alertConfigs.length === 0) return;
+
+  // Fetch Telegram config
+  const { data: tgConfig } = await supabase
+    .from('telegram_config')
+    .select('*')
+    .limit(1)
+    .maybeSingle();
+
+  const tg = tgConfig as TelegramConfig | null;
+  if (!tg?.notifications_enabled || !tg?.bot_token || !tg?.chat_id) {
+    return;
+  }
+
+  const alerts: string[] = [];
+
+  for (const config of alertConfigs as AlertConfig[]) {
+    const threshold = config.threshold_value;
+
+    switch (config.alert_type) {
+      case 'cpu_high':
+        if (threshold && cpuPercent > threshold) {
+          alerts.push(`🔥 <b>High CPU</b>: ${provider} at ${cpuPercent.toFixed(1)}% (threshold: ${threshold}%)`);
+        }
+        break;
+      case 'ram_high':
+        if (threshold && ramPercent > threshold) {
+          alerts.push(`💾 <b>High RAM</b>: ${provider} at ${ramPercent.toFixed(1)}% (threshold: ${threshold}%)`);
+        }
+        break;
+      case 'disk_high':
+        if (threshold && diskPercent > threshold) {
+          alerts.push(`💿 <b>High Disk</b>: ${provider} at ${diskPercent.toFixed(1)}% (threshold: ${threshold}%)`);
+        }
+        break;
+      case 'instance_offline':
+        if (status === 'offline' || status === 'timeout') {
+          alerts.push(`🔴 <b>Instance Offline</b>: ${provider} is ${status}`);
+        }
+        break;
+      case 'latency_high':
+        if (threshold && latencyMs > threshold) {
+          alerts.push(`⏱️ <b>High Latency</b>: ${provider} at ${latencyMs}ms (threshold: ${threshold}ms)`);
+        }
+        break;
+    }
+  }
+
+  if (alerts.length === 0) return;
+
+  // Check cooldown - don't send if we already sent an alert recently
+  const { data: recentAlerts } = await supabase
+    .from('alert_history')
+    .select('sent_at')
+    .gte('sent_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+    .limit(1);
+
+  if (recentAlerts && recentAlerts.length > 0) {
+    console.log('[scheduled-vps-health] Skipping alerts - cooldown active');
+    return;
+  }
+
+  // Send combined alert
+  const message = `🚨 <b>VPS Health Alert</b>\n\n${alerts.join('\n\n')}\n\n⏰ ${new Date().toISOString()}`;
+  
+  const sent = await sendTelegramAlert(tg.bot_token, tg.chat_id, message);
+
+  // Log alert history
+  for (const alertMsg of alerts) {
+    await supabase.from('alert_history').insert({
+      alert_type: alertMsg.includes('CPU') ? 'cpu_high' : 
+                  alertMsg.includes('RAM') ? 'ram_high' :
+                  alertMsg.includes('Disk') ? 'disk_high' :
+                  alertMsg.includes('Offline') ? 'instance_offline' :
+                  alertMsg.includes('Latency') ? 'latency_high' : 'unknown',
+      channel: 'telegram',
+      message: alertMsg.replace(/<[^>]*>/g, ''),
+      severity: alertMsg.includes('Offline') ? 'error' : 'warning',
+      sent_at: new Date().toISOString(),
+    });
+  }
+
+  console.log(`[scheduled-vps-health] Sent ${alerts.length} alerts via Telegram:`, sent);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -139,6 +276,17 @@ serve(async (req) => {
           });
         }
       }
+
+      // Check and send alerts
+      await checkAndSendAlerts(
+        supabase,
+        provider,
+        healthStatus,
+        cpuPercent,
+        ramPercent,
+        diskPercent,
+        latencyMs
+      );
 
       results.push({
         provider,
