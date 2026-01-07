@@ -418,6 +418,9 @@ export function useCloudInfrastructure() {
     const withScores = configuredProviders.map(p => ({
       ...p,
       score: p.latency_ms * (p.monthly_cost || 0.5),
+      latencyPerDollar: p.monthly_cost > 0 
+        ? p.latency_ms / p.monthly_cost 
+        : p.latency_ms,
     }));
 
     return withScores.sort((a, b) => a.score - b.score)[0];
