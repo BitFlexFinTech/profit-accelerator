@@ -1,10 +1,81 @@
+import { useState, useEffect } from 'react';
 import { Copy, ArrowRight, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
+import { Skeleton } from '@/components/ui/skeleton';
+
+interface CopierStats {
+  copiesToday: number;
+  successRate: number;
+  avgDelayMs: number;
+}
 
 export function TradeCopierPanel() {
-  const isActive = true;
+  const [stats, setStats] = useState<CopierStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isActive, setIsActive] = useState(false);
   const masterExchange = 'Bybit';
   const mirrorExchanges = ['OKX', 'Bitget', 'BingX'];
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        // Fetch trade copies from today
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const { data: copies } = await supabase
+          .from('trade_copies')
+          .select('*')
+          .eq('is_active', true);
+
+        // Fetch recent trades to calculate success rate
+        const { data: trades } = await supabase
+          .from('trading_journal')
+          .select('status, created_at')
+          .gte('created_at', today.toISOString())
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (trades && trades.length > 0) {
+          const successCount = trades.filter(t => t.status !== 'error').length;
+          const successRate = Math.round((successCount / trades.length) * 100);
+          
+          setStats({
+            copiesToday: trades.length,
+            successRate: successRate || 0,
+            avgDelayMs: 0 // Would need trade_copier_logs table for real delay
+          });
+        } else {
+          setStats({ copiesToday: 0, successRate: 0, avgDelayMs: 0 });
+        }
+
+        setIsActive(copies && copies.length > 0);
+      } catch (err) {
+        console.error('[TradeCopierPanel] Error:', err);
+        setStats({ copiesToday: 0, successRate: 0, avgDelayMs: 0 });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchStats();
+
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('trade-copier-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trade_copies' }, () => {
+        fetchStats();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trading_journal' }, () => {
+        fetchStats();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <div className="glass-card p-6">
@@ -55,15 +126,31 @@ export function TradeCopierPanel() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         <div className="p-3 rounded-lg bg-secondary/30 text-center">
-          <p className="text-2xl font-bold">24</p>
+          {isLoading ? (
+            <Skeleton className="h-8 w-12 mx-auto mb-1" />
+          ) : (
+            <p className="text-2xl font-bold">{stats?.copiesToday ?? '--'}</p>
+          )}
           <p className="text-xs text-muted-foreground">Copies Today</p>
         </div>
         <div className="p-3 rounded-lg bg-secondary/30 text-center">
-          <p className="text-2xl font-bold text-success">98%</p>
+          {isLoading ? (
+            <Skeleton className="h-8 w-12 mx-auto mb-1" />
+          ) : (
+            <p className={`text-2xl font-bold ${(stats?.successRate ?? 0) > 90 ? 'text-success' : 'text-foreground'}`}>
+              {stats?.successRate ?? '--'}%
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">Success Rate</p>
         </div>
         <div className="p-3 rounded-lg bg-secondary/30 text-center">
-          <p className="text-2xl font-bold">12ms</p>
+          {isLoading ? (
+            <Skeleton className="h-8 w-12 mx-auto mb-1" />
+          ) : (
+            <p className="text-2xl font-bold">
+              {stats?.avgDelayMs ? `${stats.avgDelayMs}ms` : '--'}
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">Avg Delay</p>
         </div>
       </div>
