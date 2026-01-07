@@ -700,6 +700,42 @@ export type Database = {
         }
         Relationships: []
       }
+      exchange_pulse: {
+        Row: {
+          api_endpoint: string | null
+          created_at: string | null
+          error_message: string | null
+          exchange_name: string
+          id: string
+          last_check: string | null
+          latency_ms: number | null
+          region: string | null
+          status: string | null
+        }
+        Insert: {
+          api_endpoint?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          exchange_name: string
+          id?: string
+          last_check?: string | null
+          latency_ms?: number | null
+          region?: string | null
+          status?: string | null
+        }
+        Update: {
+          api_endpoint?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          exchange_name?: string
+          id?: string
+          last_check?: string | null
+          latency_ms?: number | null
+          region?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
       failover_config: {
         Row: {
           auto_failover_enabled: boolean | null
