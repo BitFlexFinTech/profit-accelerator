@@ -395,6 +395,42 @@ export type Database = {
         }
         Relationships: []
       }
+      cloud_credentials: {
+        Row: {
+          created_at: string | null
+          encrypted_value: string
+          error_message: string | null
+          field_name: string
+          id: string
+          last_validated_at: string | null
+          provider: string
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          encrypted_value: string
+          error_message?: string | null
+          field_name: string
+          id?: string
+          last_validated_at?: string | null
+          provider: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          encrypted_value?: string
+          error_message?: string | null
+          field_name?: string
+          id?: string
+          last_validated_at?: string | null
+          provider?: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       cost_analysis: {
         Row: {
           analysis_date: string
@@ -648,6 +684,62 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      deployment_logs: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          deployment_id: string
+          error_details: string | null
+          id: string
+          instance_id: string | null
+          message: string | null
+          progress: number | null
+          provider: string
+          stage: string | null
+          stage_number: number | null
+          started_at: string | null
+          status: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          deployment_id: string
+          error_details?: string | null
+          id?: string
+          instance_id?: string | null
+          message?: string | null
+          progress?: number | null
+          provider: string
+          stage?: string | null
+          stage_number?: number | null
+          started_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          deployment_id?: string
+          error_details?: string | null
+          id?: string
+          instance_id?: string | null
+          message?: string | null
+          progress?: number | null
+          provider?: string
+          stage?: string | null
+          stage_number?: number | null
+          started_at?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deployment_logs_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "vps_instances"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       exchange_connections: {
         Row: {
@@ -1415,6 +1507,69 @@ export type Database = {
           region?: string
           status?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      vps_instances: {
+        Row: {
+          bot_pid: number | null
+          bot_status: string | null
+          config: Json | null
+          created_at: string | null
+          deployment_id: string | null
+          id: string
+          instance_size: string | null
+          ip_address: string | null
+          last_health_check: string | null
+          monthly_cost: number | null
+          nickname: string | null
+          provider: string
+          provider_instance_id: string | null
+          region: string | null
+          ssh_private_key: string | null
+          status: string | null
+          updated_at: string | null
+          uptime_seconds: number | null
+        }
+        Insert: {
+          bot_pid?: number | null
+          bot_status?: string | null
+          config?: Json | null
+          created_at?: string | null
+          deployment_id?: string | null
+          id?: string
+          instance_size?: string | null
+          ip_address?: string | null
+          last_health_check?: string | null
+          monthly_cost?: number | null
+          nickname?: string | null
+          provider: string
+          provider_instance_id?: string | null
+          region?: string | null
+          ssh_private_key?: string | null
+          status?: string | null
+          updated_at?: string | null
+          uptime_seconds?: number | null
+        }
+        Update: {
+          bot_pid?: number | null
+          bot_status?: string | null
+          config?: Json | null
+          created_at?: string | null
+          deployment_id?: string | null
+          id?: string
+          instance_size?: string | null
+          ip_address?: string | null
+          last_health_check?: string | null
+          monthly_cost?: number | null
+          nickname?: string | null
+          provider?: string
+          provider_instance_id?: string | null
+          region?: string | null
+          ssh_private_key?: string | null
+          status?: string | null
+          updated_at?: string | null
+          uptime_seconds?: number | null
         }
         Relationships: []
       }
