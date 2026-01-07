@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -70,18 +70,23 @@ serve(async (req) => {
 
     switch (action) {
       case 'get-ip': {
-        // Fetch outbound IP for whitelisting
-        const response = await fetch('https://api.ipify.org?format=json');
-        const data = await response.json();
-        
-        // Cache IP in vps_config
-        await supabase
+        // PRODUCTION: Only return IP if a REAL VPS is deployed and running
+        const { data: vpsConfig } = await supabase
           .from('vps_config')
-          .update({ outbound_ip: data.ip })
-          .neq('id', '00000000-0000-0000-0000-000000000000');
+          .select('outbound_ip, status, provider')
+          .eq('status', 'running')
+          .not('outbound_ip', 'is', null)
+          .limit(1);
+
+        if (!vpsConfig?.length || !vpsConfig[0].outbound_ip) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'No VPS deployed', ip: null }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
 
         return new Response(
-          JSON.stringify({ success: true, ip: data.ip }),
+          JSON.stringify({ success: true, ip: vpsConfig[0].outbound_ip }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -396,7 +401,7 @@ serve(async (req) => {
         const tickers: Array<{ symbol: string; exchange: string; lastPrice: number; priceChange24h: number; volume24h: number }> = [];
         const firstExchange = exchanges[0].exchange_name.toLowerCase();
 
-        for (const symbol of (symbols || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'])) {
+        for (const symbol of (symbols || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT'])) {
           try {
             if (firstExchange === 'binance') {
               const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
@@ -650,9 +655,16 @@ serve(async (req) => {
           );
         }
 
-        // For demo, simulate order execution
+        // PRODUCTION: Real orders require a real price - no simulation
+        if (!price) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Price required for order execution' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
         const orderId = `ORD-${Date.now()}`;
-        const executedPrice = price || (Math.random() * 1000 + 90000);
+        const executedPrice = price;
 
         // Log trade to trading_journal
         await supabase.from('trading_journal').insert({

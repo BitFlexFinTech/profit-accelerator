@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Copy, Check, ExternalLink, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Shield, Copy, Check, ExternalLink, RefreshCw, AlertTriangle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -12,6 +12,7 @@ interface ExchangeWhitelistStatus {
 
 export function IPSyncStatusCard() {
   const [vpsIp, setVpsIp] = useState<string | null>(null);
+  const [vpsStatus, setVpsStatus] = useState<string | null>(null);
   const [exchanges, setExchanges] = useState<ExchangeWhitelistStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -23,15 +24,23 @@ export function IPSyncStatusCard() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      // Get VPS IP
+      // Get REAL VPS with running status and valid IP
       const { data: vpsConfig } = await supabase
         .from('vps_config')
-        .select('outbound_ip')
+        .select('outbound_ip, status, provider')
+        .eq('status', 'running')
+        .not('outbound_ip', 'is', null)
         .order('updated_at', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
 
-      setVpsIp(vpsConfig?.outbound_ip || null);
+      // Only set IP if we have a real running VPS
+      if (vpsConfig && vpsConfig.length > 0) {
+        setVpsIp(vpsConfig[0].outbound_ip);
+        setVpsStatus(vpsConfig[0].status);
+      } else {
+        setVpsIp(null);
+        setVpsStatus(null);
+      }
 
       // Get connected exchanges and their whitelist status
       const { data: connections } = await supabase
@@ -39,11 +48,16 @@ export function IPSyncStatusCard() {
         .select('exchange_name')
         .eq('is_connected', true);
 
+      if (!connections?.length) {
+        setExchanges([]);
+        return;
+      }
+
       const { data: permissions } = await supabase
         .from('credential_permissions')
         .select('provider, ip_restricted, whitelisted_range');
 
-      const exchangeStatus = (connections || []).map(conn => {
+      const exchangeStatus = connections.map(conn => {
         const perm = permissions?.find(p => p.provider === conn.exchange_name);
         return {
           exchange: conn.exchange_name,
@@ -96,8 +110,24 @@ export function IPSyncStatusCard() {
     hyperliquid: 'https://app.hyperliquid.xyz/account',
   };
 
-  if (!vpsIp) {
+  // No VPS deployed - don't show this card at all
+  if (!isLoading && !vpsIp) {
     return null;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="glass-card p-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Shield className="w-5 h-5 text-muted-foreground" />
+          <h4 className="font-semibold">IP Whitelist Sync</h4>
+        </div>
+        <div className="animate-pulse space-y-2">
+          <div className="h-4 bg-secondary/50 rounded w-32" />
+          <div className="h-4 bg-secondary/50 rounded w-24" />
+        </div>
+      </div>
+    );
   }
 
   return (

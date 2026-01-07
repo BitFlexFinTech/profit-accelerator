@@ -73,19 +73,21 @@ export function GCPWizard({ open, onOpenChange }: GCPWizardProps) {
         throw new Error(deployData?.error || 'Deployment failed');
       }
 
+      // Require real deployment response - no fake IPs
+      if (!deployData?.instanceId || !deployData?.publicIp) {
+        throw new Error('Deployment failed - no instance data returned from GCP');
+      }
+
       setIsValidating(false);
       setIsDeploying(true);
       setStep('deploying');
 
-      // Simulate deployment time (GCP edge function returns mock data)
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
       setInstanceData({
-        instanceId: deployData.instanceId || 'gcp-tokyo-hft',
-        publicIp: deployData.publicIp || '35.xxx.xxx.xxx',
+        instanceId: deployData.instanceId,
+        publicIp: deployData.publicIp,
       });
 
-      // Register VPS in database
+      // Register VPS in database with REAL data only
       await supabase.from('vps_config').upsert({
         provider: 'gcp',
         region: 'asia-northeast1',
