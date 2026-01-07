@@ -404,6 +404,45 @@ export type Database = {
         }
         Relationships: []
       }
+      cost_optimization_reports: {
+        Row: {
+          created_at: string | null
+          id: string
+          optimizations_applied: Json | null
+          period_end: string
+          period_start: string
+          recommendations: Json | null
+          report_date: string
+          savings: number | null
+          total_cost_after: number | null
+          total_cost_before: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          optimizations_applied?: Json | null
+          period_end: string
+          period_start: string
+          recommendations?: Json | null
+          report_date: string
+          savings?: number | null
+          total_cost_after?: number | null
+          total_cost_before?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          optimizations_applied?: Json | null
+          period_end?: string
+          period_start?: string
+          recommendations?: Json | null
+          report_date?: string
+          savings?: number | null
+          total_cost_after?: number | null
+          total_cost_before?: number | null
+        }
+        Relationships: []
+      }
       cost_recommendations: {
         Row: {
           created_at: string | null
@@ -1226,6 +1265,39 @@ export type Database = {
         }
         Relationships: []
       }
+      vps_benchmarks: {
+        Row: {
+          benchmark_type: string
+          exchange_latencies: Json | null
+          hft_score: number | null
+          id: string
+          provider: string
+          raw_results: Json | null
+          run_at: string | null
+          score: number
+        }
+        Insert: {
+          benchmark_type: string
+          exchange_latencies?: Json | null
+          hft_score?: number | null
+          id?: string
+          provider: string
+          raw_results?: Json | null
+          run_at?: string | null
+          score: number
+        }
+        Update: {
+          benchmark_type?: string
+          exchange_latencies?: Json | null
+          hft_score?: number | null
+          id?: string
+          provider?: string
+          raw_results?: Json | null
+          run_at?: string | null
+          score?: number
+        }
+        Relationships: []
+      }
       vps_config: {
         Row: {
           cors_proxy_enabled: boolean | null
@@ -1304,6 +1376,39 @@ export type Database = {
           ram_percent?: number | null
           recorded_at?: string | null
           uptime_seconds?: number | null
+        }
+        Relationships: []
+      }
+      vps_timeline_events: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          event_subtype: string | null
+          event_type: string
+          id: string
+          metadata: Json | null
+          provider: string
+          title: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          event_subtype?: string | null
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          provider: string
+          title: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          event_subtype?: string | null
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          provider?: string
+          title?: string
         }
         Relationships: []
       }
