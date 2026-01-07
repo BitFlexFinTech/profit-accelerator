@@ -11,9 +11,17 @@ import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
 import { VPSMonitorPanel } from '../panels/VPSMonitorPanel';
 import { TradeLogPanel } from '../panels/TradeLogPanel';
 import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
+import { FailoverHistoryPanel } from '../panels/FailoverHistoryPanel';
 import { BotControlPanel } from '../BotControlPanel';
 import { EquityChartPanel } from '../panels/EquityChartPanel';
 import { APIDiagnosticsPanel } from '../panels/APIDiagnosticsPanel';
+import { VPSMeshPanel } from '../panels/VPSMeshPanel';
+import { MeshHealthScoreWidget } from '../panels/MeshHealthScoreWidget';
+import { VPSLatencyTrendsPanel } from '../panels/VPSLatencyTrendsPanel';
+import { VPSDeploymentTimelinePanel } from '../panels/VPSDeploymentTimelinePanel';
+import { CloudCostComparisonPanel } from '../panels/CloudCostComparisonPanel';
+import { CostOptimizationPanel } from '../panels/CostOptimizationPanel';
+import { VPSBenchmarkPanel } from '../panels/VPSBenchmarkPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { supabase } from '@/integrations/supabase/client';
@@ -51,6 +59,21 @@ export function LiveDashboard() {
       {/* Cloud Status Panel */}
       <CloudStatusPanel />
 
+      {/* VPS Mesh Panel - 8 Provider Grid */}
+      <VPSMeshPanel />
+
+      {/* Mesh Health Score Widget */}
+      <MeshHealthScoreWidget />
+
+      {/* VPS Latency Trends - 24h Chart */}
+      <VPSLatencyTrendsPanel />
+
+      {/* VPS Deployment Timeline */}
+      <VPSDeploymentTimelinePanel />
+
+      {/* Cloud Cost Comparison Table */}
+      <CloudCostComparisonPanel />
+
       {/* VPS Monitor Panel - Real-time metrics */}
       <VPSMonitorPanel />
 
@@ -69,12 +92,14 @@ export function LiveDashboard() {
           <MarketWatchPanel />
           <QuickActionsPanel />
           <FailoverStatusPanel />
+          <FailoverHistoryPanel />
         </div>
 
         {/* Center Column */}
         <div className="lg:col-span-1 space-y-6">
           <SentimentPanel />
           <TradeLogPanel />
+          <CostOptimizationPanel />
         </div>
 
         {/* Right Column */}
@@ -82,6 +107,7 @@ export function LiveDashboard() {
           <ExchangePingPanel />
           <APIDiagnosticsPanel />
           <TradeCopierPanel />
+          <VPSBenchmarkPanel />
         </div>
       </div>
 

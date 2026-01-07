@@ -89,3 +89,18 @@ verify_jwt = false
 
 [functions.scheduled-health-check]
 verify_jwt = false
+
+[functions.alibaba-cloud]
+verify_jwt = false
+
+[functions.azure-cloud]
+verify_jwt = false
+
+[functions.auto-provision-mesh]
+verify_jwt = false
+
+[functions.cost-optimizer]
+verify_jwt = false
+
+[functions.vps-benchmark]
+verify_jwt = false

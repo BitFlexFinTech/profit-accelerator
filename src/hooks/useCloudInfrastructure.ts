@@ -56,12 +56,46 @@ export interface LatencyDataPoint {
   recorded_at: string;
 }
 
+export interface TimelineEvent {
+  id: string;
+  provider: string;
+  event_type: string;
+  event_subtype: string | null;
+  title: string;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface BenchmarkResult {
+  id: string;
+  provider: string;
+  benchmark_type: string;
+  score: number;
+  raw_results: Record<string, unknown>;
+  exchange_latencies: Record<string, number>;
+  hft_score: number | null;
+  run_at: string;
+}
+
+export interface CostOptimizationSuggestion {
+  current_provider: string;
+  recommended_provider: string;
+  savings_monthly: number;
+  latency_difference_ms: number;
+  reason: string;
+}
+
 interface CloudInfrastructureState {
   providers: CloudProvider[];
   metrics: Record<string, ProviderMetrics>;
   latencyHistory: LatencyDataPoint[];
+  timelineEvents: TimelineEvent[];
+  benchmarkResults: Record<string, BenchmarkResult>;
   activeProvider: string | null;
   totalMonthlyCost: number;
+  meshHealthScore: number;
+  costOptimizationSuggestions: CostOptimizationSuggestion[];
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
@@ -72,8 +106,12 @@ export function useCloudInfrastructure() {
     providers: [],
     metrics: {},
     latencyHistory: [],
+    timelineEvents: [],
+    benchmarkResults: {},
     activeProvider: null,
     totalMonthlyCost: 0,
+    meshHealthScore: 0,
+    costOptimizationSuggestions: [],
     isConnected: false,
     isLoading: true,
     error: null,
@@ -108,6 +146,19 @@ export function useCloudInfrastructure() {
         .select('provider, latency_ms, recorded_at')
         .gte('recorded_at', twentyFourHoursAgo)
         .order('recorded_at', { ascending: true });
+
+      // Fetch timeline events (last 50)
+      const { data: timelineEvents } = await supabase
+        .from('vps_timeline_events')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      // Fetch latest benchmarks for each provider
+      const { data: benchmarks } = await supabase
+        .from('vps_benchmarks')
+        .select('*')
+        .order('run_at', { ascending: false });
 
       // Build providers list from failover configs
       const providers: CloudProvider[] = (failoverConfigs || []).map(fc => {
@@ -148,6 +199,25 @@ export function useCloudInfrastructure() {
         }
       }
 
+      // Build benchmarks map (latest per provider)
+      const benchmarksMap: Record<string, BenchmarkResult> = {};
+      if (benchmarks) {
+        for (const benchmark of benchmarks) {
+          if (!benchmarksMap[benchmark.provider]) {
+            benchmarksMap[benchmark.provider] = {
+              id: benchmark.id,
+              provider: benchmark.provider,
+              benchmark_type: benchmark.benchmark_type,
+              score: Number(benchmark.score) || 0,
+              raw_results: (benchmark.raw_results as Record<string, unknown>) || {},
+              exchange_latencies: (benchmark.exchange_latencies as Record<string, number>) || {},
+              hft_score: benchmark.hft_score ? Number(benchmark.hft_score) : null,
+              run_at: benchmark.run_at || '',
+            };
+          }
+        }
+      }
+
       // Find active provider
       const activeProvider = providers.find(p => p.is_primary)?.provider || null;
 
@@ -156,13 +226,71 @@ export function useCloudInfrastructure() {
         .filter(p => p.status === 'running' || p.status === 'idle')
         .reduce((sum, p) => sum + p.monthly_cost, 0);
 
+      // Calculate mesh health score (0-100)
+      const enabledProviders = providers.filter(p => p.is_enabled);
+      let meshHealthScore = 0;
+      if (enabledProviders.length > 0) {
+        let totalScore = 0;
+        for (const p of enabledProviders) {
+          let providerScore = 100;
+          // Penalty for failures
+          if (p.consecutive_failures >= 3) providerScore -= 50;
+          else if (p.consecutive_failures >= 1) providerScore -= 20;
+          // Penalty for high latency
+          if (p.latency_ms > 150) providerScore -= 30;
+          else if (p.latency_ms > 100) providerScore -= 15;
+          // Penalty for non-running status
+          if (p.status !== 'running' && p.status !== 'idle' && p.status !== 'not_configured') providerScore -= 40;
+          // Bonus for running status
+          if (p.status === 'running') providerScore += 10;
+          totalScore += Math.max(0, Math.min(100, providerScore));
+        }
+        meshHealthScore = Math.round(totalScore / enabledProviders.length);
+      }
+
+      // Generate cost optimization suggestions
+      const costOptimizationSuggestions: CostOptimizationSuggestion[] = [];
+      const runningPaidProviders = providers.filter(p => 
+        (p.status === 'running' || p.status === 'idle') && !p.is_free_tier
+      );
+      const healthyFreeProviders = providers.filter(p => 
+        p.is_free_tier && (p.status === 'running' || p.status === 'idle' || p.status === 'not_configured')
+      );
+
+      for (const paid of runningPaidProviders) {
+        for (const free of healthyFreeProviders) {
+          const freeLatency = free.latency_ms || 50; // Assume 50ms if not measured
+          const latencyDiff = freeLatency - paid.latency_ms;
+          
+          // Only suggest if latency difference is acceptable (<30ms)
+          if (latencyDiff < 30) {
+            costOptimizationSuggestions.push({
+              current_provider: paid.provider,
+              recommended_provider: free.provider,
+              savings_monthly: paid.monthly_cost,
+              latency_difference_ms: latencyDiff,
+              reason: latencyDiff <= 0 
+                ? `${free.provider} is FREE with same or better latency`
+                : `${free.provider} is FREE, only ${latencyDiff}ms slower`,
+            });
+          }
+        }
+      }
+
       setState(prev => ({
         ...prev,
         providers,
         metrics: metricsMap,
         latencyHistory: latencyHistory || [],
+        timelineEvents: (timelineEvents || []).map(e => ({
+          ...e,
+          metadata: (e.metadata as Record<string, unknown>) || {},
+        })),
+        benchmarkResults: benchmarksMap,
         activeProvider,
         totalMonthlyCost,
+        meshHealthScore,
+        costOptimizationSuggestions,
         isLoading: false,
         error: null,
       }));
@@ -219,6 +347,42 @@ export function useCloudInfrastructure() {
               latency_ms: metric.latency_ms,
               recorded_at: metric.recorded_at,
             }].slice(-500), // Keep last 500 data points
+          }));
+        })
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'vps_timeline_events'
+        }, (payload) => {
+          console.log('[useCloudInfrastructure] New timeline event');
+          const event = payload.new as TimelineEvent;
+          setState(prev => ({
+            ...prev,
+            timelineEvents: [
+              { ...event, metadata: (event.metadata as Record<string, unknown>) || {} },
+              ...prev.timelineEvents
+            ].slice(0, 50),
+          }));
+        })
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'vps_benchmarks'
+        }, (payload) => {
+          console.log('[useCloudInfrastructure] New benchmark result');
+          const benchmark = payload.new as BenchmarkResult;
+          setState(prev => ({
+            ...prev,
+            benchmarkResults: {
+              ...prev.benchmarkResults,
+              [benchmark.provider]: {
+                ...benchmark,
+                score: Number(benchmark.score) || 0,
+                raw_results: (benchmark.raw_results as Record<string, unknown>) || {},
+                exchange_latencies: (benchmark.exchange_latencies as Record<string, number>) || {},
+                hft_score: benchmark.hft_score ? Number(benchmark.hft_score) : null,
+              },
+            },
           }));
         })
         .subscribe((status) => {
@@ -298,12 +462,57 @@ export function useCloudInfrastructure() {
     }
   }, [state.activeProvider]);
 
+  // Run benchmark on a provider
+  const runBenchmark = useCallback(async (provider: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('vps-benchmark', {
+        body: { provider }
+      });
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      console.error(`[useCloudInfrastructure] Benchmark ${provider} error:`, error);
+      return { success: false, error };
+    }
+  }, []);
+
+  // Run cost optimization
+  const runCostOptimization = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('cost-optimizer', {
+        body: { action: 'analyze' }
+      });
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      console.error('[useCloudInfrastructure] Cost optimization error:', error);
+      return { success: false, error };
+    }
+  }, []);
+
+  // Deploy mesh (all providers)
+  const deployMesh = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('auto-provision-mesh', {
+        body: { action: 'deploy-all' }
+      });
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      console.error('[useCloudInfrastructure] Deploy mesh error:', error);
+      return { success: false, error };
+    }
+  }, []);
+
   return {
     ...state,
     bestValueProvider,
     refresh,
     deployProvider,
     switchPrimary,
+    runBenchmark,
+    runCostOptimization,
+    deployMesh,
     PROVIDER_PRICING,
     PROVIDER_ICONS,
   };
