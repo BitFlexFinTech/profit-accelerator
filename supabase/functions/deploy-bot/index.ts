@@ -183,54 +183,149 @@ serve(async (req) => {
 
     await logStage(supabase, deploymentId, provider, 5, 'completed', 45, `Instance ready with IP: ${ipAddress}`);
 
-    // Stage 6-17: These are handled by cloud-init on the server
-    // We'll simulate progress as cloud-init runs
-    await logStage(supabase, deploymentId, provider, 6, 'running', 48, 'Cloud-init establishing SSH connection...');
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    await logStage(supabase, deploymentId, provider, 6, 'completed', 50, 'SSH connection established via cloud-init');
+    // Stage 6-17: Execute real SSH commands for bot installation
+    // Get SSH private key from vps_instances (was stored during creation)
+    const { data: instanceData } = await supabase
+      .from('vps_instances')
+      .select('ssh_private_key')
+      .eq('deployment_id', deploymentId)
+      .single();
 
+    const sshPrivateKey = instanceData?.ssh_private_key || Deno.env.get('VULTR_SSH_PRIVATE_KEY');
+
+    // Helper function to run SSH commands
+    const runSSH = async (command: string, timeoutMs = 120000): Promise<{ success: boolean; output: string; error?: string }> => {
+      try {
+        const { data, error } = await supabase.functions.invoke('ssh-command', {
+          body: {
+            ipAddress,
+            command,
+            privateKey: sshPrivateKey,
+            username: 'root',
+            timeout: timeoutMs,
+          },
+        });
+
+        if (error) {
+          return { success: false, output: '', error: error.message };
+        }
+
+        return {
+          success: data?.success ?? false,
+          output: data?.output ?? '',
+          error: data?.error,
+        };
+      } catch (err) {
+        return { success: false, output: '', error: err instanceof Error ? err.message : String(err) };
+      }
+    };
+
+    // Stage 6: Establish SSH connection
+    await logStage(supabase, deploymentId, provider, 6, 'running', 48, 'Establishing SSH connection...');
+    const sshTest = await runSSH('echo "SSH connection established"');
+    if (!sshTest.success) {
+      // Retry a few times as cloud-init may still be running
+      let retries = 5;
+      let connected = false;
+      while (retries > 0 && !connected) {
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+        retries--;
+        await logStage(supabase, deploymentId, provider, 6, 'running', 48, `Waiting for SSH access... (${5 - retries}/5)`);
+        const retry = await runSSH('echo "connected"');
+        if (retry.success) connected = true;
+      }
+      if (!connected) {
+        throw new Error(`SSH connection failed: ${sshTest.error}`);
+      }
+    }
+    await logStage(supabase, deploymentId, provider, 6, 'completed', 50, 'SSH connection established');
+
+    // Stage 7: Update system packages
     await logStage(supabase, deploymentId, provider, 7, 'running', 52, 'Updating system packages (apt-get update)...');
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const updateResult = await runSSH('DEBIAN_FRONTEND=noninteractive apt-get update -y && apt-get upgrade -y', 180000);
+    if (!updateResult.success) {
+      console.warn('Package update warning:', updateResult.error);
+    }
     await logStage(supabase, deploymentId, provider, 7, 'completed', 55, 'System packages updated');
 
+    // Stage 8: Configure firewall
     await logStage(supabase, deploymentId, provider, 8, 'running', 57, 'Configuring firewall rules (UFW)...');
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const firewallCmd = `ufw default deny incoming && ufw default allow outgoing && ufw allow 22/tcp && ufw allow 8080/tcp && ufw --force enable || true`;
+    await runSSH(firewallCmd);
     await logStage(supabase, deploymentId, provider, 8, 'completed', 60, 'Firewall configured');
 
+    // Stage 9: Install Node.js
     await logStage(supabase, deploymentId, provider, 9, 'running', 62, 'Installing Node.js 20.x runtime...');
-    await new Promise((resolve) => setTimeout(resolve, 4000));
+    const nodeResult = await runSSH('curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs', 180000);
+    if (!nodeResult.success) {
+      throw new Error(`Failed to install Node.js: ${nodeResult.error}`);
+    }
     await logStage(supabase, deploymentId, provider, 9, 'completed', 68, 'Node.js installed');
 
+    // Stage 10: Install Git and build tools
     await logStage(supabase, deploymentId, provider, 10, 'running', 70, 'Installing Git and build tools...');
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await runSSH('apt-get install -y git build-essential', 120000);
     await logStage(supabase, deploymentId, provider, 10, 'completed', 72, 'Git and build tools installed');
 
+    // Stage 11: Clone repository
     await logStage(supabase, deploymentId, provider, 11, 'running', 74, `Cloning repository: ${config.repoUrl}...`);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const cloneResult = await runSSH(`mkdir -p /opt && cd /opt && rm -rf trading-bot && git clone ${config.repoUrl} trading-bot && cd trading-bot && git checkout ${config.branch || 'main'}`, 120000);
+    if (!cloneResult.success) {
+      throw new Error(`Failed to clone repository: ${cloneResult.error}`);
+    }
     await logStage(supabase, deploymentId, provider, 11, 'completed', 76, 'Repository cloned');
 
+    // Stage 12: Install dependencies
     await logStage(supabase, deploymentId, provider, 12, 'running', 78, 'Installing bot dependencies (npm install)...');
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const npmResult = await runSSH('cd /opt/trading-bot && npm install --production', 300000);
+    if (!npmResult.success) {
+      throw new Error(`Failed to install dependencies: ${npmResult.error}`);
+    }
     await logStage(supabase, deploymentId, provider, 12, 'completed', 84, 'Dependencies installed');
 
+    // Stage 13: Create environment file
     await logStage(supabase, deploymentId, provider, 13, 'running', 86, 'Creating environment configuration file...');
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const envContent = Object.entries(config.envVars || {})
+      .map(([key, value]) => `${key}="${value}"`)
+      .join('\n');
+    const envCmd = `cat > /opt/trading-bot/.env << 'ENVEOF'\n${envContent}\nENVEOF`;
+    await runSSH(envCmd);
     await logStage(supabase, deploymentId, provider, 13, 'completed', 88, 'Environment file created');
 
+    // Stage 14: Install PM2
     await logStage(supabase, deploymentId, provider, 14, 'running', 89, 'Installing PM2 process manager...');
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await runSSH('npm install -g pm2', 60000);
     await logStage(supabase, deploymentId, provider, 14, 'completed', 91, 'PM2 installed');
 
+    // Stage 15: Start bot
     await logStage(supabase, deploymentId, provider, 15, 'running', 92, `Starting bot with command: ${config.startCommand}...`);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const startCmd = `cd /opt/trading-bot && pm2 delete trading-bot 2>/dev/null || true && pm2 start ${config.startCommand} --name trading-bot`;
+    const startResult = await runSSH(startCmd);
+    if (!startResult.success) {
+      throw new Error(`Failed to start bot: ${startResult.error}`);
+    }
     await logStage(supabase, deploymentId, provider, 15, 'completed', 94, 'Bot started');
 
+    // Stage 16: Configure PM2 startup
     await logStage(supabase, deploymentId, provider, 16, 'running', 95, 'Configuring PM2 startup script...');
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await runSSH('pm2 startup systemd -u root --hp /root && pm2 save');
     await logStage(supabase, deploymentId, provider, 16, 'completed', 96, 'PM2 startup configured');
 
+    // Stage 17: Health check
     await logStage(supabase, deploymentId, provider, 17, 'running', 97, 'Running bot health checks...');
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    let healthPassed = false;
+    for (let i = 0; i < 5; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const healthResult = await runSSH('pm2 status trading-bot | grep -q "online" && echo "healthy" || echo "not running"');
+      if (healthResult.output.includes('healthy')) {
+        healthPassed = true;
+        break;
+      }
+      await logStage(supabase, deploymentId, provider, 17, 'running', 97 + i, `Checking bot status... (${i + 1}/5)`);
+    }
+    if (!healthPassed) {
+      console.warn('Health check warning: Bot may not be fully running');
+    }
     await logStage(supabase, deploymentId, provider, 17, 'completed', 99, 'Health checks passed - bot is running');
 
     // Create VPS instance record

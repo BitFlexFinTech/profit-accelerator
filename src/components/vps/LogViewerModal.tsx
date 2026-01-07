@@ -45,40 +45,62 @@ export function LogViewerModal({ instance, onClose }: LogViewerModalProps) {
     if (isPaused) return;
 
     try {
-      const { data, error } = await supabase.functions.invoke('install-hft-bot', {
+      // Try to fetch real logs via ssh-command
+      const { data, error } = await supabase.functions.invoke('ssh-command', {
         body: {
-          action: 'get-logs',
-          ipAddress: instance.ipAddress,
-          provider: instance.provider,
-          lines: 100,
+          instanceId: instance.id,
+          command: 'pm2 logs trading-bot --lines 100 --nostream 2>/dev/null || tail -100 /var/log/syslog 2>/dev/null || echo "No logs available"',
         },
       });
 
       if (error) {
         console.error('Error fetching logs:', error);
+        setIsLoading(false);
         return;
       }
 
-      if (data?.logs) {
-        const parsedLogs: LogEntry[] = data.logs.map((line: string) => {
-          const match = line.match(/^\[(\d{4}-\d{2}-\d{2}T[\d:.Z]+)\]\s*\[(\w+)\]\s*(.*)$/);
-          if (match) {
+      if (data?.output) {
+        const lines = data.output.split('\n').filter((line: string) => line.trim());
+        const parsedLogs: LogEntry[] = lines.map((line: string) => {
+          // Try to parse PM2 log format: timestamp | type | message
+          const pm2Match = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.Z]+)?\s*\|?\s*([\w-]+)?\s*\|?\s*(.*)$/);
+          if (pm2Match && pm2Match[3]) {
+            const level = line.toLowerCase().includes('error') ? 'error' 
+              : line.toLowerCase().includes('warn') ? 'warn'
+              : line.toLowerCase().includes('debug') ? 'debug'
+              : 'info';
             return {
-              timestamp: match[1],
-              level: match[2].toLowerCase() as LogEntry['level'],
-              message: match[3],
+              timestamp: pm2Match[1] || new Date().toISOString(),
+              level: level as LogEntry['level'],
+              message: pm2Match[3] || line,
             };
           }
+          // Fallback: detect level from content
+          const level = line.toLowerCase().includes('error') ? 'error' 
+            : line.toLowerCase().includes('warn') ? 'warn'
+            : line.toLowerCase().includes('debug') ? 'debug'
+            : 'info';
           return {
             timestamp: new Date().toISOString(),
-            level: 'info' as const,
+            level: level as LogEntry['level'],
             message: line,
           };
         });
         setLogs(parsedLogs);
+      } else if (data?.error) {
+        setLogs([{
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          message: `Failed to fetch logs: ${data.error}`,
+        }]);
       }
     } catch (err) {
       console.error('Failed to fetch logs:', err);
+      setLogs([{
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        message: `Connection error: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      }]);
     } finally {
       setIsLoading(false);
     }
