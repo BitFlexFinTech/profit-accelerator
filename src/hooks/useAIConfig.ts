@@ -47,20 +47,40 @@ export function useAIConfig() {
   }, [fetchConfig]);
 
   const saveConfig = async (apiKey: string, model: string) => {
-    console.log('[useAIConfig] Saving config:', { hasApiKey: !!apiKey, apiKeyLength: apiKey?.length, model });
+    console.log('[useAIConfig] === SAVE START ===');
+    console.log('[useAIConfig] apiKey length:', apiKey?.length);
+    console.log('[useAIConfig] model:', model);
+    
+    const trimmedKey = apiKey?.trim();
+    if (!trimmedKey || trimmedKey.length < 10) {
+      console.error('[useAIConfig] Local validation failed: API key too short');
+      return { success: false, error: 'API key must be at least 10 characters' };
+    }
     
     try {
+      console.log('[useAIConfig] Invoking ai-analyze edge function...');
       const { data, error } = await supabase.functions.invoke('ai-analyze', {
-        body: { action: 'save-config', apiKey, model }
+        body: { action: 'save-config', apiKey: trimmedKey, model }
       });
 
-      console.log('[useAIConfig] Save response:', data, error);
+      console.log('[useAIConfig] Response data:', JSON.stringify(data));
+      console.log('[useAIConfig] Response error:', error);
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useAIConfig] Function invoke error:', error);
+        throw error;
+      }
+      
+      if (!data?.success) {
+        console.error('[useAIConfig] Server returned failure:', data?.error);
+        return { success: false, error: data?.error || 'Save failed' };
+      }
+      
       await fetchConfig();
+      console.log('[useAIConfig] === SAVE SUCCESS ===');
       return { success: true };
     } catch (err) {
-      console.error('[useAIConfig] Error saving AI config:', err);
+      console.error('[useAIConfig] Caught error:', err);
       return { success: false, error: err instanceof Error ? err.message : 'Failed to save' };
     }
   };

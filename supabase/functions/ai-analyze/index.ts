@@ -187,46 +187,65 @@ Keep the analysis professional, actionable, and under 200 words.`;
       }
 
       case 'save-config': {
+        console.log('[ai-analyze] === SAVE-CONFIG START ===');
+        console.log('[ai-analyze] Raw body received:', JSON.stringify({ action, model, hasApiKey: !!apiKey, apiKeyLength: apiKey?.length }));
+        
         const cleanApiKey = apiKey?.trim();
-        console.log(`[ai-analyze] SAVE-CONFIG: cleanApiKey length=${cleanApiKey?.length || 0}, model=${model}`);
         
         if (!cleanApiKey || cleanApiKey.length < 10) {
-          console.error(`[ai-analyze] ERROR: API key invalid - length=${cleanApiKey?.length || 0}`);
+          console.error(`[ai-analyze] VALIDATION FAILED: API key too short (${cleanApiKey?.length || 0} chars)`);
           return new Response(
             JSON.stringify({ success: false, error: 'API key is required (min 10 chars)' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        // Delete existing groq config and insert fresh to avoid update issues
         console.log(`[ai-analyze] Deleting existing groq config...`);
-        await supabase.from('ai_config').delete().eq('provider', 'groq');
+        const { error: deleteError } = await supabase
+          .from('ai_config')
+          .delete()
+          .eq('provider', 'groq');
         
-        console.log(`[ai-analyze] Inserting new groq config with ${cleanApiKey.length} char API key...`);
-        const { error } = await supabase.from('ai_config').insert({
+        if (deleteError) {
+          console.error('[ai-analyze] DELETE error:', deleteError);
+        } else {
+          console.log('[ai-analyze] DELETE successful');
+        }
+        
+        const insertPayload = {
           provider: 'groq',
           api_key: cleanApiKey,
           model: model || 'llama-3.3-70b-versatile',
           is_active: true,
-        });
+        };
+        console.log('[ai-analyze] INSERT payload (key masked):', { ...insertPayload, api_key: `***${cleanApiKey.slice(-4)}` });
+        
+        const { data: insertData, error: insertError } = await supabase
+          .from('ai_config')
+          .insert(insertPayload)
+          .select();
 
-        if (error) {
-          console.error(`[ai-analyze] Insert error:`, error);
-          throw error;
+        if (insertError) {
+          console.error('[ai-analyze] INSERT FAILED:', insertError);
+          return new Response(
+            JSON.stringify({ success: false, error: insertError.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
         
-        console.log(`[ai-analyze] SUCCESS: Groq config saved with ${cleanApiKey.length} char API key`);
+        console.log('[ai-analyze] INSERT SUCCESS:', JSON.stringify(insertData));
+        console.log('[ai-analyze] === SAVE-CONFIG END ===');
 
         // Log to audit
         await supabase.from('audit_logs').insert({
           action: 'ai_config_updated',
           entity_type: 'config',
           entity_id: 'groq',
-          new_value: { model, is_active: true },
+          new_value: { model: insertPayload.model, is_active: true },
         });
 
         return new Response(
-          JSON.stringify({ success: true, message: 'AI configuration saved' }),
+          JSON.stringify({ success: true, message: 'AI configuration saved', data: insertData }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

@@ -50,6 +50,12 @@ interface AppState {
   getExchangeStatus: (id: string) => 'green' | 'yellow' | 'red';
   getVpsStatusLevel: (provider: string) => 'healthy' | 'warning' | 'error';
   getMeshHealth: () => { healthy: number; total: number };
+  getPortfolioBreakdown: () => Array<{
+    exchange: string;
+    balance: number;
+    percentage: number;
+    color: string;
+  }>;
   
   // ACTIONS (update state from real data sources)
   setExchangeBalance: (exchange: string, balance: ExchangeBalance) => void;
@@ -106,6 +112,40 @@ export const useAppStore = create<AppState>((set, get) => ({
     const statuses = Object.values(vpsStatus);
     const healthy = statuses.filter(s => s.status === 'healthy').length;
     return { healthy, total: statuses.length };
+  },
+  
+  getPortfolioBreakdown: () => {
+    const { exchangeBalances } = get();
+    
+    const COLORS: Record<string, string> = {
+      Binance: '#F0B90B',
+      OKX: '#6366F1',
+      Bybit: '#F97316',
+      Bitget: '#22C55E',
+      MEXC: '#3B82F6',
+      'Gate.io': '#8B5CF6',
+      KuCoin: '#06B6D4',
+      Kraken: '#A855F7',
+      BingX: '#EC4899',
+      Hyperliquid: '#14B8A6',
+      Nexo: '#10B981'
+    };
+    
+    const total = Object.values(exchangeBalances)
+      .filter(b => b.isConnected && b.total > 0)
+      .reduce((sum, b) => sum + b.total, 0);
+    
+    if (total === 0) return [];
+    
+    return Object.entries(exchangeBalances)
+      .filter(([_, b]) => b.isConnected && b.total > 0)
+      .map(([exchange, b]) => ({
+        exchange,
+        balance: b.total,
+        percentage: (b.total / total) * 100,
+        color: COLORS[exchange] || '#64748B'
+      }))
+      .sort((a, b) => b.balance - a.balance);
   },
   
   // ACTIONS
