@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { SentimentPanel } from '../panels/SentimentPanel';
 import { TradeCopierPanel } from '../panels/TradeCopierPanel';
 import { ExchangePingPanel } from '../panels/ExchangePingPanel';
@@ -8,6 +8,7 @@ import { QuickActionsPanel } from '../panels/QuickActionsPanel';
 import { MarketWatchPanel } from '../panels/MarketWatchPanel';
 import { CloudStatusPanel } from '../panels/CloudStatusPanel';
 import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
+import { VPSMonitorPanel } from '../panels/VPSMonitorPanel';
 import { TradeLogPanel } from '../panels/TradeLogPanel';
 import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
 import { BotControlPanel } from '../BotControlPanel';
@@ -15,6 +16,7 @@ import { EquityChartPanel } from '../panels/EquityChartPanel';
 import { APIDiagnosticsPanel } from '../panels/APIDiagnosticsPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
+import { supabase } from '@/integrations/supabase/client';
 
 export function LiveDashboard() {
   // Subscribe to real-time trade notifications
@@ -22,10 +24,23 @@ export function LiveDashboard() {
   
   // Get sync function from WebSocket hook
   const { sync } = useExchangeWebSocket();
+
+  // Fetch VPS config for dynamic IP
+  const [vpsConfig, setVpsConfig] = useState<{ outbound_ip: string; provider: string } | null>(null);
   
-  // Force immediate balance sync on mount
   useEffect(() => {
     sync();
+    
+    const fetchVps = async () => {
+      const { data } = await supabase
+        .from('vps_config')
+        .select('outbound_ip, provider')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (data) setVpsConfig(data);
+    };
+    fetchVps();
   }, [sync]);
 
   return (
@@ -33,8 +48,11 @@ export function LiveDashboard() {
       {/* Bot Control Panel - Master START/STOP */}
       <BotControlPanel />
 
-      {/* Cloud Status Panel - Shows your Vultr server at 167.179.83.239 */}
+      {/* Cloud Status Panel */}
       <CloudStatusPanel />
+
+      {/* VPS Monitor Panel - Real-time metrics */}
+      <VPSMonitorPanel />
 
       {/* Equity Chart - Full Width */}
       <EquityChartPanel />
@@ -68,10 +86,12 @@ export function LiveDashboard() {
       </div>
 
       {/* Full Width Terminal */}
-      <VPSTerminalPanel 
-        serverIp="167.179.83.239" 
-        serverName="Vultr Tokyo" 
-      />
+      {vpsConfig?.outbound_ip && (
+        <VPSTerminalPanel 
+          serverIp={vpsConfig.outbound_ip} 
+          serverName={`${vpsConfig.provider === 'contabo' ? 'Contabo Singapore' : vpsConfig.provider}`} 
+        />
+      )}
     </div>
   );
 }

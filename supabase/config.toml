@@ -83,3 +83,6 @@ verify_jwt = false
 
 [functions.digitalocean-cloud]
 verify_jwt = false
+
+[functions.sync-ip-whitelist]
+verify_jwt = false
