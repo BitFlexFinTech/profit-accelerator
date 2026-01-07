@@ -144,3 +144,6 @@ verify_jwt = false
 
 [functions.data-validator]
 verify_jwt = false
+
+[functions.deploy-bot]
+verify_jwt = false

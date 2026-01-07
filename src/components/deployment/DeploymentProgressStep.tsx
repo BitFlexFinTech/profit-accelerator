@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { CheckCircle2, XCircle, Clock, Loader2, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { CheckCircle2, XCircle, Clock, Loader2, AlertTriangle, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -12,6 +12,17 @@ import { cn } from '@/lib/utils';
 interface DeploymentProgressStepProps {
   provider: Provider;
   deploymentId: string;
+  config: {
+    region: string;
+    size: string;
+    repoUrl: string;
+    branch: string;
+    envVars: Record<string, string>;
+    startCommand: string;
+    allowedPorts?: number[];
+    enableMonitoring: boolean;
+    enableBackups: boolean;
+  };
   onComplete: (result: DeploymentResult) => void;
   onError: (error: string) => void;
   onCancel: () => void;
@@ -25,9 +36,20 @@ interface StageState {
   progress: number;
 }
 
+interface DeploymentLog {
+  id: string;
+  deployment_id: string;
+  stage_number: number | null;
+  status: string | null;
+  progress: number | null;
+  message: string | null;
+  error_details: string | null;
+}
+
 export function DeploymentProgressStep({
   provider,
   deploymentId,
+  config,
   onComplete,
   onError,
   onCancel,
@@ -45,71 +67,140 @@ export function DeploymentProgressStep({
   const [overallProgress, setOverallProgress] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isComplete, setIsComplete] = useState(false);
+  
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   // Timer for elapsed time
   useEffect(() => {
     const timer = setInterval(() => {
-      setElapsedTime(prev => prev + 1);
+      if (!isComplete && !error) {
+        setElapsedTime(prev => prev + 1);
+      }
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isComplete, error]);
 
-  // Simulated deployment (in production, this would listen to Supabase Realtime)
+  // Auto-scroll logs
   useEffect(() => {
-    const runDeployment = async () => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
+  // Subscribe to real-time updates and start deployment
+  useEffect(() => {
+    const addLog = (message: string) => {
+      const timestamp = new Date().toLocaleTimeString();
+      setLogs(prev => [...prev, `[${timestamp}] ${message}`]);
+    };
+
+    // Subscribe to deployment logs via Supabase Realtime
+    const channel = supabase
+      .channel(`deployment-${deploymentId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'deployment_logs',
+          filter: `deployment_id=eq.${deploymentId}`,
+        },
+        (payload) => {
+          const log = payload.new as DeploymentLog;
+          console.log('Deployment log received:', log);
+
+          if (log.stage_number && log.stage_number > 0) {
+            setCurrentStage(log.stage_number);
+            
+            const status = log.status === 'completed' ? 'success' 
+              : log.status === 'error' ? 'error' 
+              : log.status === 'running' ? 'running' 
+              : 'pending';
+
+            setStages(prev => prev.map(s => {
+              if (s.number === log.stage_number) {
+                return { ...s, status, message: log.message || undefined };
+              }
+              if (s.number < (log.stage_number || 0) && s.status !== 'success') {
+                return { ...s, status: 'success', progress: 100 };
+              }
+              return s;
+            }));
+          }
+
+          if (log.message) {
+            addLog(log.message);
+          }
+
+          if (log.progress !== null) {
+            setOverallProgress(log.progress);
+          }
+
+          if (log.status === 'error') {
+            setError(log.error_details || log.message || 'Deployment failed');
+          }
+        }
+      )
+      .subscribe();
+
+    channelRef.current = channel;
+
+    // Start the deployment
+    const startDeployment = async () => {
       try {
-        // Call the deploy-bot edge function
-        const { data, error } = await supabase.functions.invoke('deploy-bot', {
-          body: { provider, deploymentId },
+        addLog(`Connecting to ${provider.toUpperCase()} API...`);
+        
+        const { data, error: invokeError } = await supabase.functions.invoke('deploy-bot', {
+          body: {
+            deploymentId,
+            provider,
+            region: config.region,
+            size: config.size,
+            repoUrl: config.repoUrl,
+            branch: config.branch,
+            envVars: config.envVars,
+            startCommand: config.startCommand,
+            allowedPorts: config.allowedPorts,
+            enableMonitoring: config.enableMonitoring,
+            enableBackups: config.enableBackups,
+          },
         });
 
-        if (error) throw error;
-
-        // For now, simulate progress since edge function may not stream
-        for (let i = 0; i < DEPLOYMENT_STAGES.length; i++) {
-          const stage = DEPLOYMENT_STAGES[i];
-          
-          setCurrentStage(stage.number);
-          setStages(prev => prev.map(s => 
-            s.number === stage.number 
-              ? { ...s, status: 'running', progress: 0 }
-              : s
-          ));
-          
-          setLogs(prev => [...prev, `[${stage.number}/18] ${stage.name}...`]);
-          
-          // Simulate progress
-          await new Promise(r => setTimeout(r, stage.estimatedSeconds * 50));
-          
-          setStages(prev => prev.map(s => 
-            s.number === stage.number 
-              ? { ...s, status: 'success', progress: 100 }
-              : s
-          ));
-          
-          setOverallProgress(Math.round((stage.number / 18) * 100));
-          setLogs(prev => [...prev, `✅ ${stage.name} complete`]);
+        if (invokeError) {
+          throw new Error(invokeError.message);
         }
 
-        // Complete
-        onComplete({
-          instanceId: data?.instanceId || `${provider}-${Date.now()}`,
-          ipAddress: data?.ipAddress || '192.168.1.100',
-          provider,
-          region: data?.region || 'us-east-1',
-          size: data?.size || 'medium',
-          monthlyCost: data?.monthlyCost || 45,
-          botPid: data?.botPid || 1234,
-          deploymentId,
-        });
-      } catch (err: any) {
-        setError(err.message || 'Deployment failed');
-        onError(err.message);
+        if (data?.success) {
+          setIsComplete(true);
+          onComplete({
+            instanceId: data.instanceId,
+            ipAddress: data.ipAddress,
+            provider,
+            region: config.region,
+            size: config.size,
+            monthlyCost: data.monthlyCost || 45,
+            botPid: data.botPid,
+            deploymentId,
+          });
+        } else if (data?.error) {
+          setError(data.error);
+          onError(data.error);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Deployment failed';
+        setError(message);
+        onError(message);
       }
     };
 
-    runDeployment();
-  }, [provider, deploymentId, onComplete, onError]);
+    startDeployment();
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+    };
+  }, [provider, deploymentId, config, onComplete, onError]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -173,11 +264,16 @@ export function DeploymentProgressStep({
       {/* Logs Terminal */}
       <Card className="bg-black/90">
         <CardContent className="p-3">
+          <div className="flex items-center gap-2 mb-2 text-green-400">
+            <Terminal className="h-4 w-4" />
+            <span className="text-xs font-medium">Live Logs</span>
+          </div>
           <ScrollArea className="h-[120px]">
             <div className="font-mono text-xs text-green-400 space-y-1">
               {logs.map((log, i) => (
                 <div key={i}>{log}</div>
               ))}
+              <div ref={logEndRef} />
             </div>
           </ScrollArea>
         </CardContent>
@@ -195,10 +291,19 @@ export function DeploymentProgressStep({
             <Button variant="outline" size="sm" onClick={onCancel}>
               Cancel
             </Button>
-            <Button variant="destructive" size="sm">
+            <Button variant="destructive" size="sm" onClick={() => window.location.reload()}>
               Retry
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* Cancel Button */}
+      {!error && !isComplete && (
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={onCancel}>
+            Cancel Deployment
+          </Button>
         </div>
       )}
     </div>
