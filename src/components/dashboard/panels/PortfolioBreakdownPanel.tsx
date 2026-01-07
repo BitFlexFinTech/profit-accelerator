@@ -1,38 +1,20 @@
 import { useAppStore } from '@/store/useAppStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { PieChart as PieChartIcon } from 'lucide-react';
 
-const EXCHANGE_COLORS: Record<string, string> = {
-  Binance: '#F0B90B',
-  OKX: '#6366F1',
-  Bybit: '#F97316',
-  Bitget: '#22C55E',
-  MEXC: '#3B82F6',
-  'Gate.io': '#8B5CF6',
-  KuCoin: '#06B6D4',
-  Kraken: '#A855F7',
-  BingX: '#EC4899',
-  Hyperliquid: '#14B8A6',
-  Nexo: '#10B981'
-};
-
-const DEFAULT_COLOR = '#64748B';
-
 export function PortfolioBreakdownPanel() {
-  const { exchangeBalances, getTotalEquity } = useAppStore();
+  const { getPortfolioBreakdown, getTotalEquity } = useAppStore();
+  const breakdown = getPortfolioBreakdown();
   const totalEquity = getTotalEquity();
 
-  // Build pie chart data from connected exchanges with balances
-  const chartData = Object.entries(exchangeBalances)
-    .filter(([_, balance]) => balance.isConnected && balance.total > 0)
-    .map(([exchange, balance]) => ({
-      name: exchange,
-      value: balance.total,
-      percentage: totalEquity > 0 ? (balance.total / totalEquity) * 100 : 0,
-      color: EXCHANGE_COLORS[exchange] || DEFAULT_COLOR
-    }))
-    .sort((a, b) => b.value - a.value);
+  // Transform for Recharts
+  const chartData = breakdown.map(item => ({
+    name: item.exchange,
+    value: item.balance,
+    percentage: item.percentage,
+    color: item.color
+  }));
 
   const hasData = chartData.length > 0 && totalEquity > 0;
 
@@ -47,7 +29,7 @@ export function PortfolioBreakdownPanel() {
       <CardContent>
         {hasData ? (
           <div className="flex items-center gap-4">
-            {/* Pie Chart */}
+            {/* Animated Pie Chart */}
             <div className="w-32 h-32 flex-shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -59,9 +41,17 @@ export function PortfolioBreakdownPanel() {
                     outerRadius={50}
                     paddingAngle={2}
                     dataKey="value"
+                    animationBegin={0}
+                    animationDuration={800}
+                    animationEasing="ease-out"
+                    isAnimationActive={true}
                   >
                     {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={entry.color}
+                        className="transition-all duration-500"
+                      />
                     ))}
                   </Pie>
                   <Tooltip
@@ -77,18 +67,21 @@ export function PortfolioBreakdownPanel() {
               </ResponsiveContainer>
             </div>
 
-            {/* Legend */}
+            {/* Animated Legend */}
             <div className="flex-1 space-y-1.5">
               {chartData.map((entry) => (
-                <div key={entry.name} className="flex items-center justify-between text-xs">
+                <div 
+                  key={entry.name} 
+                  className="flex items-center justify-between text-xs transition-all duration-300 hover:bg-secondary/30 rounded px-1 -mx-1"
+                >
                   <div className="flex items-center gap-2">
                     <div 
-                      className="w-2 h-2 rounded-full" 
+                      className="w-2 h-2 rounded-full transition-transform duration-300 hover:scale-125" 
                       style={{ backgroundColor: entry.color }}
                     />
                     <span className="text-muted-foreground">{entry.name}</span>
                   </div>
-                  <span className="font-mono font-medium">
+                  <span className="font-mono font-medium transition-colors duration-300">
                     {entry.percentage.toFixed(1)}%
                   </span>
                 </div>
@@ -97,7 +90,7 @@ export function PortfolioBreakdownPanel() {
               {/* Total */}
               <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Total Equity</span>
-                <span className="font-mono font-bold text-primary">
+                <span className="font-mono font-bold text-primary transition-all duration-500">
                   ${totalEquity.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </span>
               </div>
