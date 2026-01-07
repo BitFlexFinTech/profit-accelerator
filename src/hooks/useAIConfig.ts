@@ -47,16 +47,20 @@ export function useAIConfig() {
   }, [fetchConfig]);
 
   const saveConfig = async (apiKey: string, model: string) => {
+    console.log('[useAIConfig] Saving config:', { hasApiKey: !!apiKey, apiKeyLength: apiKey?.length, model });
+    
     try {
       const { data, error } = await supabase.functions.invoke('ai-analyze', {
         body: { action: 'save-config', apiKey, model }
       });
 
+      console.log('[useAIConfig] Save response:', data, error);
+
       if (error) throw error;
       await fetchConfig();
       return { success: true };
     } catch (err) {
-      console.error('Error saving AI config:', err);
+      console.error('[useAIConfig] Error saving AI config:', err);
       return { success: false, error: err instanceof Error ? err.message : 'Failed to save' };
     }
   };
