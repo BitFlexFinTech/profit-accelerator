@@ -156,3 +156,6 @@ verify_jwt = false
 
 [functions.bot-control]
 verify_jwt = false
+
+[functions.manage-secrets]
+verify_jwt = false

@@ -1234,6 +1234,39 @@ export type Database = {
         }
         Relationships: []
       }
+      system_secrets: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          last_accessed_at: string | null
+          secret_name: string
+          secret_value: string
+          updated_at: string | null
+          version: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          last_accessed_at?: string | null
+          secret_name: string
+          secret_value: string
+          updated_at?: string | null
+          version?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          last_accessed_at?: string | null
+          secret_name?: string
+          secret_value?: string
+          updated_at?: string | null
+          version?: number | null
+        }
+        Relationships: []
+      }
       telegram_config: {
         Row: {
           bot_token: string | null
