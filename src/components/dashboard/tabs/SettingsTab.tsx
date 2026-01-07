@@ -38,6 +38,7 @@ import { AlibabaWizard } from '../wizards/AlibabaWizard';
 import { AzureWizard } from '../wizards/AzureWizard';
 import { SecurityHardeningWizard } from '../wizards/SecurityHardeningWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
+import { SecurityVaultPanel } from '../panels/SecurityVaultPanel';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
 import { useHFTSettings } from '@/hooks/useHFTSettings';
@@ -802,6 +803,9 @@ export function SettingsTab() {
 
       {/* VPS Status - Dynamic */}
       <VPSStatusSection />
+
+      {/* Security Vault - Encryption Key Management */}
+      <SecurityVaultPanel />
 
       {/* Wallet Transfers */}
       <WalletTransferSection />

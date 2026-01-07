@@ -1,7 +1,66 @@
 // AES-256-GCM encryption utilities for Edge Functions
 // Uses Web Crypto API (Deno compatible)
 
+import { createClient } from "npm:@supabase/supabase-js@2";
+
 const ALGORITHM = 'AES-GCM';
+
+// Cache for the encryption key to avoid repeated DB calls
+let cachedKey: string | null = null;
+let cacheExpiry: number = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Get encryption key from database or environment
+async function getEncryptionKey(): Promise<string> {
+  // First try environment variable (backward compatible)
+  const envKey = Deno.env.get('ENCRYPTION_KEY');
+  if (envKey && envKey !== 'default-32-char-encryption-key!!') {
+    return envKey;
+  }
+
+  // Check cache
+  if (cachedKey && Date.now() < cacheExpiry) {
+    return cachedKey;
+  }
+
+  // Fetch from system_secrets table
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
+
+  const { data, error } = await supabase
+    .from('system_secrets')
+    .select('secret_value')
+    .eq('secret_name', 'encryption_key')
+    .single();
+
+  if (error) {
+    console.warn('[encryption] Failed to fetch key from DB:', error.message);
+  }
+
+  if (data?.secret_value) {
+    // Update last accessed timestamp (fire and forget)
+    (async () => {
+      try {
+        await supabase
+          .from('system_secrets')
+          .update({ last_accessed_at: new Date().toISOString() })
+          .eq('secret_name', 'encryption_key');
+      } catch { /* ignore */ }
+    })();
+
+    // Cache the key
+    cachedKey = data.secret_value;
+    cacheExpiry = Date.now() + CACHE_TTL;
+    
+    return data.secret_value;
+  }
+
+  // Fallback to default (will trigger warning in logs)
+  console.warn('[encryption] No encryption key found - using default (INSECURE)');
+  return 'default-32-char-encryption-key!!';
+}
 
 // Derive a 256-bit key from the encryption key using PBKDF2
 async function deriveKey(encryptionKey: string, salt: ArrayBuffer): Promise<CryptoKey> {
@@ -41,7 +100,7 @@ function fromHex(hex: string): ArrayBuffer {
 }
 
 export async function encrypt(text: string, encryptionKey?: string): Promise<string> {
-  const key = encryptionKey || Deno.env.get('ENCRYPTION_KEY') || 'default-32-char-encryption-key!!';
+  const key = encryptionKey || await getEncryptionKey();
   const encoder = new TextEncoder();
   
   // Generate random IV and salt
@@ -67,7 +126,7 @@ export async function encrypt(text: string, encryptionKey?: string): Promise<str
 }
 
 export async function decrypt(encryptedData: string, encryptionKey?: string): Promise<string> {
-  const key = encryptionKey || Deno.env.get('ENCRYPTION_KEY') || 'default-32-char-encryption-key!!';
+  const key = encryptionKey || await getEncryptionKey();
   const decoder = new TextDecoder();
   
   const data = JSON.parse(encryptedData);
