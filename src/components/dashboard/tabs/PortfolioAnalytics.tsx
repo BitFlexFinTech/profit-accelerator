@@ -4,6 +4,27 @@ import { supabase } from '@/integrations/supabase/client';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 
+// Import all panels moved from LiveDashboard
+import { VPSMeshPanel } from '../panels/VPSMeshPanel';
+import { MeshHealthScoreWidget } from '../panels/MeshHealthScoreWidget';
+import { VPSLatencyTrendsPanel } from '../panels/VPSLatencyTrendsPanel';
+import { VPSDeploymentTimelinePanel } from '../panels/VPSDeploymentTimelinePanel';
+import { CloudCostComparisonPanel } from '../panels/CloudCostComparisonPanel';
+import { VPSMonitorPanel } from '../panels/VPSMonitorPanel';
+import { MarketWatchPanel } from '../panels/MarketWatchPanel';
+import { QuickActionsPanel } from '../panels/QuickActionsPanel';
+import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
+import { FailoverHistoryPanel } from '../panels/FailoverHistoryPanel';
+import { TradeLogPanel } from '../panels/TradeLogPanel';
+import { CostOptimizationPanel } from '../panels/CostOptimizationPanel';
+import { ExchangePingPanel } from '../panels/ExchangePingPanel';
+import { APIDiagnosticsPanel } from '../panels/APIDiagnosticsPanel';
+import { TradeCopierPanel } from '../panels/TradeCopierPanel';
+import { VPSBenchmarkPanel } from '../panels/VPSBenchmarkPanel';
+import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
+import { RecentTradesPanel } from '../panels/RecentTradesPanel';
+import { PnLPanel } from '../panels/PnLPanel';
+
 interface PortfolioMetrics {
   sharpeRatio: number | null;
   maxDrawdown: number | null;
@@ -25,6 +46,7 @@ export function PortfolioAnalytics() {
   });
   const [equityData, setEquityData] = useState<BalancePoint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [vpsConfig, setVpsConfig] = useState<{ outbound_ip: string; provider: string } | null>(null);
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -90,6 +112,17 @@ export function PortfolioAnalytics() {
             sharpeRatio: backtestData[0].sharpe_ratio,
           }));
         }
+
+        // Fetch VPS config for terminal
+        const { data: vpsData } = await supabase
+          .from('vps_config')
+          .select('outbound_ip, provider')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (vpsData) setVpsConfig(vpsData);
+
       } catch (err) {
         console.error('Failed to fetch portfolio analytics:', err);
       } finally {
@@ -170,6 +203,11 @@ export function PortfolioAnalytics() {
         </div>
       </div>
 
+      {/* P&L Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <PnLPanel />
+      </div>
+
       {/* Equity Curve Chart */}
       <div className="glass-card p-6">
         <h3 className="text-lg font-semibold mb-4">Equity Curve</h3>
@@ -227,21 +265,51 @@ export function PortfolioAnalytics() {
         )}
       </div>
 
+      {/* VPS Infrastructure Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="glass-card p-6">
-          <h3 className="text-lg font-semibold mb-4">Monthly Returns</h3>
-          <div className="h-48 flex items-center justify-center text-muted-foreground">
-            <p>Connect exchanges to view monthly returns</p>
-          </div>
-        </div>
-
-        <div className="glass-card p-6">
-          <h3 className="text-lg font-semibold mb-4">Trade Distribution</h3>
-          <div className="h-48 flex items-center justify-center text-muted-foreground">
-            <p>Execute trades to view distribution</p>
-          </div>
-        </div>
+        <VPSMeshPanel />
+        <MeshHealthScoreWidget />
       </div>
+      
+      <VPSLatencyTrendsPanel />
+      <VPSDeploymentTimelinePanel />
+      <CloudCostComparisonPanel />
+      <VPSMonitorPanel />
+
+      {/* Trading Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <MarketWatchPanel />
+        <TradeLogPanel />
+        <TradeCopierPanel />
+      </div>
+
+      <RecentTradesPanel />
+
+      {/* Monitoring Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <FailoverStatusPanel />
+        <FailoverHistoryPanel />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ExchangePingPanel />
+        <APIDiagnosticsPanel />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <QuickActionsPanel />
+        <CostOptimizationPanel />
+      </div>
+
+      <VPSBenchmarkPanel />
+
+      {/* VPS Terminal */}
+      {vpsConfig?.outbound_ip && (
+        <VPSTerminalPanel 
+          serverIp={vpsConfig.outbound_ip} 
+          serverName={`${vpsConfig.provider === 'contabo' ? 'Contabo Singapore' : vpsConfig.provider}`} 
+        />
+      )}
     </div>
   );
 }

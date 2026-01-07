@@ -376,6 +376,97 @@ serve(async (req) => {
         }
       }
 
+      case 'get-tickers': {
+        // Fetch real ticker data from connected exchanges
+        const { symbols } = params;
+        console.log('[trade-engine] Fetching tickers for:', symbols);
+        
+        const { data: exchanges } = await supabase
+          .from('exchange_connections')
+          .select('exchange_name, is_connected')
+          .eq('is_connected', true);
+
+        if (!exchanges?.length) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'No connected exchanges', tickers: [] }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const tickers: Array<{ symbol: string; exchange: string; lastPrice: number; priceChange24h: number; volume24h: number }> = [];
+        const firstExchange = exchanges[0].exchange_name.toLowerCase();
+
+        for (const symbol of (symbols || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'])) {
+          try {
+            if (firstExchange === 'binance') {
+              const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
+              if (resp.ok) {
+                const data = await resp.json();
+                tickers.push({
+                  symbol,
+                  exchange: 'binance',
+                  lastPrice: parseFloat(data.lastPrice),
+                  priceChange24h: parseFloat(data.priceChangePercent),
+                  volume24h: parseFloat(data.volume)
+                });
+              }
+            } else if (firstExchange === 'okx') {
+              const instId = symbol.replace('USDT', '-USDT');
+              const resp = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${instId}`);
+              if (resp.ok) {
+                const data = await resp.json();
+                const ticker = data.data?.[0];
+                if (ticker) {
+                  const change = ((parseFloat(ticker.last) - parseFloat(ticker.open24h)) / parseFloat(ticker.open24h)) * 100;
+                  tickers.push({
+                    symbol,
+                    exchange: 'okx',
+                    lastPrice: parseFloat(ticker.last),
+                    priceChange24h: change,
+                    volume24h: parseFloat(ticker.vol24h)
+                  });
+                }
+              }
+            } else if (firstExchange === 'bybit') {
+              const resp = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
+              if (resp.ok) {
+                const data = await resp.json();
+                const ticker = data.result?.list?.[0];
+                if (ticker) {
+                  tickers.push({
+                    symbol,
+                    exchange: 'bybit',
+                    lastPrice: parseFloat(ticker.lastPrice),
+                    priceChange24h: parseFloat(ticker.price24hPcnt) * 100,
+                    volume24h: parseFloat(ticker.volume24h)
+                  });
+                }
+              }
+            } else {
+              // For other exchanges, try Binance public API as fallback
+              const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
+              if (resp.ok) {
+                const data = await resp.json();
+                tickers.push({
+                  symbol,
+                  exchange: firstExchange,
+                  lastPrice: parseFloat(data.lastPrice),
+                  priceChange24h: parseFloat(data.priceChangePercent),
+                  volume24h: parseFloat(data.volume)
+                });
+              }
+            }
+          } catch (err) {
+            console.error(`[trade-engine] Failed to fetch ${symbol} from ${firstExchange}:`, err);
+          }
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, tickers }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       case 'get-balances': {
         // Get all exchange balances from database
         const { data: exchanges } = await supabase

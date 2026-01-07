@@ -77,6 +77,48 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_market_updates: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          current_price: number | null
+          exchange_name: string
+          id: string
+          insight: string
+          price_change_24h: number | null
+          resistance_level: number | null
+          sentiment: string | null
+          support_level: number | null
+          symbol: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string | null
+          current_price?: number | null
+          exchange_name: string
+          id?: string
+          insight: string
+          price_change_24h?: number | null
+          resistance_level?: number | null
+          sentiment?: string | null
+          support_level?: number | null
+          symbol: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string | null
+          current_price?: number | null
+          exchange_name?: string
+          id?: string
+          insight?: string
+          price_change_24h?: number | null
+          resistance_level?: number | null
+          sentiment?: string | null
+          support_level?: number | null
+          symbol?: string
+        }
+        Relationships: []
+      }
       alert_config: {
         Row: {
           alert_type: string

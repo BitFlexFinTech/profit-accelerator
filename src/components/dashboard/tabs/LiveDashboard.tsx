@@ -1,30 +1,12 @@
 import { useEffect, useState } from 'react';
-import { SentimentPanel } from '../panels/SentimentPanel';
-import { TradeCopierPanel } from '../panels/TradeCopierPanel';
-import { ExchangePingPanel } from '../panels/ExchangePingPanel';
-import { PnLPanel } from '../panels/PnLPanel';
-import { RecentTradesPanel } from '../panels/RecentTradesPanel';
-import { QuickActionsPanel } from '../panels/QuickActionsPanel';
-import { MarketWatchPanel } from '../panels/MarketWatchPanel';
-import { CloudStatusPanel } from '../panels/CloudStatusPanel';
-import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
-import { VPSMonitorPanel } from '../panels/VPSMonitorPanel';
-import { TradeLogPanel } from '../panels/TradeLogPanel';
-import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
-import { FailoverHistoryPanel } from '../panels/FailoverHistoryPanel';
 import { BotControlPanel } from '../BotControlPanel';
+import { CompactMetricsBar } from '../panels/CompactMetricsBar';
 import { EquityChartPanel } from '../panels/EquityChartPanel';
-import { APIDiagnosticsPanel } from '../panels/APIDiagnosticsPanel';
-import { VPSMeshPanel } from '../panels/VPSMeshPanel';
-import { MeshHealthScoreWidget } from '../panels/MeshHealthScoreWidget';
-import { VPSLatencyTrendsPanel } from '../panels/VPSLatencyTrendsPanel';
-import { VPSDeploymentTimelinePanel } from '../panels/VPSDeploymentTimelinePanel';
-import { CloudCostComparisonPanel } from '../panels/CloudCostComparisonPanel';
-import { CostOptimizationPanel } from '../panels/CostOptimizationPanel';
-import { VPSBenchmarkPanel } from '../panels/VPSBenchmarkPanel';
+import { CloudStatusPanel } from '../panels/CloudStatusPanel';
+import { SentimentPanel } from '../panels/SentimentPanel';
+import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
-import { supabase } from '@/integrations/supabase/client';
 
 export function LiveDashboard() {
   // Subscribe to real-time trade notifications
@@ -33,91 +15,47 @@ export function LiveDashboard() {
   // Get sync function from WebSocket hook
   const { sync } = useExchangeWebSocket();
 
-  // Fetch VPS config for dynamic IP
-  const [vpsConfig, setVpsConfig] = useState<{ outbound_ip: string; provider: string } | null>(null);
-  
   useEffect(() => {
     sync();
-    
-    const fetchVps = async () => {
-      const { data } = await supabase
-        .from('vps_config')
-        .select('outbound_ip, provider')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .single();
-      if (data) setVpsConfig(data);
-    };
-    fetchVps();
   }, [sync]);
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Bot Control Panel - Master START/STOP */}
-      <BotControlPanel />
-
-      {/* Cloud Status Panel */}
-      <CloudStatusPanel />
-
-      {/* VPS Mesh Panel - 8 Provider Grid */}
-      <VPSMeshPanel />
-
-      {/* Mesh Health Score Widget */}
-      <MeshHealthScoreWidget />
-
-      {/* VPS Latency Trends - 24h Chart */}
-      <VPSLatencyTrendsPanel />
-
-      {/* VPS Deployment Timeline */}
-      <VPSDeploymentTimelinePanel />
-
-      {/* Cloud Cost Comparison Table */}
-      <CloudCostComparisonPanel />
-
-      {/* VPS Monitor Panel - Real-time metrics */}
-      <VPSMonitorPanel />
-
-      {/* Equity Chart - Full Width */}
-      <EquityChartPanel />
-
-      {/* Top Row - Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <PnLPanel />
+    <div className="h-[calc(100vh-140px)] flex flex-col gap-3 overflow-hidden animate-fade-in">
+      {/* Bot Control Panel - Compact */}
+      <div className="flex-shrink-0">
+        <BotControlPanel />
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column */}
-        <div className="space-y-6">
-          <MarketWatchPanel />
-          <QuickActionsPanel />
-          <FailoverStatusPanel />
-          <FailoverHistoryPanel />
-        </div>
-
-        {/* Center Column */}
-        <div className="lg:col-span-1 space-y-6">
-          <SentimentPanel />
-          <TradeLogPanel />
-          <CostOptimizationPanel />
-        </div>
-
-        {/* Right Column */}
-        <div className="space-y-6">
-          <ExchangePingPanel />
-          <APIDiagnosticsPanel />
-          <TradeCopierPanel />
-          <VPSBenchmarkPanel />
-        </div>
+      {/* Key Metrics Row - 4 metrics + AI insight */}
+      <div className="flex-shrink-0">
+        <CompactMetricsBar />
       </div>
 
-      {/* Full Width Terminal */}
-      {vpsConfig?.outbound_ip && (
-        <VPSTerminalPanel 
-          serverIp={vpsConfig.outbound_ip} 
-          serverName={`${vpsConfig.provider === 'contabo' ? 'Contabo Singapore' : vpsConfig.provider}`} 
-        />
-      )}
+      {/* Main Content Area - Fixed, no scroll */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-3 min-h-0">
+        {/* Left: Equity Chart (60% width) */}
+        <div className="lg:col-span-3 min-h-0">
+          <EquityChartPanel />
+        </div>
+
+        {/* Right: Cloud Status + Sentiment + AI Updates (40% width) */}
+        <div className="lg:col-span-2 flex flex-col gap-3 min-h-0">
+          {/* Cloud Status - Compact 8-provider row */}
+          <div className="flex-shrink-0">
+            <CloudStatusPanel />
+          </div>
+
+          {/* Sentiment Panel - Exchange data only */}
+          <div className="flex-shrink-0">
+            <SentimentPanel />
+          </div>
+
+          {/* AI Market Updates - Takes remaining space */}
+          <div className="flex-1 min-h-0">
+            <AIMarketUpdatesPanel />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
