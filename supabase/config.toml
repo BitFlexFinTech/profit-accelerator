@@ -147,3 +147,9 @@ verify_jwt = false
 
 [functions.deploy-bot]
 verify_jwt = false
+
+[functions.ssh-command]
+verify_jwt = false
+
+[functions.poll-vps-metrics]
+verify_jwt = false

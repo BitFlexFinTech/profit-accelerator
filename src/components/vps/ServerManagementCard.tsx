@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { VPSInstance, Provider } from '@/types/cloudCredentials';
 import { useVPSInstances } from '@/hooks/useVPSInstances';
+import { useVPSMetrics } from '@/hooks/useVPSMetrics';
 import { cn } from '@/lib/utils';
 
 interface ServerManagementCardProps {
@@ -77,6 +78,7 @@ const BOT_STATUS_CONFIG: Record<string, { color: string; label: string }> = {
 
 export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerManagementCardProps) {
   const { restartBot, rebootServer, deleteInstance, updateInstanceNickname } = useVPSInstances();
+  const { metrics } = useVPSMetrics();
   const [isEditingName, setIsEditingName] = useState(false);
   const [nickname, setNickname] = useState(instance.nickname || '');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -84,6 +86,13 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
   const [isRestarting, setIsRestarting] = useState(false);
   const [isRebooting, setIsRebooting] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Get real metrics for this instance's provider
+  const instanceMetrics = metrics.find(m => m.provider === instance.provider);
+  const cpuPercent = instanceMetrics?.cpu_percent ?? 0;
+  const ramPercent = instanceMetrics?.ram_percent ?? 0;
+  const latencyMs = instanceMetrics?.latency_ms;
+  const uptimeFromMetrics = instanceMetrics?.uptime_seconds ?? instance.uptimeSeconds;
 
   const providerConfig = PROVIDER_CONFIG[instance.provider];
   const statusConfig = STATUS_CONFIG[instance.status] || STATUS_CONFIG.pending;
@@ -243,22 +252,39 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
           <div className="flex items-center gap-2">
             <Cpu className="h-3 w-3 text-muted-foreground" />
             <span className="text-xs text-muted-foreground w-8">CPU</span>
-            <Progress value={0} className="h-1.5 flex-1" />
-            <span className="text-xs font-mono w-10 text-right">—</span>
+            <Progress value={cpuPercent} className="h-1.5 flex-1" />
+            <span className="text-xs font-mono w-10 text-right">
+              {cpuPercent > 0 ? `${cpuPercent.toFixed(0)}%` : '—'}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <HardDrive className="h-3 w-3 text-muted-foreground" />
             <span className="text-xs text-muted-foreground w-8">RAM</span>
-            <Progress value={0} className="h-1.5 flex-1" />
-            <span className="text-xs font-mono w-10 text-right">—</span>
+            <Progress value={ramPercent} className="h-1.5 flex-1" />
+            <span className="text-xs font-mono w-10 text-right">
+              {ramPercent > 0 ? `${ramPercent.toFixed(0)}%` : '—'}
+            </span>
           </div>
+          {latencyMs !== null && latencyMs !== undefined && (
+            <div className="flex items-center gap-2">
+              <Activity className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground w-8">Ping</span>
+              <div className="flex-1" />
+              <span className={cn(
+                "text-xs font-mono w-16 text-right",
+                latencyMs < 50 ? "text-success" : latencyMs < 200 ? "text-warning" : "text-destructive"
+              )}>
+                {latencyMs}ms
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Footer: Uptime + Cost */}
         <div className="flex items-center justify-between pt-2 border-t border-border/50 text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            <span>Uptime: {formatUptime(instance.uptimeSeconds)}</span>
+            <span>Uptime: {formatUptime(uptimeFromMetrics)}</span>
           </div>
           <div className="flex items-center gap-1 font-medium">
             <DollarSign className="h-3 w-3" />
