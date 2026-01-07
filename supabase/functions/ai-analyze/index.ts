@@ -96,8 +96,20 @@ serve(async (req) => {
 
         const symbolUpper = (symbol || 'BTC').toUpperCase();
         
-        // Fetch current price context (mock for now, would use trade-engine in production)
-        const priceContext = `Current market data for ${symbolUpper}/USDT.`;
+        // Fetch real price data from connected exchanges
+        let priceContext = `Current market data for ${symbolUpper}/USDT.`;
+        try {
+          const priceResponse = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbolUpper}USDT`);
+          if (priceResponse.ok) {
+            const ticker = await priceResponse.json();
+            const price = parseFloat(ticker.lastPrice);
+            const change = parseFloat(ticker.priceChangePercent);
+            const volume = parseFloat(ticker.volume);
+            priceContext = `${symbolUpper}/USDT is trading at $${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}, 24h change: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%, 24h volume: ${volume.toLocaleString(undefined, { maximumFractionDigits: 0 })}.`;
+          }
+        } catch (priceErr) {
+          console.error('[ai-analyze] Price fetch error:', priceErr);
+        }
 
         const analysisPrompt = `You are an expert cryptocurrency trader and technical analyst. Analyze ${symbolUpper}/USDT and provide a concise trading sentiment report.
 

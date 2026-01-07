@@ -1,36 +1,35 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Activity, Brain, Wifi } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Activity, Brain, Wifi, AlertCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
+import { useAppStore } from '@/store/useAppStore';
 import { supabase } from '@/integrations/supabase/client';
 
-interface PortfolioSnapshot {
-  daily_pnl: number | null;
-  weekly_pnl: number | null;
-}
-
 export function CompactMetricsBar() {
-  const { totalBalance, exchanges, isLive, isLoading: exchangeLoading } = useExchangeWebSocket();
-  const [pnlData, setPnlData] = useState<PortfolioSnapshot | null>(null);
+  // Use SSOT store for equity - single source of truth
+  const { 
+    getTotalEquity, 
+    getConnectedExchangeCount, 
+    dailyPnl, 
+    weeklyPnl, 
+    isLoading: storeLoading, 
+    syncFromDatabase,
+    lastUpdate
+  } = useAppStore();
+  
+  const totalBalance = getTotalEquity();
+  const exchangeCount = getConnectedExchangeCount();
+  const isLive = lastUpdate > Date.now() - 60000; // Consider live if updated in last minute
+  
   const [activeTrades, setActiveTrades] = useState(0);
   const [latestAI, setLatestAI] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // Initial sync
+    syncFromDatabase();
+    
     const fetchData = async () => {
       try {
-        // Fetch latest portfolio snapshot for PnL data
-        const { data: snapshot } = await supabase
-          .from('portfolio_snapshots')
-          .select('daily_pnl, weekly_pnl')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (snapshot) {
-          setPnlData(snapshot as PortfolioSnapshot);
-        }
-
         // Fetch active trades count
         const { data: trades } = await supabase
           .from('trading_journal')
@@ -65,11 +64,6 @@ export function CompactMetricsBar() {
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'portfolio_snapshots'
-      }, () => fetchData())
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
         table: 'trading_journal'
       }, () => fetchData())
       .on('postgres_changes', {
@@ -85,13 +79,12 @@ export function CompactMetricsBar() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [syncFromDatabase]);
 
-  const dailyPnl = pnlData?.daily_pnl || 0;
-  const weeklyPnl = pnlData?.weekly_pnl || 0;
   const dailyPercent = totalBalance > 0 ? (dailyPnl / totalBalance) * 100 : 0;
   const weeklyPercent = totalBalance > 0 ? (weeklyPnl / totalBalance) * 100 : 0;
-  const isDataLoading = isLoading || exchangeLoading;
+  const isDataLoading = isLoading || storeLoading;
+  const hasNoData = totalBalance === 0 && !storeLoading;
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
@@ -103,6 +96,11 @@ export function CompactMetricsBar() {
         </div>
         {isDataLoading ? (
           <Skeleton className="h-6 w-20" />
+        ) : hasNoData ? (
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <AlertCircle className="w-3 h-3" />
+            <span className="text-xs">Not Connected</span>
+          </div>
         ) : (
           <div className="flex items-center gap-1">
             <span className={`text-lg font-bold ${dailyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
@@ -127,6 +125,11 @@ export function CompactMetricsBar() {
         </div>
         {isDataLoading ? (
           <Skeleton className="h-6 w-20" />
+        ) : hasNoData ? (
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <AlertCircle className="w-3 h-3" />
+            <span className="text-xs">Not Connected</span>
+          </div>
         ) : (
           <div className="flex items-center gap-1">
             <span className={`text-lg font-bold ${weeklyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
@@ -150,15 +153,20 @@ export function CompactMetricsBar() {
           </div>
           <DollarSign className="w-3 h-3 text-primary" />
         </div>
-        {exchangeLoading ? (
+        {storeLoading ? (
           <Skeleton className="h-6 w-24" />
+        ) : hasNoData ? (
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <AlertCircle className="w-3 h-3" />
+            <span className="text-xs">Connect Exchange</span>
+          </div>
         ) : (
           <div className="flex items-center gap-1">
             <span className="text-lg font-bold">
               ${totalBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </span>
             <span className="text-[10px] text-muted-foreground">
-              ({exchanges.length}ex)
+              ({exchangeCount}ex)
             </span>
           </div>
         )}

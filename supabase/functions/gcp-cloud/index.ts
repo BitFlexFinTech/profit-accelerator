@@ -48,66 +48,252 @@ serve(async (req) => {
       }
 
       case 'deploy-instance': {
-        console.log('[gcp-cloud] Deploying e2-micro instance');
+        console.log('[gcp-cloud] Deploying e2-micro instance with real GCP API');
         console.log(`[gcp-cloud] Specs: ${JSON.stringify(specs)}`);
 
-        // In production, this would:
-        // 1. Authenticate with GCP using service account
-        // 2. Create firewall rules if needed
-        // 3. Create compute instance via GCP Compute Engine API
-        // POST https://compute.googleapis.com/compute/v1/projects/{project}/zones/{zone}/instances
-        
-        // Simulate deployment delay
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        let sa;
+        try {
+          sa = JSON.parse(serviceAccountJson);
+        } catch {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Invalid service account JSON' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
 
-        // Generate a simulated public IP
-        const publicIp = `35.243.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+        const projectId = sa.project_id;
+        const zone = specs?.zone || 'asia-northeast1-a';
+        const machineType = specs?.machineType || 'e2-micro';
+        const instanceName = `hft-bot-${Date.now()}`;
 
-        // Update cloud_config
-        await supabase
-          .from('cloud_config')
-          .update({ 
+        // Generate JWT for GCP OAuth2
+        const createGcpJwt = async (email: string, privateKey: string): Promise<string> => {
+          const header = { alg: 'RS256', typ: 'JWT' };
+          const now = Math.floor(Date.now() / 1000);
+          const claim = {
+            iss: email,
+            sub: email,
+            aud: 'https://oauth2.googleapis.com/token',
+            iat: now,
+            exp: now + 3600,
+            scope: 'https://www.googleapis.com/auth/compute'
+          };
+
+          const base64Header = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+          const base64Claim = btoa(JSON.stringify(claim)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+          const signInput = `${base64Header}.${base64Claim}`;
+
+          // Import private key and sign
+          const pemContents = privateKey
+            .replace('-----BEGIN PRIVATE KEY-----', '')
+            .replace('-----END PRIVATE KEY-----', '')
+            .replace(/\s/g, '');
+          
+          const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+          
+          const cryptoKey = await crypto.subtle.importKey(
+            'pkcs8',
+            binaryKey,
+            { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+            false,
+            ['sign']
+          );
+
+          const signature = await crypto.subtle.sign(
+            'RSASSA-PKCS1-v1_5',
+            cryptoKey,
+            new TextEncoder().encode(signInput)
+          );
+
+          const base64Signature = btoa(String.fromCharCode(...new Uint8Array(signature)))
+            .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+          return `${signInput}.${base64Signature}`;
+        };
+
+        try {
+          // Step 1: Get access token via JWT
+          const jwt = await createGcpJwt(sa.client_email, sa.private_key);
+          
+          const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              assertion: jwt
+            })
+          });
+
+          if (!tokenResponse.ok) {
+            const tokenError = await tokenResponse.text();
+            console.error('[gcp-cloud] Token error:', tokenError);
+            throw new Error('Failed to get GCP access token');
+          }
+
+          const { access_token } = await tokenResponse.json();
+          console.log('[gcp-cloud] Got access token');
+
+          // Step 2: Create Compute Engine instance
+          const instanceConfig = {
+            name: instanceName,
+            machineType: `zones/${zone}/machineTypes/${machineType}`,
+            disks: [{
+              boot: true,
+              autoDelete: true,
+              initializeParams: {
+                sourceImage: 'projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64',
+                diskSizeGb: '10',
+                diskType: `zones/${zone}/diskTypes/pd-standard`
+              }
+            }],
+            networkInterfaces: [{
+              network: 'global/networks/default',
+              accessConfigs: [{
+                type: 'ONE_TO_ONE_NAT',
+                name: 'External NAT',
+                networkTier: 'PREMIUM'
+              }]
+            }],
+            metadata: {
+              items: [{
+                key: 'startup-script',
+                value: `#!/bin/bash
+set -e
+# HFT Kernel Tweaks
+cat >> /etc/sysctl.conf << 'EOF'
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_nodelay = 1
+net.ipv4.tcp_quickack = 1
+net.core.netdev_max_backlog = 65536
+vm.swappiness = 10
+EOF
+sysctl -p
+# Install Docker
+apt-get update && apt-get install -y docker.io docker-compose
+systemctl enable --now docker
+echo "HFT Bot setup complete"
+`
+              }]
+            },
+            labels: {
+              'purpose': 'hft-bot',
+              'region': zone.split('-').slice(0, 2).join('-')
+            }
+          };
+
+          const createResponse = await fetch(
+            `https://compute.googleapis.com/compute/v1/projects/${projectId}/zones/${zone}/instances`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${access_token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(instanceConfig)
+            }
+          );
+
+          const createResult = await createResponse.json();
+          console.log('[gcp-cloud] Create instance response:', JSON.stringify(createResult).substring(0, 500));
+
+          if (!createResponse.ok) {
+            throw new Error(createResult.error?.message || 'Failed to create GCP instance');
+          }
+
+          // Step 3: Poll for instance creation and get external IP
+          let publicIp: string | null = null;
+          for (let i = 0; i < 30; i++) {
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            
+            const statusResponse = await fetch(
+              `https://compute.googleapis.com/compute/v1/projects/${projectId}/zones/${zone}/instances/${instanceName}`,
+              {
+                headers: { 'Authorization': `Bearer ${access_token}` }
+              }
+            );
+            
+            if (statusResponse.ok) {
+              const instanceData = await statusResponse.json();
+              const natIP = instanceData.networkInterfaces?.[0]?.accessConfigs?.[0]?.natIP;
+              const status = instanceData.status;
+              
+              console.log(`[gcp-cloud] Instance status: ${status}, IP: ${natIP}`);
+              
+              if (status === 'RUNNING' && natIP) {
+                publicIp = natIP;
+                break;
+              }
+            }
+          }
+
+          // Update database
+          await supabase.from('cloud_config').upsert({
+            provider: 'gcp',
+            region: zone.split('-').slice(0, 2).join('-'),
+            instance_type: machineType,
             status: 'running',
             is_active: true,
-          })
-          .eq('provider', 'gcp');
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'provider' });
 
-        // Update vps_config
-        await supabase
-          .from('vps_config')
-          .update({ 
+          await supabase.from('vps_config').upsert({
+            provider: 'gcp',
+            region: zone.split('-').slice(0, 2).join('-'),
+            instance_type: machineType,
             status: 'running',
             outbound_ip: publicIp,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'provider' });
+
+          await supabase.from('vps_timeline_events').insert({
             provider: 'gcp',
-            region: specs?.region || 'asia-northeast1',
-            instance_type: specs?.machineType || 'e2-micro'
-          })
-          .eq('provider', 'gcp');
+            event_type: 'deployment',
+            event_subtype: 'instance_created',
+            title: 'GCP Compute Engine Instance Deployed',
+            description: `${machineType} in ${zone} - ${publicIp || 'IP pending'}`,
+            metadata: { instanceName, machineType, zone, projectId }
+          });
 
-        // Log the deployment
-        await supabase.from('audit_logs').insert({
-          action: 'gcp_instance_deployed',
-          entity_type: 'cloud_config',
-          new_value: { 
+          await supabase.from('audit_logs').insert({
+            action: 'gcp_instance_deployed',
+            entity_type: 'cloud_config',
+            new_value: { provider: 'gcp', region: zone, machine_type: machineType, public_ip: publicIp }
+          });
+
+          console.log(`[gcp-cloud] Instance deployed with IP: ${publicIp}`);
+
+          return new Response(
+            JSON.stringify({ 
+              success: true,
+              publicIp,
+              instanceId: instanceName,
+              zone,
+              machineType,
+              message: 'GCP Compute Engine instance deployed successfully'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+
+        } catch (deployError) {
+          console.error('[gcp-cloud] Deploy error:', deployError);
+          
+          await supabase.from('vps_timeline_events').insert({
             provider: 'gcp',
-            region: specs?.region,
-            machine_type: specs?.machineType,
-            public_ip: publicIp
-          }
-        });
+            event_type: 'deployment',
+            event_subtype: 'failed',
+            title: 'GCP Deployment Failed',
+            description: deployError instanceof Error ? deployError.message : 'Unknown error',
+            metadata: { zone, machineType, error: String(deployError) }
+          });
 
-        console.log(`[gcp-cloud] Instance deployed with IP: ${publicIp}`);
-
-        return new Response(
-          JSON.stringify({ 
-            success: true,
-            publicIp,
-            instanceId: `hft-bot-${Date.now()}`,
-            zone: specs?.zone || 'asia-northeast1-a',
-            message: 'GCP e2-micro instance deployed successfully'
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: deployError instanceof Error ? deployError.message : 'GCP deployment failed' 
+            }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
       }
 
       case 'get-instance-status': {

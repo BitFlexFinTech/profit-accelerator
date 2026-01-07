@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CloudKeyGuideModal } from '@/components/dashboard/wizards/CloudKeyGuideModal';
 import { ExchangePulsePanel } from '@/components/dashboard/panels/ExchangePulsePanel';
+import { VPSHealthMonitor } from '@/components/dashboard/panels/VPSHealthMonitor';
 
 interface CloudProvider {
   id: string;
@@ -363,6 +364,9 @@ export default function Setup() {
             </table>
           </div>
         </div>
+
+        {/* VPS Health Monitoring */}
+        <VPSHealthMonitor />
 
         {/* Exchange Pulse Panel */}
         <ExchangePulsePanel />
