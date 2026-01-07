@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.sync-ip-whitelist]
 verify_jwt = false
+
+[functions.scheduled-health-check]
+verify_jwt = false

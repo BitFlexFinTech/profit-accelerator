@@ -1,11 +1,41 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const VULTR_SERVER_IP = '167.179.83.239';
+// Fetch active VPS IP dynamically
+async function getActiveVPSIP(): Promise<string | null> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // First check for primary failover config
+    const { data: failoverConfig } = await supabase
+      .from('failover_config')
+      .select('provider')
+      .eq('is_primary', true)
+      .single();
+
+    const activeProvider = failoverConfig?.provider;
+
+    // Get the VPS config for the active provider
+    const { data: vpsConfig } = await supabase
+      .from('vps_config')
+      .select('outbound_ip')
+      .eq('provider', activeProvider || 'contabo')
+      .single();
+
+    return vpsConfig?.outbound_ip || null;
+  } catch (error) {
+    console.error('Error fetching active VPS IP:', error);
+    return null;
+  }
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -13,13 +43,26 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Get dynamic VPS IP
+  const serverIp = await getActiveVPSIP();
+
   // Check for WebSocket upgrade
   const upgradeHeader = req.headers.get("upgrade") || "";
   if (upgradeHeader.toLowerCase() !== "websocket") {
     return new Response(JSON.stringify({ 
       error: "Expected WebSocket upgrade",
       usage: "Connect via WebSocket for SSH terminal access",
-      serverIp: VULTR_SERVER_IP
+      serverIp: serverIp || 'Not configured'
+    }), { 
+      status: 400, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    });
+  }
+
+  if (!serverIp) {
+    return new Response(JSON.stringify({ 
+      error: "No VPS configured",
+      message: "Please configure a VPS in Settings first"
     }), { 
       status: 400, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -40,7 +83,7 @@ serve(async (req) => {
       socket.send(JSON.stringify({ 
         type: 'connected',
         message: 'WebSocket connection established',
-        serverIp: VULTR_SERVER_IP
+        serverIp: serverIp
       }));
     };
 
@@ -53,19 +96,19 @@ serve(async (req) => {
           if (!sshPrivateKey) {
             socket.send(JSON.stringify({
               type: 'error',
-              message: 'SSH private key not configured. Please add VULTR_SSH_PRIVATE_KEY secret.'
+              message: 'SSH private key not configured. Please add SSH_PRIVATE_KEY secret.'
             }));
             return;
           }
 
           socket.send(JSON.stringify({
             type: 'output',
-            data: `\r\n\x1b[33mConnecting to ${VULTR_SERVER_IP}...\x1b[0m\r\n`
+            data: `\r\n\x1b[33mConnecting to ${serverIp}...\x1b[0m\r\n`
           }));
 
           try {
             // Write private key to temp file
-            const keyPath = '/tmp/vultr_ssh_key';
+            const keyPath = '/tmp/vps_ssh_key';
             await Deno.writeTextFile(keyPath, sshPrivateKey);
             await Deno.chmod(keyPath, 0o600);
 
@@ -77,7 +120,7 @@ serve(async (req) => {
                 '-o', 'UserKnownHostsFile=/dev/null',
                 '-o', 'LogLevel=ERROR',
                 '-tt',
-                `root@${VULTR_SERVER_IP}`
+                `root@${serverIp}`
               ],
               stdin: 'piped',
               stdout: 'piped',
@@ -137,7 +180,7 @@ serve(async (req) => {
 
             socket.send(JSON.stringify({
               type: 'ssh_connected',
-              message: `Connected to ${VULTR_SERVER_IP}`
+              message: `Connected to ${serverIp}`
             }));
 
           } catch (sshError) {

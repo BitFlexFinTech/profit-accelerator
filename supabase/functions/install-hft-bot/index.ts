@@ -271,23 +271,62 @@ PKG_EOF
 log_info "Creating systemd service..."
 cat > /etc/systemd/system/hft-bot.service << 'SERVICE_EOF'
 [Unit]
-Description=HFT Trading Bot
+Description=HFT Trading Bot with Self-Healing Watchdog
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
 WorkingDirectory=/opt/hft-bot
 ExecStartPre=/usr/bin/docker-compose pull
 ExecStart=/usr/bin/docker-compose up
 ExecStop=/usr/bin/docker-compose down
 Restart=always
-RestartSec=10
+RestartSec=3
+WatchdogSec=10
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+# Ensure service restarts on any failure
+RestartForceExitStatus=SIGKILL SIGTERM
 
 [Install]
 WantedBy=multi-user.target
 SERVICE_EOF
+
+# Disable non-essential Ubuntu services for minimal CPU usage
+log_info "Disabling non-essential services for HFT optimization..."
+systemctl disable --now snapd.service snapd.socket 2>/dev/null || true
+systemctl disable --now cups.service cups-browsed.service 2>/dev/null || true
+systemctl disable --now bluetooth.service 2>/dev/null || true
+systemctl disable --now avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
+systemctl disable --now ModemManager.service 2>/dev/null || true
+systemctl disable --now NetworkManager-wait-online.service 2>/dev/null || true
+systemctl disable --now packagekit.service 2>/dev/null || true
+systemctl mask snapd.service cups.service bluetooth.service avahi-daemon.service 2>/dev/null || true
+
+# Configure kernel for ultra-low latency
+log_info "Configuring kernel for low-latency trading..."
+cat >> /etc/sysctl.conf << 'SYSCTL_EOF'
+# Network performance tuning
+net.core.rmem_max=16777216
+net.core.wmem_max=16777216
+net.core.rmem_default=1048576
+net.core.wmem_default=1048576
+net.ipv4.tcp_rmem=4096 1048576 16777216
+net.ipv4.tcp_wmem=4096 1048576 16777216
+net.ipv4.tcp_low_latency=1
+net.ipv4.tcp_nodelay=1
+net.ipv4.tcp_fastopen=3
+net.core.netdev_max_backlog=65536
+
+# Reduce swap usage
+vm.swappiness=10
+vm.dirty_ratio=10
+vm.dirty_background_ratio=5
+SYSCTL_EOF
+sysctl -p 2>/dev/null || true
 
 # Configure firewall
 log_info "Configuring firewall..."
