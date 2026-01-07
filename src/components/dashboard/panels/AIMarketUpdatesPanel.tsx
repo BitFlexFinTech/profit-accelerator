@@ -21,23 +21,21 @@ export function AIMarketUpdatesPanel() {
   const [updates, setUpdates] = useState<AIUpdate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const hasAutoScanned = useRef(false);
 
-  // Auto-scan on mount if AI is configured and no recent updates exist
+  // Auto-scan if AI is configured and no recent updates exist
   const triggerAutoScan = async () => {
-    if (hasAutoScanned.current) return;
-    hasAutoScanned.current = true;
-    
     try {
-      // Check if AI is configured
+      // Check if AI is active (key is in Supabase secrets, not DB)
       const { data: aiConfig } = await supabase
         .from('ai_config')
-        .select('api_key, is_active')
+        .select('is_active')
         .eq('provider', 'groq')
         .single();
       
-      if (!aiConfig?.api_key || !aiConfig?.is_active) {
-        console.log('[AIMarketUpdatesPanel] AI not configured, skipping auto-scan');
+      if (!aiConfig?.is_active) {
+        console.log('[AIMarketUpdatesPanel] AI not active, skipping scan');
         return;
       }
       
@@ -49,14 +47,21 @@ export function AIMarketUpdatesPanel() {
         .limit(1);
       
       if (recentUpdates?.length) {
-        console.log('[AIMarketUpdatesPanel] Recent updates exist, skipping auto-scan');
+        console.log('[AIMarketUpdatesPanel] Recent updates exist, skipping scan');
         return;
       }
       
       console.log('[AIMarketUpdatesPanel] Triggering auto-scan...');
-      await supabase.functions.invoke('ai-analyze', {
+      setScanError(null);
+      const { data, error } = await supabase.functions.invoke('ai-analyze', {
         body: { action: 'market-scan' }
       });
+      
+      if (error || !data?.success) {
+        const errMsg = data?.error || error?.message || 'Scan failed';
+        setScanError(errMsg);
+        console.error('[AIMarketUpdatesPanel] Scan error:', errMsg);
+      }
     } catch (err) {
       console.error('[AIMarketUpdatesPanel] Auto-scan error:', err);
     }
@@ -74,8 +79,9 @@ export function AIMarketUpdatesPanel() {
         if (error) throw error;
         setUpdates((data as AIUpdate[]) || []);
         
-        // Trigger auto-scan after initial fetch if no updates
-        if (!data?.length) {
+        // Trigger auto-scan after initial fetch if no recent updates
+        if (!hasAutoScanned.current) {
+          hasAutoScanned.current = true;
           triggerAutoScan();
         }
       } catch (err) {
@@ -95,12 +101,20 @@ export function AIMarketUpdatesPanel() {
         schema: 'public',
         table: 'ai_market_updates'
       }, (payload) => {
+        setScanError(null); // Clear error when new data arrives
         setUpdates(prev => [payload.new as AIUpdate, ...prev.slice(0, 19)]);
       })
       .subscribe();
 
+    // Periodic AI scan every 5 minutes for 24/7 analysis
+    const scanInterval = setInterval(() => {
+      hasAutoScanned.current = false; // Reset to allow scan
+      triggerAutoScan();
+    }, 5 * 60 * 1000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(scanInterval);
     };
   }, []);
 
@@ -169,6 +183,11 @@ export function AIMarketUpdatesPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0 space-y-1.5">
+        {scanError && (
+          <div className="text-xs text-destructive bg-destructive/10 p-2 rounded mb-2">
+            {scanError}
+          </div>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             Loading AI insights...
@@ -177,7 +196,7 @@ export function AIMarketUpdatesPanel() {
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-2">
             <Brain className="w-8 h-8 opacity-30" />
             <p>No AI insights yet</p>
-            <p className="text-xs">Connect an exchange and configure Groq AI</p>
+            <p className="text-xs">Connect an exchange and enable Groq AI in Settings</p>
           </div>
         ) : (
           updates.map((update) => (

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,9 +7,7 @@ const corsHeaders = {
 };
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-
-// Get Groq API key from Supabase secrets (try multiple possible names)
-const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY') || Deno.env.get('Groq-API Key') || Deno.env.get('GROQ_API_KEY');
+const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -23,422 +21,119 @@ serve(async (req) => {
     );
 
     const body = await req.json();
-    const { action, symbol, message, apiKey, model } = body;
-    console.log(`[ai-analyze] Action: ${action}, symbol: ${symbol}, hasEnvKey: ${!!GROQ_API_KEY}`);
+    const { action, symbol, model } = body;
+    console.log(`[ai-analyze] Action: ${action}, hasKey: ${!!GROQ_API_KEY}`);
 
-    switch (action) {
-      case 'validate-key': {
-        // Use the secret from Supabase secrets
-        if (!GROQ_API_KEY) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'Groq API key not configured in Supabase secrets' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // Test the key with a simple request
-        const testResponse = await fetch(GROQ_API_URL, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${GROQ_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'user', content: 'Say "OK"' }],
-            max_tokens: 5,
-          }),
-        });
-
-        if (testResponse.ok) {
-          return new Response(
-            JSON.stringify({ success: true, message: 'API key is valid' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        } else {
-          const error = await testResponse.text();
-          return new Response(
-            JSON.stringify({ success: false, error: 'Invalid API key', details: error }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
+    if (action === 'validate-key') {
+      if (!GROQ_API_KEY) {
+        return new Response(JSON.stringify({ success: false, error: 'GROQ_API_KEY not set in Supabase secrets' }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-
-      case 'analyze': {
-        // Use the secret from Supabase secrets
-        if (!GROQ_API_KEY) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'Groq API key not configured in Supabase secrets' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // Get model preference from database
-        const { data: aiConfig } = await supabase
-          .from('ai_config')
-          .select('model, is_active, id')
-          .eq('provider', 'groq')
-          .single();
-
-        if (aiConfig && !aiConfig.is_active) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'AI Analysis is not active' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        const symbolUpper = (symbol || 'BTC').toUpperCase();
-        
-        // Fetch real price data from connected exchanges
-        let priceContext = `Current market data for ${symbolUpper}/USDT.`;
-        try {
-          const priceResponse = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbolUpper}USDT`);
-          if (priceResponse.ok) {
-            const ticker = await priceResponse.json();
-            const price = parseFloat(ticker.lastPrice);
-            const change = parseFloat(ticker.priceChangePercent);
-            const volume = parseFloat(ticker.volume);
-            priceContext = `${symbolUpper}/USDT is trading at $${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}, 24h change: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%, 24h volume: ${volume.toLocaleString(undefined, { maximumFractionDigits: 0 })}.`;
-          }
-        } catch (priceErr) {
-          console.error('[ai-analyze] Price fetch error:', priceErr);
-        }
-
-        const analysisPrompt = `You are an expert cryptocurrency trader and technical analyst. Analyze ${symbolUpper}/USDT and provide a concise trading sentiment report.
-
-${priceContext}
-
-Provide your analysis in this exact format:
-📊 Sentiment: [BULLISH/BEARISH/NEUTRAL] ([confidence]%)
-📈 Trend: [brief trend description]
-
-💡 Key Levels:
-   • Support: $[price]
-   • Resistance: $[price]
-
-🔮 Short-term Outlook:
-[2-3 sentences about price action, key indicators, and what to watch for]
-
-📌 Trade Idea: [One actionable suggestion]
-
-⚠️ Risk: [One key risk factor to consider]
-
-Keep the analysis professional, actionable, and under 200 words.`;
-
-        const groqResponse = await fetch(GROQ_API_URL, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${GROQ_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: aiConfig?.model || 'llama-3.3-70b-versatile',
-            messages: [
-              { role: 'system', content: 'You are a professional crypto trading analyst. Be concise and actionable.' },
-              { role: 'user', content: analysisPrompt }
-            ],
-            max_tokens: 500,
-            temperature: 0.7,
-          }),
-        });
-
-        if (!groqResponse.ok) {
-          const error = await groqResponse.text();
-          console.error('Groq API error:', error);
-          return new Response(
-            JSON.stringify({ success: false, error: 'AI analysis failed', details: error }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        const groqData = await groqResponse.json();
-        const analysis = groqData.choices?.[0]?.message?.content || 'Analysis unavailable';
-
-        // Update last_used_at if config exists
-        if (aiConfig?.id) {
-          await supabase
-            .from('ai_config')
-            .update({ last_used_at: new Date().toISOString() })
-            .eq('id', aiConfig.id);
-        }
-
-        // Log to audit
-        await supabase.from('audit_logs').insert({
-          action: 'ai_analysis',
-          entity_type: 'ai',
-          entity_id: symbolUpper,
-          new_value: { symbol: symbolUpper, model: aiConfig?.model || 'llama-3.3-70b-versatile' },
-        });
-
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            symbol: symbolUpper,
-            analysis,
-            model: aiConfig?.model || 'llama-3.3-70b-versatile'
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      case 'save-config': {
-        console.log('[ai-analyze] === SAVE-CONFIG START ===');
-        console.log('[ai-analyze] Raw body received:', JSON.stringify({ action, model, hasApiKey: !!apiKey, apiKeyLength: apiKey?.length }));
-        
-        const cleanApiKey = apiKey?.trim();
-        
-        if (!cleanApiKey || cleanApiKey.length < 10) {
-          console.error(`[ai-analyze] VALIDATION FAILED: API key too short (${cleanApiKey?.length || 0} chars)`);
-          return new Response(
-            JSON.stringify({ success: false, error: 'API key is required (min 10 chars)' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        console.log(`[ai-analyze] Deleting existing groq config...`);
-        const { error: deleteError } = await supabase
-          .from('ai_config')
-          .delete()
-          .eq('provider', 'groq');
-        
-        if (deleteError) {
-          console.error('[ai-analyze] DELETE error:', deleteError);
-        } else {
-          console.log('[ai-analyze] DELETE successful');
-        }
-        
-        const insertPayload = {
-          provider: 'groq',
-          api_key: cleanApiKey,
-          model: model || 'llama-3.3-70b-versatile',
-          is_active: true,
-        };
-        console.log('[ai-analyze] INSERT payload (key masked):', { ...insertPayload, api_key: `***${cleanApiKey.slice(-4)}` });
-        
-        const { data: insertData, error: insertError } = await supabase
-          .from('ai_config')
-          .insert(insertPayload)
-          .select();
-
-        if (insertError) {
-          console.error('[ai-analyze] INSERT FAILED:', insertError);
-          return new Response(
-            JSON.stringify({ success: false, error: insertError.message }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        
-        console.log('[ai-analyze] INSERT SUCCESS:', JSON.stringify(insertData));
-        console.log('[ai-analyze] === SAVE-CONFIG END ===');
-
-        // Log to audit
-        await supabase.from('audit_logs').insert({
-          action: 'ai_config_updated',
-          entity_type: 'config',
-          entity_id: 'groq',
-          new_value: { model: insertPayload.model, is_active: true },
-        });
-
-        return new Response(
-          JSON.stringify({ success: true, message: 'AI configuration saved', data: insertData }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      case 'get-config': {
-        const { data: aiConfig } = await supabase
-          .from('ai_config')
-          .select('provider, model, is_active, last_used_at')
-          .eq('provider', 'groq')
-          .single();
-
-        return new Response(
-          JSON.stringify({ success: true, config: aiConfig }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      case 'market-scan': {
-        // 24/7 AI Market Scanner - fetches data from connected exchanges ONLY
-        console.log('[ai-analyze] Starting market-scan...');
-        
-        // 1. Get connected exchanges
-        const { data: exchanges } = await supabase
-          .from('exchange_connections')
-          .select('exchange_name, is_connected')
-          .eq('is_connected', true);
-
-        if (!exchanges?.length) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'No exchanges connected' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // 2. Check Groq API key from secrets
-        if (!GROQ_API_KEY) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'Groq API key not configured in Supabase secrets' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // 3. Get AI model preference from database
-        const { data: aiConfig } = await supabase
-          .from('ai_config')
-          .select('model, is_active, id')
-          .eq('provider', 'groq')
-          .single();
-
-        // 3. Fetch top crypto prices from first connected exchange
-        const firstExchange = exchanges[0].exchange_name.toLowerCase();
-        const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
-        let analyzedCount = 0;
-
-        for (const symbol of symbols) {
-          let tickerData: { lastPrice?: string; last?: string; priceChangePercent?: string; open24h?: string } | null = null;
-
-          try {
-            // Fetch real price from connected exchange
-            if (firstExchange === 'binance') {
-              const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
-              if (resp.ok) {
-                tickerData = await resp.json();
-              }
-            } else if (firstExchange === 'okx') {
-              const instId = symbol.replace('USDT', '-USDT');
-              const resp = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${instId}`);
-              if (resp.ok) {
-                const data = await resp.json();
-                tickerData = data.data?.[0];
-              }
-            } else if (firstExchange === 'bybit') {
-              const resp = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
-              if (resp.ok) {
-                const data = await resp.json();
-                const ticker = data.result?.list?.[0];
-                if (ticker) {
-                  tickerData = {
-                    lastPrice: ticker.lastPrice,
-                    priceChangePercent: String(parseFloat(ticker.price24hPcnt) * 100)
-                  };
-                }
-              }
-            } else {
-              // Fallback to Binance for price data
-              const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`);
-              if (resp.ok) {
-                tickerData = await resp.json();
-              }
-            }
-
-            if (!tickerData) continue;
-
-            // 4. Calculate price and change
-            const price = parseFloat(tickerData.lastPrice || tickerData.last || '0');
-            let change = 0;
-            if (tickerData.priceChangePercent) {
-              change = parseFloat(tickerData.priceChangePercent);
-            } else if (tickerData.last && tickerData.open24h) {
-              change = ((parseFloat(tickerData.last) - parseFloat(tickerData.open24h)) / parseFloat(tickerData.open24h)) * 100;
-            }
-
-            // 5. Generate AI analysis
-            const analysisPrompt = `Analyze ${symbol} trading at $${price.toFixed(2)}, 24h change: ${change.toFixed(2)}%.
-            
-Provide a brief 1-sentence insight for traders. Be specific about price levels.
-Respond in JSON format only: {"sentiment": "BULLISH" or "BEARISH" or "NEUTRAL", "confidence": 0-100 number, "insight": "one sentence insight", "support": number, "resistance": number}`;
-
-            const groqResponse = await fetch(GROQ_API_URL, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${GROQ_API_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: aiConfig?.model || 'llama-3.3-70b-versatile',
-                messages: [
-                  { role: 'system', content: 'You are a crypto trading analyst. Respond only in valid JSON format.' },
-                  { role: 'user', content: analysisPrompt }
-                ],
-                max_tokens: 200,
-                temperature: 0.5,
-              }),
-            });
-
-            if (!groqResponse.ok) {
-              console.error(`[ai-analyze] Groq API error for ${symbol}`);
-              continue;
-            }
-
-            const groqData = await groqResponse.json();
-            const content = groqData.choices?.[0]?.message?.content;
-
-            if (!content) continue;
-
-            // 6. Parse and store analysis
-            try {
-              // Extract JSON from response (handle markdown code blocks)
-              let jsonStr = content;
-              const jsonMatch = content.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                jsonStr = jsonMatch[0];
-              }
-              
-              const analysis = JSON.parse(jsonStr);
-
-              // Store in ai_market_updates
-              await supabase.from('ai_market_updates').insert({
-                symbol: symbol.replace('USDT', ''),
-                exchange_name: firstExchange,
-                sentiment: analysis.sentiment || 'NEUTRAL',
-                confidence: Math.min(100, Math.max(0, parseInt(analysis.confidence) || 50)),
-                insight: analysis.insight || 'Analysis in progress',
-                current_price: price,
-                price_change_24h: change,
-                support_level: analysis.support || null,
-                resistance_level: analysis.resistance || null
-              });
-
-              analyzedCount++;
-            } catch (parseErr) {
-              console.error(`[ai-analyze] Failed to parse AI response for ${symbol}:`, parseErr);
-            }
-          } catch (fetchErr) {
-            console.error(`[ai-analyze] Error fetching ${symbol}:`, fetchErr);
-          }
-        }
-
-        // Update AI config last_used_at if exists
-        if (aiConfig?.id) {
-          await supabase
-            .from('ai_config')
-            .update({ last_used_at: new Date().toISOString() })
-            .eq('id', aiConfig.id);
-        }
-
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            analyzed: analyzedCount,
-            exchange: firstExchange
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      default:
-        return new Response(
-          JSON.stringify({ error: 'Unknown action' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      const resp = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 }),
+      });
+      return new Response(JSON.stringify({ success: resp.ok, error: resp.ok ? null : 'Invalid key' }), 
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-  } catch (error) {
-    console.error('AI Analyze error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+
+    if (action === 'get-config') {
+      const { data } = await supabase.from('ai_config').select('provider, model, is_active, last_used_at').eq('provider', 'groq').single();
+      return new Response(JSON.stringify({ success: true, config: data }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (action === 'save-config') {
+      await supabase.from('ai_config').upsert({ provider: 'groq', model: model || 'llama-3.3-70b-versatile', is_active: true }, { onConflict: 'provider' });
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (action === 'analyze') {
+      if (!GROQ_API_KEY) {
+        return new Response(JSON.stringify({ success: false, error: 'GROQ_API_KEY not configured' }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const { data: cfg } = await supabase.from('ai_config').select('model, is_active, id').eq('provider', 'groq').single();
+      if (cfg && !cfg.is_active) {
+        return new Response(JSON.stringify({ success: false, error: 'AI not active' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const sym = (symbol || 'BTC').toUpperCase();
+      let ctx = `${sym}/USDT data.`;
+      try {
+        const pr = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}USDT`);
+        if (pr.ok) { const t = await pr.json(); ctx = `${sym} at $${parseFloat(t.lastPrice).toFixed(2)}, ${parseFloat(t.priceChangePercent).toFixed(2)}% 24h`; }
+      } catch {}
+      const resp = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: cfg?.model || 'llama-3.3-70b-versatile',
+          messages: [{ role: 'system', content: 'Crypto analyst.' }, { role: 'user', content: `Analyze ${sym}. ${ctx} Give sentiment, levels, outlook.` }],
+          max_tokens: 400,
+        }),
+      });
+      if (!resp.ok) return new Response(JSON.stringify({ success: false, error: 'Groq API error' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const d = await resp.json();
+      if (cfg?.id) await supabase.from('ai_config').update({ last_used_at: new Date().toISOString() }).eq('id', cfg.id);
+      return new Response(JSON.stringify({ success: true, symbol: sym, analysis: d.choices?.[0]?.message?.content || 'No analysis' }), 
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (action === 'market-scan') {
+      console.log('[ai-analyze] market-scan start');
+      const { data: ex } = await supabase.from('exchange_connections').select('exchange_name').eq('is_connected', true);
+      if (!ex?.length) return new Response(JSON.stringify({ success: false, error: 'No exchanges connected' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (!GROQ_API_KEY) return new Response(JSON.stringify({ success: false, error: 'GROQ_API_KEY not set' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      
+      const { data: cfg } = await supabase.from('ai_config').select('model, id').eq('provider', 'groq').single();
+      const exName = ex[0].exchange_name.toLowerCase();
+      const syms = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+      let count = 0;
+
+      for (const s of syms) {
+        try {
+          const url = exName === 'okx' ? `https://www.okx.com/api/v5/market/ticker?instId=${s.replace('USDT', '-USDT')}` 
+            : exName === 'bybit' ? `https://api.bybit.com/v5/market/tickers?category=spot&symbol=${s}` 
+            : `https://api.binance.com/api/v3/ticker/24hr?symbol=${s}`;
+          const pr = await fetch(url);
+          if (!pr.ok) continue;
+          const raw = await pr.json();
+          let price = 0, chg = 0;
+          if (exName === 'okx' && raw.data?.[0]) { price = parseFloat(raw.data[0].last); chg = ((price - parseFloat(raw.data[0].open24h)) / parseFloat(raw.data[0].open24h)) * 100; }
+          else if (exName === 'bybit' && raw.result?.list?.[0]) { price = parseFloat(raw.result.list[0].lastPrice); chg = parseFloat(raw.result.list[0].price24hPcnt) * 100; }
+          else { price = parseFloat(raw.lastPrice || '0'); chg = parseFloat(raw.priceChangePercent || '0'); }
+          
+          const gr = await fetch(GROQ_API_URL, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: cfg?.model || 'llama-3.3-70b-versatile',
+              messages: [{ role: 'system', content: 'Reply JSON only.' }, { role: 'user', content: `${s} $${price.toFixed(2)} ${chg.toFixed(2)}%. JSON: {"sentiment":"BULLISH/BEARISH/NEUTRAL","confidence":0-100,"insight":"1 sentence","support":num,"resistance":num}` }],
+              max_tokens: 150,
+            }),
+          });
+          if (!gr.ok) continue;
+          const gd = await gr.json();
+          const txt = gd.choices?.[0]?.message?.content;
+          if (!txt) continue;
+          const m = txt.match(/\{[\s\S]*\}/);
+          if (!m) continue;
+          const a = JSON.parse(m[0]);
+          await supabase.from('ai_market_updates').insert({
+            symbol: s.replace('USDT', ''), exchange_name: exName, sentiment: a.sentiment || 'NEUTRAL',
+            confidence: Math.min(100, Math.max(0, parseInt(a.confidence) || 50)), insight: a.insight || 'Analysis pending',
+            current_price: price, price_change_24h: chg, support_level: a.support || null, resistance_level: a.resistance || null
+          });
+          count++;
+        } catch (e) { console.error(`[ai-analyze] ${s} error:`, e); }
+      }
+      if (cfg?.id) await supabase.from('ai_config').update({ last_used_at: new Date().toISOString() }).eq('id', cfg.id);
+      return new Response(JSON.stringify({ success: true, analyzed: count, exchange: exName }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  } catch (e) {
+    console.error('[ai-analyze] Error:', e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
