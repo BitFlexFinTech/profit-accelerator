@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
-import { DollarSign, Clock, TrendingUp, Server } from 'lucide-react';
+import { DollarSign, Clock, TrendingUp, Server, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface VPSCostData {
@@ -12,33 +12,63 @@ interface VPSCostData {
   projectedMonthlyCost: number;
   tradesExecuted: number;
   costPerTrade: number;
+  isFree: boolean;
 }
 
-const PROVIDER_PRICING: Record<string, number> = {
-  digitalocean: 0.00893, // $6/mo ÷ 672 hours
-  aws: 0.0116,           // t4g.micro ~$8.35/mo
-  gcp: 0.0,              // e2-micro free tier
-  vultr: 0.00744,        // $5/mo
-  linode: 0.00744,       // $5/mo
-  oracle: 0.0,           // Always Free
+interface ProviderPricing {
+  hourly: number;
+  monthly: number;
+  name: string;
+  free: boolean;
+}
+
+const PROVIDER_PRICING: Record<string, ProviderPricing> = {
+  contabo:      { hourly: 0.0104, monthly: 6.99,  name: 'Contabo',      free: false },
+  vultr:        { hourly: 0.0074, monthly: 5.00,  name: 'Vultr',        free: false },
+  aws:          { hourly: 0.0116, monthly: 8.35,  name: 'AWS',          free: true  },
+  digitalocean: { hourly: 0.0059, monthly: 4.00,  name: 'DigitalOcean', free: false },
+  gcp:          { hourly: 0,      monthly: 0,     name: 'GCP',          free: true  },
+  oracle:       { hourly: 0,      monthly: 0,     name: 'Oracle',       free: true  },
+  alibaba:      { hourly: 0.0044, monthly: 3.00,  name: 'Alibaba',      free: false },
+  azure:        { hourly: 0,      monthly: 0,     name: 'Azure',        free: true  },
+  linode:       { hourly: 0.0074, monthly: 5.00,  name: 'Linode',       free: false },
 };
 
 export function VPSCostPanel() {
   const [costData, setCostData] = useState<VPSCostData | null>(null);
+  const [allProvidersCost, setAllProvidersCost] = useState<{ total: number; count: number }>({ total: 0, count: 0 });
 
   useEffect(() => {
     const fetchCostData = async () => {
-      // Get VPS config
-      const { data: vpsConfig } = await supabase
+      // Get all running VPS configs
+      const { data: vpsConfigs } = await supabase
         .from('vps_config')
         .select('provider, created_at, status')
-        .eq('status', 'running')
-        .single();
+        .eq('status', 'running');
 
-      if (!vpsConfig) {
+      if (!vpsConfigs || vpsConfigs.length === 0) {
         setCostData(null);
+        setAllProvidersCost({ total: 0, count: 0 });
         return;
       }
+
+      // Calculate total cost across all running providers
+      let totalMonthlyCost = 0;
+      let runningCount = 0;
+
+      for (const config of vpsConfigs) {
+        const provider = config.provider || 'digitalocean';
+        const pricing = PROVIDER_PRICING[provider];
+        if (pricing && !pricing.free) {
+          totalMonthlyCost += pricing.monthly;
+        }
+        runningCount++;
+      }
+
+      setAllProvidersCost({ total: totalMonthlyCost, count: runningCount });
+
+      // Use the first running VPS for detailed display
+      const primaryConfig = vpsConfigs[0];
 
       // Get trade count for today
       const today = new Date();
@@ -49,9 +79,10 @@ export function VPSCostPanel() {
         .select('*', { count: 'exact', head: true })
         .gte('created_at', today.toISOString());
 
-      const provider = vpsConfig.provider || 'digitalocean';
-      const startTime = vpsConfig.created_at ? new Date(vpsConfig.created_at) : null;
-      const hourlyRate = PROVIDER_PRICING[provider] || 0.00893;
+      const provider = primaryConfig.provider || 'digitalocean';
+      const startTime = primaryConfig.created_at ? new Date(primaryConfig.created_at) : null;
+      const pricing = PROVIDER_PRICING[provider] || { hourly: 0.0089, monthly: 6, name: provider, free: false };
+      const hourlyRate = pricing.free ? 0 : pricing.hourly;
       
       // Calculate uptime
       const uptimeMs = startTime ? Date.now() - startTime.getTime() : 0;
@@ -59,7 +90,7 @@ export function VPSCostPanel() {
       
       // Calculate costs
       const currentCost = uptimeHours * hourlyRate;
-      const projectedMonthlyCost = hourlyRate * 24 * 30; // 720 hours/month
+      const projectedMonthlyCost = pricing.free ? 0 : pricing.monthly;
       const tradesExecuted = tradesCount || 0;
       const costPerTrade = tradesExecuted > 0 ? currentCost / tradesExecuted : 0;
 
@@ -72,6 +103,7 @@ export function VPSCostPanel() {
         projectedMonthlyCost,
         tradesExecuted,
         costPerTrade,
+        isFree: pricing.free,
       });
     };
 
@@ -99,6 +131,8 @@ export function VPSCostPanel() {
     return `${days}d ${remainingHours}h`;
   };
 
+  const pricing = PROVIDER_PRICING[costData.provider];
+
   return (
     <Card className="p-4 bg-card/50 border-border/50 space-y-4">
       <div className="flex items-center justify-between">
@@ -106,8 +140,28 @@ export function VPSCostPanel() {
           <DollarSign className="h-4 w-4 text-green-500" />
           VPS Cost Tracker
         </h3>
-        <span className="text-xs text-muted-foreground capitalize">{costData.provider}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground capitalize">{pricing?.name || costData.provider}</span>
+          {costData.isFree && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent font-medium">FREE</span>
+          )}
+        </div>
       </div>
+
+      {/* Multiple VPS indicator */}
+      {allProvidersCost.count > 1 && (
+        <div className="p-2 rounded bg-primary/10 border border-primary/20">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground flex items-center gap-1">
+              <Zap className="h-3 w-3" />
+              {allProvidersCost.count} VPS running
+            </span>
+            <span className="font-mono font-semibold text-primary">
+              ${allProvidersCost.total.toFixed(2)}/mo total
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         {/* Uptime */}
@@ -127,8 +181,8 @@ export function VPSCostPanel() {
             <DollarSign className="h-3 w-3" />
             Spent
           </div>
-          <div className="text-lg font-mono font-semibold text-green-500">
-            ${costData.currentCost.toFixed(4)}
+          <div className={`text-lg font-mono font-semibold ${costData.isFree ? 'text-accent' : 'text-green-500'}`}>
+            {costData.isFree ? 'FREE' : `$${costData.currentCost.toFixed(4)}`}
           </div>
         </div>
 
@@ -138,8 +192,8 @@ export function VPSCostPanel() {
             <TrendingUp className="h-3 w-3" />
             Monthly Est.
           </div>
-          <div className="text-lg font-mono font-semibold">
-            ${costData.projectedMonthlyCost.toFixed(2)}
+          <div className={`text-lg font-mono font-semibold ${costData.isFree ? 'text-accent' : ''}`}>
+            {costData.isFree ? 'FREE' : `$${costData.projectedMonthlyCost.toFixed(2)}`}
           </div>
         </div>
 
@@ -150,9 +204,11 @@ export function VPSCostPanel() {
             $/Trade
           </div>
           <div className="text-lg font-mono font-semibold">
-            {costData.tradesExecuted > 0 
-              ? `$${costData.costPerTrade.toFixed(4)}`
-              : '—'
+            {costData.isFree 
+              ? 'FREE'
+              : costData.tradesExecuted > 0 
+                ? `$${costData.costPerTrade.toFixed(4)}`
+                : '—'
             }
           </div>
           <div className="text-xs text-muted-foreground">
@@ -163,7 +219,11 @@ export function VPSCostPanel() {
 
       {/* Hourly Rate */}
       <div className="text-xs text-muted-foreground text-center pt-2 border-t border-border/50">
-        Rate: ${(costData.hourlyRate * 1000).toFixed(2)}/1000 hrs
+        {costData.isFree ? (
+          <span className="text-accent">✓ Free tier - no compute charges</span>
+        ) : (
+          <span>Rate: ${(costData.hourlyRate * 1000).toFixed(2)}/1000 hrs</span>
+        )}
       </div>
     </Card>
   );

@@ -14,9 +14,12 @@ import {
   Cloud,
   ArrowLeftRight,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  Rocket,
+  TrendingUp
 } from 'lucide-react';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
+import { useCloudInfrastructure, PROVIDER_PRICING, PROVIDER_ICONS } from '@/hooks/useCloudInfrastructure';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
@@ -26,6 +29,13 @@ import { ExchangeWizard } from '../wizards/ExchangeWizard';
 import { TradeCopierWizard } from '../wizards/TradeCopierWizard';
 import { GroqWizard } from '../wizards/GroqWizard';
 import { ContaboWizard } from '../wizards/ContaboWizard';
+import { VultrWizard } from '../wizards/VultrWizard';
+import { AWSWizard } from '../wizards/AWSWizard';
+import { DigitalOceanWizard } from '../wizards/DigitalOceanWizard';
+import { GCPWizard } from '../wizards/GCPWizard';
+import { OracleWizard } from '../wizards/OracleWizard';
+import { AlibabaWizard } from '../wizards/AlibabaWizard';
+import { AzureWizard } from '../wizards/AzureWizard';
 import { SecurityHardeningWizard } from '../wizards/SecurityHardeningWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
@@ -34,6 +44,18 @@ import { useHFTSettings } from '@/hooks/useHFTSettings';
 import { useAIConfig } from '@/hooks/useAIConfig';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+
+// Cloud Provider Configuration
+const CLOUD_PROVIDERS = [
+  { id: 'contabo', name: 'Contabo', region: 'Singapore', icon: '🌏', wizard: 'contabo' },
+  { id: 'vultr', name: 'Vultr', region: 'Tokyo NRT', icon: '🦅', wizard: 'vultr' },
+  { id: 'aws', name: 'AWS', region: 'Tokyo ap-northeast-1', icon: '☁️', wizard: 'aws' },
+  { id: 'digitalocean', name: 'DigitalOcean', region: 'Singapore SGP1', icon: '🌊', wizard: 'digitalocean' },
+  { id: 'gcp', name: 'GCP', region: 'Tokyo asia-northeast1', icon: '🔵', wizard: 'gcp', free: true },
+  { id: 'oracle', name: 'Oracle', region: 'Tokyo ap-tokyo-1', icon: '🔴', wizard: 'oracle', free: true },
+  { id: 'alibaba', name: 'Alibaba', region: 'Tokyo ap-northeast-1', icon: '🟠', wizard: 'alibaba' },
+  { id: 'azure', name: 'Azure', region: 'Japan East', icon: '💠', wizard: 'azure', free: true },
+];
 
 // VPS Status Section Component
 function VPSStatusSection() {
@@ -187,11 +209,19 @@ function WalletTransferSection() {
 
 export function SettingsTab() {
   const [activeWizard, setActiveWizard] = useState<string | null>(null);
+  const [isDeployingMesh, setIsDeployingMesh] = useState(false);
   const telegramStatus = useTelegramStatus();
   const exchangeStatus = useExchangeStatus();
   const { settings, setSettings, isLoading, isSaving, saveSettings } = useHFTSettings();
   const { config: aiConfig, isActive: aiIsActive } = useAIConfig();
   const { vps } = useSystemStatus();
+  const { 
+    providers, 
+    bestValueProvider, 
+    totalMonthlyCost, 
+    meshHealthScore,
+    refresh: refreshCloudData
+  } = useCloudInfrastructure();
 
   // Local state for form values
   const [localSettings, setLocalSettings] = useState(settings);
@@ -216,6 +246,35 @@ export function SettingsTab() {
     await saveSettings({
       security: localSettings.security
     });
+  };
+
+  const handleDeployTokyoMesh = async () => {
+    setIsDeployingMesh(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('auto-provision-mesh', {
+        body: { action: 'deploy-all' }
+      });
+      
+      if (error) throw error;
+      
+      toast.success('Tokyo Mesh deployment initiated! Check timeline for progress.');
+      refreshCloudData();
+    } catch (err: any) {
+      toast.error(`Mesh deployment failed: ${err.message}`);
+    } finally {
+      setIsDeployingMesh(false);
+    }
+  };
+
+  // Get provider status from cloud infrastructure data
+  const getProviderStatus = (providerId: string) => {
+    const provider = providers.find(p => p.provider === providerId);
+    if (!provider) return { status: 'ready', latency: null, isPrimary: false };
+    return {
+      status: provider.status,
+      latency: provider.latency_ms,
+      isPrimary: provider.is_primary
+    };
   };
 
   const isVpsConnected = vps.status === 'running' || vps.status === 'idle';
@@ -361,7 +420,7 @@ export function SettingsTab() {
         )}
       </div>
 
-      {/* Cloud Infrastructure Section - Contabo Only */}
+      {/* Cloud Infrastructure Section - 8 Provider Grid */}
       <div className="glass-card p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-lg bg-sky-500/20 flex items-center justify-center">
@@ -369,36 +428,133 @@ export function SettingsTab() {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold">Cloud Infrastructure</h3>
-            <p className="text-sm text-muted-foreground">Register your Contabo VPS for HFT deployment</p>
+            <p className="text-sm text-muted-foreground">Deploy HFT bots across 8 cloud providers</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Mesh Health</p>
+              <p className="font-mono text-sm font-semibold text-success">{meshHealthScore}%</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Monthly Cost</p>
+              <p className="font-mono text-sm font-semibold">${totalMonthlyCost.toFixed(2)}</p>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Contabo Singapore - Single Provider */}
-          <button
-            onClick={() => setActiveWizard('contabo')}
-            className="p-6 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left group relative"
-          >
-            <div className="absolute -top-2 -right-2">
-              {isVpsConnected ? (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success font-medium">Connected</span>
-              ) : (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">Ready</span>
-              )}
+        {/* Quick Deploy Recommendation Banner */}
+        {bestValueProvider && (
+          <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <TrendingUp className="w-5 h-5 text-primary" />
+                <div>
+                    <p className="font-medium text-sm">Recommended: {PROVIDER_ICONS[bestValueProvider.provider]} {PROVIDER_PRICING[bestValueProvider.provider]?.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {bestValueProvider.latencyPerDollar?.toFixed(0) || '—'}ms/$ • 
+                      {PROVIDER_PRICING[bestValueProvider.provider]?.free ? ' FREE tier' : ` $${PROVIDER_PRICING[bestValueProvider.provider]?.monthly}/mo`}
+                    </p>
+                  </div>
+                </div>
+              <Button 
+                size="sm" 
+                onClick={() => setActiveWizard(bestValueProvider.provider)}
+                className="bg-primary hover:bg-primary/90"
+              >
+                <Rocket className="w-4 h-4 mr-2" />
+                Quick Deploy
+              </Button>
             </div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-3xl">🌏</span>
-            </div>
-            <p className="font-medium text-lg">Contabo Singapore</p>
-            <p className="text-sm text-muted-foreground mt-1">Register your Contabo VPS</p>
-            <span className="text-xs text-accent mt-2 block">Enter IP Address to connect</span>
-          </button>
-
-          <div className="p-6 rounded-lg bg-muted/20 border border-dashed border-muted-foreground/30 flex flex-col items-center justify-center text-center">
-            <Lock className="w-6 h-6 text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground">Region locked to Singapore</p>
-            <p className="text-xs text-muted-foreground mt-1">Optimized for Asian exchange latency</p>
           </div>
+        )}
+
+        {/* 8 Provider Grid (4x2) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {CLOUD_PROVIDERS.map((provider) => {
+            const providerStatus = getProviderStatus(provider.id);
+            const pricing = PROVIDER_PRICING[provider.id];
+            const isConnected = providerStatus.status === 'running';
+            const isPrimary = providerStatus.isPrimary;
+
+            return (
+              <button
+                key={provider.id}
+                onClick={() => setActiveWizard(provider.wizard)}
+                className={`p-4 rounded-lg text-left group relative transition-all duration-200 ${
+                  isPrimary 
+                    ? 'bg-primary/20 border-2 border-primary/50 hover:bg-primary/30' 
+                    : isConnected
+                      ? 'bg-success/10 border border-success/30 hover:bg-success/20'
+                      : 'bg-secondary/30 hover:bg-secondary/50 border border-transparent'
+                }`}
+              >
+                {/* Status Badge */}
+                <div className="absolute -top-2 -right-2 flex gap-1">
+                  {isPrimary && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-foreground font-medium">
+                      PRIMARY
+                    </span>
+                  )}
+                  {isConnected && !isPrimary && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success font-medium">
+                      Running
+                    </span>
+                  )}
+                  {pricing?.free && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent font-medium">
+                      FREE
+                    </span>
+                  )}
+                </div>
+
+                {/* Provider Icon & Name */}
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl group-hover:scale-110 transition-transform">{provider.icon}</span>
+                  <div>
+                    <p className="font-medium">{provider.name}</p>
+                    <p className="text-xs text-muted-foreground">{provider.region}</p>
+                  </div>
+                </div>
+
+                {/* Latency & Cost */}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
+                  <div className="text-xs">
+                    <span className="text-muted-foreground">Latency: </span>
+                    <span className={`font-mono ${providerStatus.latency ? (providerStatus.latency < 100 ? 'text-success' : providerStatus.latency < 150 ? 'text-warning' : 'text-destructive') : 'text-muted-foreground'}`}>
+                      {providerStatus.latency ? `${providerStatus.latency}ms` : '—'}
+                    </span>
+                  </div>
+                  <div className="text-xs font-mono">
+                    {pricing?.free ? (
+                      <span className="text-accent font-medium">FREE</span>
+                    ) : (
+                      <span className="text-muted-foreground">${pricing?.monthly}/mo</span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Deploy Tokyo Mesh Button */}
+        <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-accent/10 to-primary/10 border border-accent/20">
+          <div>
+            <p className="font-medium">Deploy Tokyo Mesh</p>
+            <p className="text-xs text-muted-foreground">Deploy to all configured providers simultaneously with auto-failover</p>
+          </div>
+          <Button 
+            onClick={handleDeployTokyoMesh}
+            disabled={isDeployingMesh}
+            className="bg-accent hover:bg-accent/90 text-accent-foreground"
+          >
+            {isDeployingMesh ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Rocket className="w-4 h-4 mr-2" />
+            )}
+            {isDeployingMesh ? 'Deploying...' : 'Deploy Mesh'}
+          </Button>
         </div>
       </div>
 
@@ -650,7 +806,7 @@ export function SettingsTab() {
       {/* Wallet Transfers */}
       <WalletTransferSection />
 
-      {/* Wizards */}
+      {/* All Wizards */}
       <TelegramWizard 
         open={activeWizard === 'telegram'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
@@ -669,6 +825,34 @@ export function SettingsTab() {
       />
       <ContaboWizard 
         open={activeWizard === 'contabo'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <VultrWizard 
+        open={activeWizard === 'vultr'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <AWSWizard 
+        open={activeWizard === 'aws'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <DigitalOceanWizard 
+        open={activeWizard === 'digitalocean'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <GCPWizard 
+        open={activeWizard === 'gcp'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <OracleWizard 
+        open={activeWizard === 'oracle'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <AlibabaWizard 
+        open={activeWizard === 'alibaba'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <AzureWizard 
+        open={activeWizard === 'azure'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
       <SecurityHardeningWizard 
