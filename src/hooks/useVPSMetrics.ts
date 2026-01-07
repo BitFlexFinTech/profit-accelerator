@@ -32,19 +32,8 @@ export function useVPSMetrics() {
     } catch (err) {
       console.error('Failed to fetch VPS metrics:', err);
       setError(err as Error);
-      // Set mock data for demo
-      setMetrics([{
-        id: 'mock-vultr',
-        provider: 'vultr',
-        cpu_percent: 23,
-        ram_percent: 41,
-        disk_percent: 15,
-        latency_ms: 18,
-        network_in_mbps: 0.5,
-        network_out_mbps: 1.2,
-        uptime_seconds: 1065792, // ~12 days
-        recorded_at: new Date().toISOString(),
-      }]);
+      // No mock data - show empty state
+      setMetrics([]);
     } finally {
       setIsLoading(false);
     }
