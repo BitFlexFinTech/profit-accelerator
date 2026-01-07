@@ -36,13 +36,35 @@ export function DeploymentWizard({ provider, onClose }: DeploymentWizardProps) {
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
   const [deploymentResult, setDeploymentResult] = useState<DeploymentResult | null>(null);
   const [deploymentError, setDeploymentError] = useState<string | null>(null);
+  const [deploymentConfig, setDeploymentConfig] = useState<{
+    region: string;
+    size: string;
+    repoUrl: string;
+    branch: string;
+    envVars: Record<string, string>;
+    startCommand: string;
+    allowedPorts?: number[];
+    enableMonitoring: boolean;
+    enableBackups: boolean;
+  } | null>(null);
 
   const providerConfig = PROVIDER_CONFIGS.find(p => p.name === provider);
 
   const handleStartDeployment = (config: any) => {
-    // Generate deployment ID
+    // Generate deployment ID and store config
     const id = `deploy-${provider}-${Date.now()}`;
     setDeploymentId(id);
+    setDeploymentConfig({
+      region: config.region || 'us-east-1',
+      size: config.size || 'medium',
+      repoUrl: config.repoUrl || 'https://github.com/user/hft-bot',
+      branch: config.branch || 'main',
+      envVars: config.envVars || {},
+      startCommand: config.startCommand || 'npm start',
+      allowedPorts: config.allowedPorts,
+      enableMonitoring: config.enableMonitoring ?? true,
+      enableBackups: config.enableBackups ?? true,
+    });
     setStep('progress');
   };
 
@@ -123,10 +145,11 @@ export function DeploymentWizard({ provider, onClose }: DeploymentWizardProps) {
             />
           )}
 
-          {step === 'progress' && deploymentId && (
+          {step === 'progress' && deploymentId && deploymentConfig && (
             <DeploymentProgressStep
               provider={provider}
               deploymentId={deploymentId}
+              config={deploymentConfig}
               onComplete={handleDeploymentComplete}
               onError={handleDeploymentError}
               onCancel={onClose}
