@@ -135,3 +135,12 @@ verify_jwt = false
 
 [functions.scheduled-vps-health]
 verify_jwt = false
+
+[functions.vps-status-poll]
+verify_jwt = false
+
+[functions.exchange-websocket-hft]
+verify_jwt = false
+
+[functions.data-validator]
+verify_jwt = false
