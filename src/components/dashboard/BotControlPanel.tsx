@@ -81,13 +81,26 @@ export function BotControlPanel() {
   const handleStartBot = async () => {
     setIsStarting(true);
     try {
-      // 1. Signal VPS to start
-      const { error: vpsError } = await supabase.functions.invoke('install-hft-bot', {
-        body: { action: 'start-bot', serverIp: '167.179.83.239' }
-      });
+      // Get active VPS IP dynamically
+      const { data: vpsConfig } = await supabase
+        .from('vps_config')
+        .select('outbound_ip, provider')
+        .not('outbound_ip', 'is', null)
+        .limit(1)
+        .single();
 
-      if (vpsError) {
-        console.error('[BotControl] VPS signal error:', vpsError);
+      const serverIp = vpsConfig?.outbound_ip;
+      const provider = vpsConfig?.provider;
+
+      // 1. Signal VPS to start (if IP configured)
+      if (serverIp) {
+        const { error: vpsError } = await supabase.functions.invoke('install-hft-bot', {
+          body: { action: 'start-bot', serverIp }
+        });
+
+        if (vpsError) {
+          console.error('[BotControl] VPS signal error:', vpsError);
+        }
       }
 
       // 2. Update database
@@ -99,9 +112,11 @@ export function BotControlPanel() {
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
-      await supabase.from('vps_config')
-        .update({ status: 'running' })
-        .eq('provider', 'vultr');
+      if (provider) {
+        await supabase.from('vps_config')
+          .update({ status: 'running' })
+          .eq('provider', provider);
+      }
 
       setBotStatus('running');
       toast.success(testMode ? 'Bot started in TEST MODE (paper trading)' : 'Bot started - LIVE TRADING enabled');
@@ -116,13 +131,26 @@ export function BotControlPanel() {
   const handleStopBot = async () => {
     setIsStopping(true);
     try {
-      // 1. Signal VPS to stop
-      const { error: vpsError } = await supabase.functions.invoke('install-hft-bot', {
-        body: { action: 'stop-bot', serverIp: '167.179.83.239' }
-      });
+      // Get active VPS IP dynamically
+      const { data: vpsConfig } = await supabase
+        .from('vps_config')
+        .select('outbound_ip, provider')
+        .not('outbound_ip', 'is', null)
+        .limit(1)
+        .single();
 
-      if (vpsError) {
-        console.error('[BotControl] VPS signal error:', vpsError);
+      const serverIp = vpsConfig?.outbound_ip;
+      const provider = vpsConfig?.provider;
+
+      // 1. Signal VPS to stop (if IP configured)
+      if (serverIp) {
+        const { error: vpsError } = await supabase.functions.invoke('install-hft-bot', {
+          body: { action: 'stop-bot', serverIp }
+        });
+
+        if (vpsError) {
+          console.error('[BotControl] VPS signal error:', vpsError);
+        }
       }
 
       // 2. Update database
@@ -134,9 +162,11 @@ export function BotControlPanel() {
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
-      await supabase.from('vps_config')
-        .update({ status: 'idle' })
-        .eq('provider', 'vultr');
+      if (provider) {
+        await supabase.from('vps_config')
+          .update({ status: 'idle' })
+          .eq('provider', provider);
+      }
 
       setBotStatus('stopped');
       toast.success('Bot stopped successfully');

@@ -621,35 +621,50 @@ export type Database = {
       }
       failover_config: {
         Row: {
+          auto_failover_enabled: boolean | null
+          consecutive_failures: number | null
           created_at: string | null
           health_check_url: string | null
           id: string
           is_enabled: boolean | null
           is_primary: boolean | null
+          last_health_check: string | null
+          latency_ms: number | null
           priority: number
           provider: string
+          region: string | null
           timeout_ms: number | null
           updated_at: string | null
         }
         Insert: {
+          auto_failover_enabled?: boolean | null
+          consecutive_failures?: number | null
           created_at?: string | null
           health_check_url?: string | null
           id?: string
           is_enabled?: boolean | null
           is_primary?: boolean | null
+          last_health_check?: string | null
+          latency_ms?: number | null
           priority?: number
           provider: string
+          region?: string | null
           timeout_ms?: number | null
           updated_at?: string | null
         }
         Update: {
+          auto_failover_enabled?: boolean | null
+          consecutive_failures?: number | null
           created_at?: string | null
           health_check_url?: string | null
           id?: string
           is_enabled?: boolean | null
           is_primary?: boolean | null
+          last_health_check?: string | null
+          latency_ms?: number | null
           priority?: number
           provider?: string
+          region?: string | null
           timeout_ms?: number | null
           updated_at?: string | null
         }
