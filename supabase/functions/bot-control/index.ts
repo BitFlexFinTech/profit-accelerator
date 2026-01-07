@@ -1,0 +1,255 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+// Decrypt function using Web Crypto API
+async function decrypt(encryptedData: string): Promise<string> {
+  const encryptionKey = Deno.env.get('ENCRYPTION_KEY') || 'default-32-char-encryption-key!!';
+  
+  const data = JSON.parse(encryptedData);
+  const iv = fromHex(data.iv);
+  const salt = fromHex(data.salt);
+  const ciphertext = fromHex(data.encryptedData);
+  
+  const cryptoKey = await deriveKey(encryptionKey, salt);
+  
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    cryptoKey,
+    ciphertext
+  );
+
+  return new TextDecoder().decode(decrypted);
+}
+
+async function deriveKey(encryptionKey: string, salt: ArrayBuffer): Promise<CryptoKey> {
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(encryptionKey),
+    'PBKDF2',
+    false,
+    ['deriveBits', 'deriveKey']
+  );
+
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+function fromHex(hex: string): ArrayBuffer {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes.buffer;
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  try {
+    const { action, deploymentId } = await req.json();
+    console.log(`[bot-control] Action: ${action}, DeploymentId: ${deploymentId}`);
+
+    if (!deploymentId) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Missing deploymentId' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get deployment info - try both id and server_id
+    let deployment = null;
+    
+    const { data: deploymentById } = await supabase
+      .from('hft_deployments')
+      .select('*')
+      .eq('id', deploymentId)
+      .single();
+
+    if (deploymentById) {
+      deployment = deploymentById;
+    } else {
+      const { data: deploymentByServerId } = await supabase
+        .from('hft_deployments')
+        .select('*')
+        .eq('server_id', deploymentId)
+        .single();
+      deployment = deploymentByServerId;
+    }
+
+    if (!deployment) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Deployment not found' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const ipAddress = deployment.ip_address;
+    if (!ipAddress) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'No IP address for deployment' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get SSH private key from hft_ssh_keys if available
+    let privateKey: string | null = null;
+    
+    if (deployment.ssh_key_id) {
+      const { data: sshKey } = await supabase
+        .from('hft_ssh_keys')
+        .select('private_key_encrypted')
+        .eq('id', deployment.ssh_key_id)
+        .single();
+
+      if (sshKey?.private_key_encrypted) {
+        try {
+          privateKey = await decrypt(sshKey.private_key_encrypted);
+        } catch (decryptErr) {
+          console.error('Failed to decrypt SSH key:', decryptErr);
+        }
+      }
+    }
+    
+    // Fallback to environment variable
+    if (!privateKey) {
+      privateKey = Deno.env.get('VULTR_SSH_PRIVATE_KEY') || null;
+    }
+
+    if (!privateKey) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'No SSH key available' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Execute SSH command based on action
+    let command = '';
+    let newBotStatus = '';
+
+    switch (action) {
+      case 'start':
+        command = 'pm2 start trading-bot 2>/dev/null || cd /opt/trading-bot && pm2 start npm --name trading-bot -- start';
+        newBotStatus = 'running';
+        break;
+      case 'stop':
+        command = 'pm2 stop trading-bot';
+        newBotStatus = 'stopped';
+        break;
+      case 'restart':
+        command = 'pm2 restart trading-bot';
+        newBotStatus = 'running';
+        break;
+      case 'status':
+        command = 'pm2 status trading-bot --format json 2>/dev/null || echo "not_found"';
+        break;
+      default:
+        return new Response(
+          JSON.stringify({ success: false, error: `Unknown action: ${action}` }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+    }
+
+    // Execute SSH command
+    const { data: sshResult, error: sshError } = await supabase.functions.invoke('ssh-command', {
+      body: {
+        ipAddress,
+        command,
+        privateKey,
+        username: 'root',
+        timeout: 30000,
+      },
+    });
+
+    if (sshError) {
+      console.error('SSH command error:', sshError);
+      return new Response(
+        JSON.stringify({ success: false, error: `SSH error: ${sshError.message}` }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // For status action, parse and return the result
+    if (action === 'status') {
+      let botStatus = 'unknown';
+      try {
+        if (sshResult.output?.includes('online')) {
+          botStatus = 'running';
+        } else if (sshResult.output?.includes('stopped') || sshResult.output?.includes('errored')) {
+          botStatus = 'stopped';
+        } else if (sshResult.output?.includes('not_found')) {
+          botStatus = 'not_deployed';
+        }
+      } catch {
+        botStatus = 'unknown';
+      }
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          status: botStatus, 
+          output: sshResult.output,
+          ipAddress 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Update deployment status in database
+    if (newBotStatus) {
+      await supabase
+        .from('hft_deployments')
+        .update({ 
+          bot_status: newBotStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', deployment.id);
+
+      // Also update vps_instances if linked
+      await supabase
+        .from('vps_instances')
+        .update({ 
+          bot_status: newBotStatus,
+          updated_at: new Date().toISOString()
+        })
+        .or(`deployment_id.eq.${deployment.server_id},provider_instance_id.eq.${deployment.server_id}`);
+    }
+
+    console.log(`[bot-control] ${action} completed successfully for ${ipAddress}`);
+
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        action,
+        botStatus: newBotStatus || 'unknown',
+        output: sshResult.output,
+        ipAddress
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error('[bot-control] Error:', error);
+    
+    return new Response(
+      JSON.stringify({ success: false, error }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});

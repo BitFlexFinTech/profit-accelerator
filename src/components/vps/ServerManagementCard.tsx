@@ -37,6 +37,8 @@ import {
   Pencil,
   DollarSign,
   Activity,
+  Play,
+  Square,
 } from 'lucide-react';
 import { VPSInstance, Provider } from '@/types/cloudCredentials';
 import { useVPSInstances } from '@/hooks/useVPSInstances';
@@ -85,6 +87,8 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
   const [isRebooting, setIsRebooting] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Get real metrics for this instance's provider
@@ -123,6 +127,32 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
     setIsRebooting(true);
     await rebootServer(instance.id);
     setIsRebooting(false);
+  };
+
+  const handleStartBot = async () => {
+    setIsStarting(true);
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      await supabase.functions.invoke('bot-control', {
+        body: { action: 'start', deploymentId: instance.id },
+      });
+    } catch (err) {
+      console.error('Failed to start bot:', err);
+    }
+    setIsStarting(false);
+  };
+
+  const handleStopBot = async () => {
+    setIsStopping(true);
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      await supabase.functions.invoke('bot-control', {
+        body: { action: 'stop', deploymentId: instance.id },
+      });
+    } catch (err) {
+      console.error('Failed to stop bot:', err);
+    }
+    setIsStopping(false);
   };
 
   const handleDelete = async () => {
@@ -315,9 +345,30 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
           <Button
             variant="outline"
             size="sm"
-            className="text-xs h-8"
+            className="text-xs h-8 px-2"
+            onClick={handleStartBot}
+            disabled={isStarting || instance.botStatus === 'running'}
+            title="Start Bot"
+          >
+            <Play className={cn("h-3 w-3 text-success", isStarting && "animate-pulse")} />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 px-2"
+            onClick={handleStopBot}
+            disabled={isStopping || instance.botStatus === 'stopped'}
+            title="Stop Bot"
+          >
+            <Square className={cn("h-3 w-3 text-destructive", isStopping && "animate-pulse")} />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 px-2"
             onClick={handleRestartBot}
             disabled={isRestarting}
+            title="Restart Bot"
           >
             <RefreshCw className={cn("h-3 w-3", isRestarting && "animate-spin")} />
           </Button>
