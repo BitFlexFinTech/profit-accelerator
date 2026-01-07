@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { VPSHealthGauge } from './VPSHealthGauge';
 import { useVPSMetrics } from '@/hooks/useVPSMetrics';
 import { useCloudConfig } from '@/hooks/useCloudConfig';
+import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 
 interface CloudProvider {
@@ -29,6 +30,7 @@ export function CloudStatusPanel() {
 
   const getProviderIcon = (provider: string) => {
     const icons: Record<string, string> = {
+      contabo: '🌏',
       vultr: '⚡',
       aws: '☁️',
       gcp: '🔷',
@@ -43,6 +45,7 @@ export function CloudStatusPanel() {
 
   const getProviderLabel = (provider: string) => {
     const labels: Record<string, string> = {
+      contabo: 'Contabo Singapore',
       vultr: 'Vultr HF',
       aws: 'AWS',
       gcp: 'Google Cloud',
@@ -75,8 +78,23 @@ export function CloudStatusPanel() {
     }
   };
 
-  // Get the active provider (Vultr with IP 167.179.83.239)
-  const activeConfig = configs.find(c => c.status === 'running' && c.is_active);
+  // Get the active provider - prioritize vps_config data
+  const [vpsConfig, setVpsConfig] = useState<{ provider: string; outbound_ip: string; status: string } | null>(null);
+
+  useEffect(() => {
+    const fetchVpsConfig = async () => {
+      const { data } = await supabase
+        .from('vps_config')
+        .select('provider, outbound_ip, status')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (data) setVpsConfig(data);
+    };
+    fetchVpsConfig();
+  }, []);
+
+  const activeConfig = vpsConfig || configs.find(c => c.status === 'running' && c.is_active);
   const activeMetrics = activeConfig ? metrics.find(m => m.provider === activeConfig.provider) : null;
 
   return (
@@ -109,15 +127,17 @@ export function CloudStatusPanel() {
             <div className="flex items-center gap-3">
               <span className="text-2xl">{getProviderIcon(activeConfig.provider)}</span>
               <div>
-                <p className="font-semibold">{getProviderLabel(activeConfig.provider)} - Tokyo</p>
+                <p className="font-semibold">{getProviderLabel(activeConfig.provider)}</p>
                 <p className="text-sm text-muted-foreground font-mono">
-                  {activeConfig.provider === 'vultr' ? '167.179.83.239' : activeConfig.region}
+                  {vpsConfig?.outbound_ip || 'No IP configured'}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="status-online" />
-              <span className="text-success font-medium">Running</span>
+              <div className={vpsConfig?.status === 'running' ? 'status-online' : 'status-offline'} />
+              <span className={vpsConfig?.status === 'running' ? 'text-success font-medium' : 'text-muted-foreground'}>
+                {vpsConfig?.status === 'running' ? 'Running' : 'Offline'}
+              </span>
             </div>
           </div>
 

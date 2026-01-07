@@ -97,8 +97,27 @@ export function ContaboWizard({ open, onOpenChange }: ContaboWizardProps) {
         })
         .eq('id', (await supabase.from('trading_config').select('id').single()).data?.id);
 
+      // Sync IP to connected exchanges
+      await syncIPWhitelist(ipAddress.trim());
+
     } catch (err: any) {
       console.error('Failed to register VPS:', err);
+    }
+  };
+
+  const syncIPWhitelist = async (ip: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-ip-whitelist', {
+        body: { vps_ip: ip }
+      });
+      
+      if (error) throw error;
+      
+      if (data?.exchanges_synced > 0) {
+        toast.info(`IP registered for ${data.exchanges_synced} exchange(s). Whitelist manually.`);
+      }
+    } catch (err) {
+      console.error('Failed to sync IP whitelist:', err);
     }
   };
 
