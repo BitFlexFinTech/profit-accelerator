@@ -451,7 +451,7 @@ export function SettingsTab() {
                 <div>
                     <p className="font-medium text-sm">Recommended: {PROVIDER_ICONS[bestValueProvider.provider]} {PROVIDER_PRICING[bestValueProvider.provider]?.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {bestValueProvider.latencyPerDollar?.toFixed(0) || '—'}ms/$ • 
+                      {bestValueProvider.latency_ms?.toFixed(0) || '—'}ms latency • 
                       {PROVIDER_PRICING[bestValueProvider.provider]?.free ? ' FREE tier' : ` $${PROVIDER_PRICING[bestValueProvider.provider]?.monthly}/mo`}
                     </p>
                   </div>
