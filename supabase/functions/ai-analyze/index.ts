@@ -8,8 +8,8 @@ const corsHeaders = {
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-// Get Groq API key from Supabase secrets
-const GROQ_API_KEY = Deno.env.get('Groq-API Key');
+// Get Groq API key from Supabase secrets (try multiple possible names)
+const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY') || Deno.env.get('Groq-API Key') || Deno.env.get('GROQ_API_KEY');
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
