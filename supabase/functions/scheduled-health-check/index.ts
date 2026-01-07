@@ -55,6 +55,7 @@ serve(async (req) => {
     let primaryConfig: FailoverConfig | null = null;
     let shouldFailover = false;
     let nextHealthyProvider: string | null = null;
+    let nextHealthyLatency: number = 0;
 
     for (const config of (configs as FailoverConfig[]) || []) {
       const result = await performHealthCheck(config);
@@ -86,9 +87,20 @@ serve(async (req) => {
         if (newConsecutiveFailures >= CONSECUTIVE_FAILURES_FOR_FAILOVER && config.auto_failover_enabled) {
           shouldFailover = true;
           console.log(`[ScheduledHealthCheck] Primary ${config.provider} exceeded failover threshold!`);
+          
+          // Send warning notification when primary is failing
+          await sendTelegramMessage(supabase, 
+            `🔴 <b>HEALTH CHECK FAILED</b>\n\n` +
+            `Provider: <b>${config.provider}</b>\n` +
+            `Consecutive Failures: ${newConsecutiveFailures}/${CONSECUTIVE_FAILURES_FOR_FAILOVER}\n` +
+            `Last Error: ${result.error || 'Latency exceeded threshold'}\n` +
+            `Latency: ${result.latency}ms (threshold: ${LATENCY_THRESHOLD_MS}ms)\n\n` +
+            `⚠️ Auto-failover will be triggered!`
+          );
         }
       } else if (!nextHealthyProvider && result.status === 'healthy') {
         nextHealthyProvider = config.provider;
+        nextHealthyLatency = result.latency;
       }
 
       // Store health check result
@@ -105,6 +117,24 @@ serve(async (req) => {
         provider: config.provider,
         latency_ms: result.latency,
         recorded_at: new Date().toISOString(),
+      });
+
+      // Log to vps_timeline_events
+      await supabase.from('vps_timeline_events').insert({
+        provider: config.provider,
+        event_type: result.status === 'healthy' ? 'health_check' : 
+                    result.status === 'warning' ? 'health_warning' : 'health_failure',
+        event_subtype: result.status,
+        title: result.status === 'healthy' ? 'Health Check Passed' : 
+               result.status === 'warning' ? 'Health Check Warning' : 'Health Check Failed',
+        description: `Latency: ${result.latency}ms${result.error ? ` - ${result.error}` : ''}`,
+        metadata: { 
+          latency: result.latency, 
+          consecutive_failures: newConsecutiveFailures,
+          threshold_ms: LATENCY_THRESHOLD_MS,
+          is_primary: config.is_primary,
+          status: result.status
+        }
       });
     }
 
@@ -137,8 +167,37 @@ serve(async (req) => {
         is_automatic: true,
       });
 
-      // Send Telegram notification
-      await sendTelegramAlert(supabase, primaryConfig.provider, nextHealthyProvider);
+      // Log to timeline
+      await supabase.from('vps_timeline_events').insert({
+        provider: nextHealthyProvider,
+        event_type: 'failover',
+        event_subtype: 'automatic',
+        title: `Failover: ${primaryConfig.provider} → ${nextHealthyProvider}`,
+        description: `Primary server exceeded latency threshold of ${LATENCY_THRESHOLD_MS}ms for ${CONSECUTIVE_FAILURES_FOR_FAILOVER * 10}s`,
+        metadata: {
+          from_provider: primaryConfig.provider,
+          to_provider: nextHealthyProvider,
+          from_latency: primaryConfig.latency_ms,
+          to_latency: nextHealthyLatency,
+          reason: 'latency_threshold_exceeded',
+          consecutive_failures: CONSECUTIVE_FAILURES_FOR_FAILOVER
+        }
+      });
+
+      // Check if new primary is a free tier provider
+      const freeProviders = ['oracle', 'gcp', 'azure'];
+      const isFreeProvider = freeProviders.includes(nextHealthyProvider.toLowerCase());
+
+      // Send enhanced Telegram failover notification
+      const failoverMessage = `⚡ <b>FAILOVER TRIGGERED</b>\n\n` +
+        `From: <b>${primaryConfig.provider}</b> (${primaryConfig.latency_ms || '?'}ms ⚠️)\n` +
+        `To: <b>${nextHealthyProvider}</b> (${nextHealthyLatency}ms ✅)\n\n` +
+        `📊 Reason: Exceeded ${LATENCY_THRESHOLD_MS}ms for ${CONSECUTIVE_FAILURES_FOR_FAILOVER * 10}s\n` +
+        `⏱️ Time: ${new Date().toLocaleString()}\n\n` +
+        (isFreeProvider ? `💰 <b>Bonus:</b> New primary is FREE tier!\n` : '') +
+        `🔄 Auto-failover completed successfully.`;
+      
+      await sendTelegramMessage(supabase, failoverMessage);
     }
 
     return new Response(JSON.stringify({
@@ -236,7 +295,7 @@ async function performHealthCheck(config: FailoverConfig): Promise<HealthCheckRe
   }
 }
 
-async function sendTelegramAlert(supabase: any, fromProvider: string, toProvider: string) {
+async function sendTelegramMessage(supabase: any, message: string) {
   try {
     const { data: telegramConfig } = await supabase
       .from('telegram_config')
@@ -245,12 +304,6 @@ async function sendTelegramAlert(supabase: any, fromProvider: string, toProvider
       .single();
 
     if (telegramConfig?.bot_token && telegramConfig?.chat_id) {
-      const message = `🚨 <b>VPS AUTO-FAILOVER</b> 🚨\n\n` +
-        `Primary server <b>${fromProvider}</b> exceeded latency threshold!\n\n` +
-        `✅ Auto-switched to: <b>${toProvider}</b>\n\n` +
-        `⏱️ Time: ${new Date().toISOString()}\n` +
-        `📊 Threshold: ${LATENCY_THRESHOLD_MS}ms for ${CONSECUTIVE_FAILURES_FOR_FAILOVER * 10}s`;
-
       await fetch(`https://api.telegram.org/bot${telegramConfig.bot_token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -261,9 +314,9 @@ async function sendTelegramAlert(supabase: any, fromProvider: string, toProvider
         })
       });
 
-      console.log('[ScheduledHealthCheck] Telegram failover alert sent');
+      console.log('[ScheduledHealthCheck] Telegram notification sent');
     }
   } catch (error) {
-    console.error('[ScheduledHealthCheck] Failed to send Telegram alert:', error);
+    console.error('[ScheduledHealthCheck] Failed to send Telegram notification:', error);
   }
 }
