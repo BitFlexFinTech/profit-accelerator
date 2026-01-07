@@ -59,6 +59,23 @@ export function useHFTSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
+  const normalizeSettings = useCallback((incoming: Partial<HFTSettings> | undefined | null): HFTSettings => {
+    return {
+      ...DEFAULT_SETTINGS,
+      ...(incoming || {}),
+      risk: { ...DEFAULT_SETTINGS.risk, ...(incoming?.risk || {}) },
+      latency: { ...DEFAULT_SETTINGS.latency, ...(incoming?.latency || {}) },
+      security: {
+        ...DEFAULT_SETTINGS.security,
+        ...(incoming?.security || {}),
+        notifications: {
+          ...DEFAULT_SETTINGS.security.notifications,
+          ...(incoming?.security?.notifications || {}),
+        },
+      },
+    };
+  }, []);
+
   const fetchSettings = useCallback(async () => {
     try {
       const response = await supabase.functions.invoke('trade-engine', {
@@ -66,14 +83,14 @@ export function useHFTSettings() {
       });
 
       if (response.data?.success) {
-        setSettings(response.data.settings);
+        setSettings(normalizeSettings(response.data.settings));
       }
     } catch (err) {
       console.error('[useHFTSettings] Error fetching:', err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [normalizeSettings]);
 
   useEffect(() => {
     fetchSettings();
