@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Wifi, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle, Edit, Server } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Wifi, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle, Edit, Server, Circle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useExchangeStatus, ExchangeConnection } from '@/hooks/useExchangeStatus';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, differenceInSeconds } from 'date-fns';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,8 +36,35 @@ export function ExchangeConnectionsCard() {
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   const [showExchangeWizard, setShowExchangeWizard] = useState(false);
   const [wizardExchangeId, setWizardExchangeId] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+  
+  // Update "now" every second for freshness display
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
   
   const isVpsActive = vps.status === 'running' || (vps.status === 'idle' && vps.ip);
+
+  // Helper to check if balance is fresh (updated within 10 seconds)
+  const isBalanceFresh = (timestamp: string | null) => {
+    if (!timestamp) return false;
+    try {
+      return differenceInSeconds(now, new Date(timestamp)) < 10;
+    } catch {
+      return false;
+    }
+  };
+
+  // Helper to get seconds ago
+  const getSecondsAgo = (timestamp: string | null) => {
+    if (!timestamp) return null;
+    try {
+      return differenceInSeconds(now, new Date(timestamp));
+    } catch {
+      return null;
+    }
+  };
 
   const handleTestConnection = async (exchange: ExchangeConnection) => {
     if (!exchange.is_connected) {
@@ -209,8 +236,13 @@ export function ExchangeConnectionsCard() {
                 className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  {/* Status dot */}
-                  <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(exchange)}`} />
+                  {/* Status dot with pulse for fresh data */}
+                  <div className="relative">
+                    <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(exchange)}`} />
+                    {exchange.is_connected && isBalanceFresh(exchange.balance_updated_at) && (
+                      <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-success animate-ping opacity-75" />
+                    )}
+                  </div>
                   
                   {/* Exchange icon and name */}
                   <div
@@ -223,15 +255,28 @@ export function ExchangeConnectionsCard() {
                   </div>
                   
                   <div>
-                    <span className="font-medium">{exchange.exchange_name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{exchange.exchange_name}</span>
+                      {exchange.is_connected && isBalanceFresh(exchange.balance_updated_at) && (
+                        <span className="flex items-center gap-0.5 text-[10px] text-success bg-success/10 px-1 py-0.5 rounded">
+                          <Circle className="w-1.5 h-1.5 fill-current" />
+                          LIVE
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <DollarSign className="w-3 h-3" />
                         {formatBalance(exchange.balance_usdt)}
                       </span>
-                      <span className="flex items-center gap-1">
+                      <span className={`flex items-center gap-1 ${isBalanceFresh(exchange.balance_updated_at) ? 'text-success' : ''}`}>
                         <Clock className="w-3 h-3" />
-                        {formatLastSync(exchange.balance_updated_at)}
+                        {(() => {
+                          const secs = getSecondsAgo(exchange.balance_updated_at);
+                          if (secs === null) return '—';
+                          if (secs < 60) return `${secs}s ago`;
+                          return formatLastSync(exchange.balance_updated_at);
+                        })()}
                       </span>
                       {exchange.last_ping_ms && (
                         <span className="text-success">{exchange.last_ping_ms}ms</span>
