@@ -15,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ExchangeWizard } from '../wizards/ExchangeWizard';
 
 interface TestResult {
   exchange: string;
@@ -31,6 +32,7 @@ export function ExchangeConnectionsCard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
+  const [showExchangeWizard, setShowExchangeWizard] = useState(false);
 
   const connectedExchanges = exchanges.filter(e => e.is_connected);
 
@@ -149,6 +151,14 @@ export function ExchangeConnectionsCard() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setShowExchangeWizard(true)}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleSyncAll}
               disabled={isSyncing || connectedCount === 0}
             >
@@ -165,7 +175,7 @@ export function ExchangeConnectionsCard() {
             <p className="text-sm text-muted-foreground/70 mb-4">
               Connect an exchange to start trading
             </p>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => setShowExchangeWizard(true)}>
               <Plus className="w-4 h-4 mr-2" />
               Add Exchange
             </Button>
@@ -257,6 +267,11 @@ export function ExchangeConnectionsCard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ExchangeWizard 
+        open={showExchangeWizard} 
+        onOpenChange={setShowExchangeWizard}
+      />
     </>
   );
 }
