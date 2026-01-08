@@ -8,11 +8,13 @@ interface NewsItem {
   pubDate: Date;
 }
 
-// Free RSS feed sources for crypto news
+// Official RSS feeds: Cointelegraph, CoinDesk, Decrypt, Bitcoin.com News, Bloomberg Crypto
 const RSS_FEEDS = [
-  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/' },
-  { name: 'CryptoSlate', url: 'https://cryptoslate.com/feed/' },
   { name: 'Cointelegraph', url: 'https://cointelegraph.com/rss' },
+  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/' },
+  { name: 'Decrypt', url: 'https://decrypt.co/feed' },
+  { name: 'Bitcoin.com', url: 'https://news.bitcoin.com/feed/' },
+  { name: 'Bloomberg', url: 'https://www.bloomberg.com/feeds/crypto/news.rss' },
 ];
 
 export function useCryptoNews(refreshIntervalMs = 300000) { // 5 minutes default
@@ -23,42 +25,59 @@ export function useCryptoNews(refreshIntervalMs = 300000) { // 5 minutes default
 
   const fetchNews = useCallback(async () => {
     try {
-      // Use a CORS proxy for RSS feeds
-      const corsProxy = 'https://api.allorigins.win/raw?url=';
+      // Use CORS proxies with fallbacks
+      const corsProxies = [
+        'https://api.allorigins.win/raw?url=',
+        'https://corsproxy.io/?',
+      ];
       const allNews: NewsItem[] = [];
+      
+      // Shuffle feeds for variety on each fetch
+      const shuffledFeeds = [...RSS_FEEDS].sort(() => Math.random() - 0.5);
 
-      for (const feed of RSS_FEEDS) {
-        try {
-          const response = await fetch(corsProxy + encodeURIComponent(feed.url), {
-            signal: AbortSignal.timeout(10000)
-          });
+      for (const feed of shuffledFeeds) {
+        let fetched = false;
+        
+        for (const proxy of corsProxies) {
+          if (fetched) break;
           
-          if (!response.ok) continue;
-          
-          const text = await response.text();
-          const parser = new DOMParser();
-          const xml = parser.parseFromString(text, 'text/xml');
-          
-          const items = xml.querySelectorAll('item');
-          items.forEach((item, idx) => {
-            if (idx >= 5) return; // 5 per source = 15 total
+          try {
+            const response = await fetch(proxy + encodeURIComponent(feed.url), {
+              signal: AbortSignal.timeout(8000)
+            });
             
-            const title = item.querySelector('title')?.textContent || '';
-            const link = item.querySelector('link')?.textContent || '';
-            const pubDate = item.querySelector('pubDate')?.textContent || '';
+            if (!response.ok) continue;
             
-            if (title && link) {
-              allNews.push({
-                id: `${feed.name}-${idx}`,
-                title: title.trim(),
-                source: feed.name,
-                url: link.trim(),
-                pubDate: new Date(pubDate)
-              });
-            }
-          });
-        } catch (feedErr) {
-          console.warn(`[useCryptoNews] Failed to fetch ${feed.name}:`, feedErr);
+            const text = await response.text();
+            const parser = new DOMParser();
+            const xml = parser.parseFromString(text, 'text/xml');
+            
+            const items = xml.querySelectorAll('item');
+            items.forEach((item, idx) => {
+              if (idx >= 4) return; // 4 per source = 20 total max
+              
+              const title = item.querySelector('title')?.textContent || '';
+              const link = item.querySelector('link')?.textContent || '';
+              const pubDate = item.querySelector('pubDate')?.textContent || '';
+              
+              if (title && link) {
+                allNews.push({
+                  id: `${feed.name}-${idx}-${Date.now()}`,
+                  title: title.trim().replace(/<!\[CDATA\[|\]\]>/g, ''),
+                  source: feed.name,
+                  url: link.trim(),
+                  pubDate: pubDate ? new Date(pubDate) : new Date()
+                });
+              }
+            });
+            fetched = true;
+          } catch (feedErr) {
+            // Try next proxy
+          }
+        }
+        
+        if (!fetched) {
+          console.warn(`[useCryptoNews] All proxies failed for ${feed.name}`);
         }
       }
 
