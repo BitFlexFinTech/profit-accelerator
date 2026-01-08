@@ -391,6 +391,79 @@ serve(async (req) => {
         return new Response(JSON.stringify({ success: true, message: `Transferred ${amount} ${asset}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      case 'test-stored-connection': {
+        const { exchangeName } = params;
+        console.log(`[trade-engine] Testing stored connection for ${exchangeName}`);
+        
+        const { data: conn, error: connError } = await supabase
+          .from('exchange_connections')
+          .select('*')
+          .eq('exchange_name', exchangeName)
+          .eq('is_connected', true)
+          .single();
+        
+        if (connError || !conn) {
+          return new Response(JSON.stringify({ success: false, error: 'No credentials stored for this exchange' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        
+        try {
+          const { balance, pingMs } = await fetchExchangeBalance({
+            exchange_name: conn.exchange_name,
+            api_key: conn.api_key,
+            api_secret: conn.api_secret,
+            api_passphrase: conn.api_passphrase
+          });
+          
+          // Update ping data
+          await supabase.from('exchange_connections').update({
+            last_ping_ms: pingMs,
+            last_ping_at: new Date().toISOString(),
+            balance_usdt: balance,
+            balance_updated_at: new Date().toISOString()
+          }).eq('id', conn.id);
+          
+          console.log(`[trade-engine] Test success for ${exchangeName}: $${balance.toFixed(2)}, ${pingMs}ms`);
+          return new Response(JSON.stringify({ success: true, balance: balance.toFixed(2), pingMs }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        } catch (err) {
+          console.error(`[trade-engine] Test failed for ${exchangeName}:`, err);
+          return new Response(JSON.stringify({ success: false, error: err instanceof Error ? err.message : 'Connection test failed' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+      }
+
+      case 'disconnect-exchange': {
+        const { exchangeName } = params;
+        console.log(`[trade-engine] Disconnecting exchange: ${exchangeName}`);
+        
+        const { error: updateError } = await supabase
+          .from('exchange_connections')
+          .update({
+            is_connected: false,
+            api_key: null,
+            api_secret: null,
+            api_passphrase: null,
+            wallet_address: null,
+            agent_private_key: null,
+            balance_usdt: 0,
+            updated_at: new Date().toISOString()
+          })
+          .eq('exchange_name', exchangeName);
+        
+        if (updateError) {
+          console.error(`[trade-engine] Disconnect error:`, updateError);
+          return new Response(JSON.stringify({ success: false, error: updateError.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        
+        // Log the disconnect action
+        await supabase.from('audit_logs').insert({
+          action: 'exchange_disconnect',
+          entity_type: 'exchange_connection',
+          new_value: { exchange: exchangeName, disconnected_at: new Date().toISOString() }
+        });
+        
+        console.log(`[trade-engine] Successfully disconnected ${exchangeName}`);
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       default:
         return new Response(JSON.stringify({ success: false, error: 'Unknown action' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

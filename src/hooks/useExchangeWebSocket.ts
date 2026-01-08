@@ -132,9 +132,47 @@ export function useExchangeWebSocket() {
     };
   }, [fetchBalances, syncBalances]);
 
+  // Test connection for a specific exchange
+  const testConnection = useCallback(async (exchangeName: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('trade-engine', {
+        body: { action: 'test-stored-connection', exchangeName }
+      });
+      
+      if (error) throw error;
+      
+      // Refetch after test
+      await fetchBalances();
+      return data;
+    } catch (err) {
+      console.error('[useExchangeWebSocket] Test connection failed:', err);
+      throw err;
+    }
+  }, [fetchBalances]);
+
+  // Disconnect an exchange
+  const disconnect = useCallback(async (exchangeName: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('trade-engine', {
+        body: { action: 'disconnect-exchange', exchangeName }
+      });
+      
+      if (error) throw error;
+      
+      // Refetch after disconnect
+      await fetchBalances();
+      return data;
+    } catch (err) {
+      console.error('[useExchangeWebSocket] Disconnect failed:', err);
+      throw err;
+    }
+  }, [fetchBalances]);
+
   return {
     ...state,
     refetch: fetchBalances,
     sync: syncBalances,
+    testConnection,
+    disconnect,
   };
 }
