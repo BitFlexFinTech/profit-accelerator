@@ -150,7 +150,7 @@ async function getTop10Pairs(exchange: string): Promise<string[]> {
   }
 }
 
-// Get next available AI provider based on priority and rate limits
+// Get next available AI provider based on priority, rate limits (RPM + RPD)
 async function getNextAvailableProvider(supabase: any): Promise<{
   provider: string;
   apiKey: string;
@@ -159,17 +159,18 @@ async function getNextAvailableProvider(supabase: any): Promise<{
   try {
     // Reset expired rate limits (providers not used in last minute)
     await supabase.rpc('reset_ai_provider_usage');
+    // Reset daily limits at midnight UTC
+    await supabase.rpc('reset_ai_provider_daily_usage');
   } catch (e) {
     console.log('[ai-analyze] Could not reset provider usage, continuing...');
   }
 
-  // Query enabled providers sorted by priority, under rate limit
+  // Query enabled providers sorted by remaining daily capacity (highest first)
   const { data: providers } = await supabase
     .from('ai_providers')
-    .select('provider_name, rate_limit_rpm, current_usage, priority, secret_name')
+    .select('provider_name, rate_limit_rpm, current_usage, rate_limit_rpd, daily_usage, priority, secret_name')
     .eq('is_enabled', true)
-    .order('priority', { ascending: true })
-    .order('current_usage', { ascending: true });
+    .order('priority', { ascending: true });
 
   if (!providers?.length) {
     console.log('[ai-analyze] No enabled providers found in database');
@@ -184,13 +185,30 @@ async function getNextAvailableProvider(supabase: any): Promise<{
     return null;
   }
 
-  // Find first provider under rate limit with valid API key
-  for (const p of providers) {
-    const usage = p.current_usage || 0;
-    const limit = p.rate_limit_rpm || 30;
+  // Sort by remaining daily capacity (descending) - prioritize providers with more quota left
+  const sortedProviders = [...providers].sort((a, b) => {
+    const aRemaining = (a.rate_limit_rpd || 1000) - (a.daily_usage || 0);
+    const bRemaining = (b.rate_limit_rpd || 1000) - (b.daily_usage || 0);
+    if (aRemaining !== bRemaining) return bRemaining - aRemaining;
+    return (a.priority || 999) - (b.priority || 999);
+  });
+
+  // Find first provider under BOTH rate limits with valid API key
+  for (const p of sortedProviders) {
+    const minuteUsage = p.current_usage || 0;
+    const minuteLimit = p.rate_limit_rpm || 30;
+    const dailyUsage = p.daily_usage || 0;
+    const dailyLimit = p.rate_limit_rpd || 1000;
     
-    if (usage >= limit) {
-      console.log(`[ai-analyze] Provider ${p.provider_name} at rate limit (${usage}/${limit})`);
+    // Check minute rate limit
+    if (minuteUsage >= minuteLimit) {
+      console.log(`[ai-analyze] Provider ${p.provider_name} at minute limit (${minuteUsage}/${minuteLimit})`);
+      continue;
+    }
+    
+    // Check daily rate limit (skip if >90% used to preserve quota)
+    if (dailyUsage >= dailyLimit * 0.95) {
+      console.log(`[ai-analyze] Provider ${p.provider_name} near daily limit (${dailyUsage}/${dailyLimit})`);
       continue;
     }
 
@@ -203,7 +221,8 @@ async function getNextAvailableProvider(supabase: any): Promise<{
       continue;
     }
 
-    console.log(`[ai-analyze] Selected provider: ${p.provider_name} (usage: ${usage}/${limit})`);
+    const remainingPct = Math.round(((dailyLimit - dailyUsage) / dailyLimit) * 100);
+    console.log(`[ai-analyze] Selected provider: ${p.provider_name} (min: ${minuteUsage}/${minuteLimit}, day: ${dailyUsage}/${dailyLimit}, ${remainingPct}% remaining)`);
     return { provider: p.provider_name, apiKey, config };
   }
 
@@ -238,11 +257,18 @@ async function recordProviderMetrics(
         .eq('provider_name', providerName);
     }
 
-    // Always increment usage
-    await supabase
+    // Increment both minute and daily usage
+    const { error: usageError } = await supabase
       .from('ai_providers')
-      .update({ current_usage: supabase.sql`current_usage + 1` })
+      .update({ 
+        current_usage: supabase.sql`current_usage + 1`,
+        daily_usage: supabase.sql`daily_usage + 1`
+      })
       .eq('provider_name', providerName);
+      
+    if (usageError) {
+      console.error(`[ai-analyze] Usage update error for ${providerName}:`, usageError);
+    }
   } catch (e) {
     console.error(`[ai-analyze] Failed to record metrics for ${providerName}:`, e);
   }
@@ -650,6 +676,7 @@ serve(async (req) => {
               profit_timeframe_minutes: profitTimeframe,
               recommended_side: recommendedSide,
               expected_move_percent: expectedMove,
+              ai_provider: result.provider,
               created_at: new Date().toISOString()
             }, { 
               onConflict: 'symbol,exchange_name',

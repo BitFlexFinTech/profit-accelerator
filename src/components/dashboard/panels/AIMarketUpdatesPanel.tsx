@@ -22,6 +22,7 @@ interface AIUpdate {
   profit_timeframe_minutes?: number;
   recommended_side?: string;
   expected_move_percent?: number;
+  ai_provider?: string;
 }
 
 interface AIMarketUpdatesPanelProps {
@@ -45,11 +46,29 @@ const RECOMMENDATION_COLORS = [
 ];
 
 const getSymbolColor = (symbol: string) => {
+  if (!symbol || typeof symbol !== 'string') {
+    return RECOMMENDATION_COLORS[0];
+  }
   let hash = 0;
   for (let i = 0; i < symbol.length; i++) {
     hash = symbol.charCodeAt(i) + ((hash << 5) - hash);
   }
   return RECOMMENDATION_COLORS[Math.abs(hash) % RECOMMENDATION_COLORS.length];
+};
+
+// AI Provider badge colors
+const PROVIDER_COLORS: Record<string, { bg: string; text: string; abbr: string }> = {
+  groq: { bg: 'bg-red-500/30', text: 'text-red-400', abbr: 'GRQ' },
+  cerebras: { bg: 'bg-teal-500/30', text: 'text-teal-400', abbr: 'CRB' },
+  together: { bg: 'bg-orange-500/30', text: 'text-orange-400', abbr: 'TGR' },
+  openrouter: { bg: 'bg-purple-500/30', text: 'text-purple-400', abbr: 'ORT' },
+  mistral: { bg: 'bg-amber-500/30', text: 'text-amber-400', abbr: 'MST' },
+  gemini: { bg: 'bg-blue-500/30', text: 'text-blue-400', abbr: 'GMI' },
+  unknown: { bg: 'bg-gray-500/30', text: 'text-gray-400', abbr: 'AI' },
+};
+
+const getProviderStyle = (provider?: string) => {
+  return PROVIDER_COLORS[provider?.toLowerCase() || 'unknown'] || PROVIDER_COLORS.unknown;
 };
 
 type TimeframeFilter = 'all' | 1 | 3 | 5;
@@ -348,79 +367,94 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
               <p className="text-[9px]">Connect exchange + enable AI</p>
             </div>
           ) : (
-            filteredUpdates.map((update, index) => {
+            filteredUpdates
+              .filter(update => update && update.symbol && update.id)
+              .map((update, index) => {
               const symbolColor = getSymbolColor(update.symbol);
               const isHighConfidence = update.confidence >= 80;
+              const providerStyle = getProviderStyle(update.ai_provider);
               
               return (
                 <div 
                   key={update.id} 
                   className={cn(
-                    "px-1.5 py-1 rounded border flex items-center gap-1.5 transition-all duration-300 animate-fade-slide-in",
+                    "px-1.5 py-1.5 rounded border flex flex-col gap-1 transition-all duration-300",
                     symbolColor.bg,
                     symbolColor.border,
                     isHighConfidence && "ring-1 ring-emerald-400/40 shadow-[0_0_6px_rgba(52,211,153,0.2)]"
                   )}
-                  style={{ animationDelay: `${index * 30}ms` }}
                 >
-                  <span className="text-[8px] text-muted-foreground w-10 shrink-0 font-mono">
-                    {format(new Date(update.created_at), 'HH:mm:ss')}
-                  </span>
-                  
-                  {update.profit_timeframe_minutes && (
-                    <span className={cn(
-                      "text-[7px] px-1 py-0 rounded font-bold shrink-0",
-                      getTimeframeBadgeClass(update.profit_timeframe_minutes)
-                    )}>
-                      {update.profit_timeframe_minutes}m
+                  {/* Top row: metadata */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[8px] text-muted-foreground font-mono">
+                      {format(new Date(update.created_at), 'HH:mm:ss')}
                     </span>
-                  )}
-                  
-                  <span className="text-[7px] px-0.5 rounded bg-secondary/50 text-muted-foreground shrink-0">
-                    {getExchangeAbbr(update.exchange_name)}
-                  </span>
-                  
-                  <span className={cn("text-[10px] font-bold w-8 shrink-0", symbolColor.text)}>
-                    {update.symbol}
-                  </span>
-                  
-                  <span className="text-[9px] w-14 shrink-0">
-                    ${update.current_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '—'}
-                  </span>
-                  
-                  {update.price_change_24h !== null && (
+                    
+                    {/* AI Provider Badge */}
                     <span className={cn(
-                      "text-[8px] w-9 shrink-0 transition-colors duration-300",
-                      update.price_change_24h >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                      "text-[7px] px-1 rounded font-bold",
+                      providerStyle.bg,
+                      providerStyle.text
                     )}>
-                      {update.price_change_24h >= 0 ? '+' : ''}{update.price_change_24h.toFixed(1)}%
+                      {providerStyle.abbr}
                     </span>
-                  )}
-                  
-                  <span className={cn(
-                    "text-[8px] font-bold w-6 shrink-0 transition-colors duration-300",
-                    update.confidence >= 80 ? 'text-emerald-400' : 
-                    update.confidence >= 60 ? 'text-amber-400' : 'text-muted-foreground'
-                  )}>
-                    {update.confidence}%
-                  </span>
-                  
-                  {update.recommended_side && (
+                    
+                    {update.profit_timeframe_minutes && (
+                      <span className={cn(
+                        "text-[7px] px-1 rounded font-bold",
+                        getTimeframeBadgeClass(update.profit_timeframe_minutes)
+                      )}>
+                        {update.profit_timeframe_minutes}m
+                      </span>
+                    )}
+                    
+                    <span className="text-[7px] px-0.5 rounded bg-secondary/50 text-muted-foreground">
+                      {getExchangeAbbr(update.exchange_name)}
+                    </span>
+                    
+                    <span className={cn("text-[10px] font-bold", symbolColor.text)}>
+                      {update.symbol}
+                    </span>
+                    
+                    <span className="text-[9px] font-mono">
+                      ${update.current_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '—'}
+                    </span>
+                    
+                    {update.price_change_24h !== null && (
+                      <span className={cn(
+                        "text-[8px]",
+                        update.price_change_24h >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                      )}>
+                        {update.price_change_24h >= 0 ? '+' : ''}{update.price_change_24h.toFixed(1)}%
+                      </span>
+                    )}
+                    
                     <span className={cn(
-                      "text-[7px] px-1 rounded font-medium shrink-0",
-                      getSideBadgeClass(update.recommended_side)
+                      "text-[8px] font-bold",
+                      update.confidence >= 80 ? 'text-emerald-400' : 
+                      update.confidence >= 60 ? 'text-amber-400' : 'text-muted-foreground'
                     )}>
-                      {update.recommended_side === 'short' ? 'SHORT' : 'LONG'}
+                      {update.confidence}%
                     </span>
-                  )}
+                    
+                    {update.recommended_side && (
+                      <span className={cn(
+                        "text-[7px] px-1 rounded font-medium",
+                        getSideBadgeClass(update.recommended_side)
+                      )}>
+                        {update.recommended_side === 'short' ? 'SHORT' : 'LONG'}
+                      </span>
+                    )}
+                    
+                    <span className="shrink-0">
+                      {getSentimentIcon(update.sentiment)}
+                    </span>
+                  </div>
                   
-                  <span className="shrink-0">
-                    {getSentimentIcon(update.sentiment)}
-                  </span>
-                  
-                  <span className="text-[8px] text-muted-foreground flex-1 truncate min-w-0">
+                  {/* Bottom row: full insight text */}
+                  <p className="text-[9px] text-foreground/80 leading-tight">
                     {update.insight}
-                  </span>
+                  </p>
                 </div>
               );
             })

@@ -99,7 +99,7 @@ docker logs -f octobot`;
       <DialogContent className="max-w-2xl border-red-500/30 bg-card/95 backdrop-blur-xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <IconContainer color="red" size="lg" animated>
+            <IconContainer color="red" size="lg">
               <Bot className="w-6 h-6" />
             </IconContainer>
             <div>

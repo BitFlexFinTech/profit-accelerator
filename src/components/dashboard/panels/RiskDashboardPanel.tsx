@@ -100,7 +100,7 @@ export function RiskDashboardPanel() {
     )}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
-          <IconContainer color="red" size="sm" animated>
+          <IconContainer color="red" size="sm">
             <Shield className="w-3.5 h-3.5" />
           </IconContainer>
           Risk Monitor

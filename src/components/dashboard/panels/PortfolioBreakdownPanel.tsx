@@ -27,7 +27,7 @@ export function PortfolioBreakdownPanel() {
     )}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <IconContainer color="teal" size="sm" animated>
+          <IconContainer color="teal" size="sm">
             <PieChartIcon className="h-3.5 w-3.5" />
           </IconContainer>
           Portfolio Breakdown

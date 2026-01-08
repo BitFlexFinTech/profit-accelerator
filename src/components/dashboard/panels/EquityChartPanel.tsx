@@ -52,7 +52,7 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
       <CardHeader className={compact ? "p-2 pb-1" : "pb-2"}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <IconContainer color="yellow" size="sm" animated>
+            <IconContainer color="yellow" size="sm">
               <LineChart className="h-3.5 w-3.5" />
             </IconContainer>
             <CardTitle className={cn("font-medium text-foreground", compact ? 'text-sm' : 'text-lg')}>

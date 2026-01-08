@@ -43,7 +43,7 @@ export function SecurityScorePanel({ onOpenWizard }: SecurityScorePanelProps) {
     )}>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <IconContainer color="blue" size="md" animated>
+          <IconContainer color="blue" size="md">
             <Shield className="w-5 h-5" />
           </IconContainer>
           <div>

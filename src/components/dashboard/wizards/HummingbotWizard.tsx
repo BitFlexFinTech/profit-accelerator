@@ -115,7 +115,7 @@ inventory_skew_enabled: true`;
       <DialogContent className="max-w-2xl border-teal-500/30 bg-card/95 backdrop-blur-xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <IconContainer color="teal" size="lg" animated>
+            <IconContainer color="teal" size="lg">
               <TrendingUp className="w-6 h-6" />
             </IconContainer>
             <div>

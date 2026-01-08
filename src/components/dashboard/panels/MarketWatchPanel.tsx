@@ -46,7 +46,7 @@ export function MarketWatchPanel({ compact = false, limit = 3 }: MarketWatchPane
     )}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <IconContainer color="cyan" size="sm" animated>
+          <IconContainer color="cyan" size="sm">
             <TrendingUp className={compact ? "w-3 h-3" : "w-4 h-4"} />
           </IconContainer>
           <h3 className={cn("font-semibold", compact ? 'text-sm' : 'text-lg')}>Market Watch</h3>

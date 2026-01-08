@@ -45,7 +45,7 @@ export function PnLPanel() {
           <div className="glass-card card-green p-4 group cursor-default">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Today's P&L</span>
-              <div className="icon-container-green p-1.5 rounded-md group-hover:animate-bounce-subtle">
+              <div className="icon-container-green p-1.5 rounded-md">
                 <DollarSign className="w-4 h-4 text-green-accent" />
               </div>
             </div>
@@ -61,7 +61,7 @@ export function PnLPanel() {
                 </p>
                 <div className="flex items-center gap-1 mt-1">
                   {dailyPnl >= 0 ? (
-                    <TrendingUp className="w-3 h-3 text-green-accent animate-bounce-subtle" />
+                    <TrendingUp className="w-3 h-3 text-green-accent" />
                   ) : (
                     <TrendingDown className="w-3 h-3 text-red-accent" />
                   )}
@@ -84,7 +84,7 @@ export function PnLPanel() {
           <div className="glass-card card-cyan p-4 group cursor-default">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Weekly P&L</span>
-              <div className="icon-container-cyan p-1.5 rounded-md group-hover:animate-bounce-subtle">
+              <div className="icon-container-cyan p-1.5 rounded-md">
                 <DollarSign className="w-4 h-4 text-cyan" />
               </div>
             </div>
@@ -100,7 +100,7 @@ export function PnLPanel() {
                 </p>
                 <div className="flex items-center gap-1 mt-1">
                   {weeklyPnl >= 0 ? (
-                    <TrendingUp className="w-3 h-3 text-cyan animate-bounce-subtle" />
+                    <TrendingUp className="w-3 h-3 text-cyan" />
                   ) : (
                     <TrendingDown className="w-3 h-3 text-red-accent" />
                   )}
@@ -131,7 +131,7 @@ export function PnLPanel() {
                   </span>
                 )}
               </div>
-              <div className="icon-container-yellow p-1.5 rounded-md group-hover:animate-bounce-subtle">
+              <div className="icon-container-yellow p-1.5 rounded-md">
                 <DollarSign className="w-4 h-4 text-yellow-accent" />
               </div>
             </div>
@@ -165,8 +165,8 @@ export function PnLPanel() {
           <div className="glass-card card-magenta p-4 group cursor-default">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Active Trades</span>
-              <div className="icon-container-magenta p-1.5 rounded-md group-hover:animate-bounce-subtle">
-                <Activity className="w-4 h-4 text-magenta animate-blink" />
+              <div className="icon-container-magenta p-1.5 rounded-md">
+                <Activity className="w-4 h-4 text-magenta" />
               </div>
             </div>
             {isStoreLoading ? (

@@ -124,7 +124,7 @@ class MyStrategy(Strategy):
       <DialogContent className="max-w-2xl border-blue-500/30 bg-card/95 backdrop-blur-xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <IconContainer color="blue" size="lg" animated>
+            <IconContainer color="blue" size="lg">
               <FlaskConical className="w-6 h-6" />
             </IconContainer>
             <div>

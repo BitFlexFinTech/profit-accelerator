@@ -211,7 +211,7 @@ export function InfrastructurePanel() {
       {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <IconContainer color="orange" size="sm" animated>
+          <IconContainer color="orange" size="sm">
             <Activity className="w-2.5 h-2.5" />
           </IconContainer>
           <span className="text-xs font-semibold">INFRASTRUCTURE</span>
