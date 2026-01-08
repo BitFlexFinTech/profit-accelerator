@@ -108,6 +108,30 @@ export function DeploymentCompleteStep({ result, onClose, onDeployAnother }: Dep
         </CardContent>
       </Card>
 
+      {/* IP Whitelist Instructions */}
+      <Card className="border-warning/50 bg-warning/5">
+        <CardContent className="p-4 space-y-3">
+          <h4 className="font-semibold flex items-center gap-2 text-warning">
+            ⚠️ Add VPS IP to Exchange Whitelists
+          </h4>
+          <div className="p-3 rounded-lg bg-background/50 flex items-center justify-between">
+            <code className="font-mono text-lg">{result.ipAddress}</code>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => copyToClipboard(result.ipAddress, 'VPS IP')}
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p><strong>Binance:</strong> API Management → Edit → IP Whitelist → Add IP</p>
+            <p><strong>OKX:</strong> API → Select Key → Edit → IP Whitelist</p>
+            <p><strong>Bybit:</strong> API Management → Edit → Add to IP Whitelist</p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-3">
         <Button variant="outline" onClick={() => navigate('/vps-dashboard')}>
