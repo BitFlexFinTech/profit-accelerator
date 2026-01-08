@@ -41,24 +41,47 @@ export function OrderForm() {
     return exchangeBalances[exchange] || 0;
   }, [exchange, exchangeBalances]);
 
-  // Fetch connected exchanges with balances
+  // Fetch connected exchanges with balances (live or paper mode)
   useEffect(() => {
     const fetchExchanges = async () => {
-      const { data } = await supabase
+      // Always fetch exchange names
+      const { data: exchangeData } = await supabase
         .from('exchange_connections')
         .select('exchange_name, balance_usdt')
         .eq('is_connected', true);
       
-      if (data && data.length > 0) {
-        const names = data.map(e => e.exchange_name);
-        const balances: Record<string, number> = {};
-        data.forEach((e: ExchangeBalance) => {
-          balances[e.exchange_name] = e.balance_usdt || 0;
-        });
-        
+      if (exchangeData && exchangeData.length > 0) {
+        const names = exchangeData.map(e => e.exchange_name);
         setExchanges(names);
-        setExchangeBalances(balances);
         setExchange(names[0]);
+
+        if (paperTradingMode) {
+          // Fetch paper balance from paper_balance_history
+          const { data: paperData } = await supabase
+            .from('paper_balance_history')
+            .select('exchange_name, total_equity')
+            .order('created_at', { ascending: false })
+            .limit(10);
+          
+          const balances: Record<string, number> = {};
+          // Default paper balance if none exists
+          names.forEach(name => { balances[name] = 10000; });
+          
+          // Override with actual paper balances
+          paperData?.forEach((p) => {
+            if (names.includes(p.exchange_name)) {
+              balances[p.exchange_name] = p.total_equity || 10000;
+            }
+          });
+          setExchangeBalances(balances);
+        } else {
+          // Live mode: use real exchange balances
+          const balances: Record<string, number> = {};
+          exchangeData.forEach((e: ExchangeBalance) => {
+            balances[e.exchange_name] = e.balance_usdt || 0;
+          });
+          setExchangeBalances(balances);
+        }
       }
     };
     fetchExchanges();
@@ -69,20 +92,16 @@ export function OrderForm() {
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
-        table: 'exchange_connections'
-      }, (payload) => {
-        const updated = payload.new as ExchangeBalance;
-        setExchangeBalances(prev => ({
-          ...prev,
-          [updated.exchange_name]: updated.balance_usdt || 0
-        }));
+        table: paperTradingMode ? 'paper_balance_history' : 'exchange_connections'
+      }, () => {
+        fetchExchanges(); // Refetch on update
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [paperTradingMode]);
 
   // Validate risk on amount/price change
   useEffect(() => {
@@ -255,8 +274,8 @@ export function OrderForm() {
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs">Amount (USDT)</Label>
-            <span className="text-xs text-muted-foreground">
-              Available: ${availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className={`text-xs ${paperTradingMode ? 'text-primary' : 'text-muted-foreground'}`}>
+              {paperTradingMode ? '📝 Paper: ' : 'Available: '}${availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <Input
