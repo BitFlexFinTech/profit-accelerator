@@ -29,6 +29,14 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
   }, []);
 
   const checkPasswordExists = async () => {
+    // Timeout fallback to prevent indefinite loading
+    const timeoutId = setTimeout(() => {
+      console.warn('Password check timeout - proceeding with setup');
+      setStatusMessage('Connection timeout. Proceeding with setup.');
+      setNeedsSetup(true);
+      setIsChecking(false);
+    }, 5000);
+
     try {
       setStatusMessage('Checking database connection...');
       
@@ -36,6 +44,8 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
       const { data, error: fnError } = await supabase.functions.invoke('verify-password', {
         body: { action: 'check' },
       });
+
+      clearTimeout(timeoutId);
 
       if (fnError) {
         console.error('Check error:', fnError);
@@ -57,6 +67,7 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
       }, 300);
 
     } catch (err) {
+      clearTimeout(timeoutId);
       console.error('Init error:', err);
       setStatusMessage('Ready to set up.');
       setNeedsSetup(true);
