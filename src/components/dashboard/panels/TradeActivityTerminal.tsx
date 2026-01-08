@@ -49,35 +49,16 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
     try {
       const limit = expanded ? 50 : compact ? 10 : 15;
       
-      // Fetch trades
+      // Fetch trades - execution_latency_ms is already in trading_journal
       const { data: tradesData, error } = await supabase
         .from('trading_journal')
-        .select('*')
+        .select('id, symbol, exchange, side, entry_price, exit_price, quantity, pnl, status, created_at, execution_latency_ms')
         .order('created_at', { ascending: false })
         .limit(limit);
 
       if (error) throw error;
       
-      // Fetch execution metrics to get latency
-      const { data: metricsData } = await supabase
-        .from('trade_execution_metrics')
-        .select('symbol, exchange, execution_time_ms, order_placed_at')
-        .order('order_placed_at', { ascending: false })
-        .limit(limit);
-      
-      // Merge trades with execution metrics
-      const tradesWithMetrics = (tradesData || []).map(trade => {
-        const metric = metricsData?.find(m => 
-          m.symbol === trade.symbol && 
-          m.exchange === trade.exchange
-        );
-        return {
-          ...trade,
-          execution_latency_ms: metric?.execution_time_ms || null
-        };
-      });
-      
-      setTrades(tradesWithMetrics);
+      setTrades(tradesData || []);
     } catch (err) {
       console.error('Failed to fetch trades:', err);
     } finally {

@@ -25,6 +25,7 @@ export function InfrastructurePanel() {
   const [pulses, setPulses] = useState<ExchangePulse[]>([]);
   const [rateLimits, setRateLimits] = useState<RateLimitStat[]>([]);
   const [sentimentIndex, setSentimentIndex] = useState<number | null>(null);
+  const [vpsExchangeLatency, setVpsExchangeLatency] = useState<number | null>(null);
   const { configs } = useCloudConfig();
   const { deployments } = useHFTDeployments();
   const [vpsConfig, setVpsConfig] = useState<{ provider: string } | null>(null);
@@ -111,10 +112,28 @@ export function InfrastructurePanel() {
     }
   }, []);
 
+  // Fetch VPS→Exchange latency from exchange_pulse where source='vps'
+  const fetchVpsLatency = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('exchange_pulse')
+        .select('latency_ms')
+        .eq('source', 'vps');
+      
+      if (data && data.length > 0) {
+        const avgLatency = Math.round(data.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / data.length);
+        setVpsExchangeLatency(avgLatency);
+      }
+    } catch (err) {
+      console.error('[InfrastructurePanel] VPS latency error:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchPulses();
     fetchRateLimits();
     fetchSentiment();
+    fetchVpsLatency();
     
     // Fetch VPS config
     supabase.from('vps_config').select('provider').order('updated_at', { ascending: false }).limit(1).single()
@@ -122,12 +141,14 @@ export function InfrastructurePanel() {
     
     const pulseInterval = setInterval(fetchPulses, 15000);
     const rateInterval = setInterval(fetchRateLimits, 10000);
+    const vpsLatencyInterval = setInterval(fetchVpsLatency, 15000);
     
     return () => {
       clearInterval(pulseInterval);
       clearInterval(rateInterval);
+      clearInterval(vpsLatencyInterval);
     };
-  }, [fetchPulses, fetchRateLimits, fetchSentiment]);
+  }, [fetchPulses, fetchRateLimits, fetchSentiment, fetchVpsLatency]);
 
   const getStatusIcon = (status: string) => {
     if (status === 'healthy') return <CheckCircle2 className="w-2 h-2 text-green-400" />;
@@ -241,11 +262,25 @@ export function InfrastructurePanel() {
         </div>
       </div>
 
-      {/* Row 2: Cloud Mesh - 8 mini icons */}
+      {/* Row 2: Cloud Mesh - 8 mini icons + VPS latency */}
       <div className="flex-shrink-0">
-        <div className="flex items-center gap-1 mb-0.5">
-          <Cloud className="w-2 h-2 text-sky-500" />
-          <span className="text-[8px] text-muted-foreground">Cloud</span>
+        <div className="flex items-center justify-between gap-1 mb-0.5">
+          <div className="flex items-center gap-1">
+            <Cloud className="w-2 h-2 text-sky-500" />
+            <span className="text-[8px] text-muted-foreground">Cloud</span>
+          </div>
+          {vpsExchangeLatency !== null && (
+            <div className="flex items-center gap-0.5">
+              <Zap className="w-2 h-2 text-yellow-400" />
+              <span className={cn(
+                "text-[8px] font-bold",
+                vpsExchangeLatency < 50 ? 'text-green-400' :
+                vpsExchangeLatency < 100 ? 'text-yellow-400' : 'text-red-400'
+              )}>
+                VPS→Ex: {vpsExchangeLatency}ms
+              </span>
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-8 gap-0.5">
           {allProviderStatuses.map(({ provider, status, isActive }) => (
