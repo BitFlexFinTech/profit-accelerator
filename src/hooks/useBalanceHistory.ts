@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAppStore } from '@/store/useAppStore';
 
 interface BalanceSnapshot {
   id: string;
@@ -13,8 +14,10 @@ type TimeRange = '1H' | '24H' | '7D' | '30D';
 export function useBalanceHistory(timeRange: TimeRange = '24H') {
   const [history, setHistory] = useState<BalanceSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentBalance, setCurrentBalance] = useState(0);
   const [percentChange, setPercentChange] = useState(0);
+  
+  // SINGLE SOURCE OF TRUTH: Get current balance from store (which uses exchange_connections)
+  const currentBalance = useAppStore((state) => state.getTotalEquity());
 
   const getTimeFilter = useCallback(() => {
     const now = new Date();
@@ -58,13 +61,12 @@ export function useBalanceHistory(timeRange: TimeRange = '24H') {
 
       setHistory(snapshots);
 
-      if (snapshots.length > 0) {
-        const latest = snapshots[snapshots.length - 1].total_balance;
+      // Calculate percent change from historical data ONLY
+      // Use earliest snapshot vs current balance from store (SSOT)
+      if (snapshots.length > 0 && currentBalance > 0) {
         const earliest = snapshots[0].total_balance;
-        setCurrentBalance(latest);
-        
         if (earliest > 0) {
-          const change = ((latest - earliest) / earliest) * 100;
+          const change = ((currentBalance - earliest) / earliest) * 100;
           setPercentChange(change);
         }
       }
@@ -73,12 +75,12 @@ export function useBalanceHistory(timeRange: TimeRange = '24H') {
     } finally {
       setLoading(false);
     }
-  }, [getTimeFilter]);
+  }, [getTimeFilter, currentBalance]);
 
   useEffect(() => {
     fetchHistory();
 
-    // Subscribe to realtime changes
+    // Subscribe to realtime changes for chart updates only
     const channel = supabase
       .channel('balance-history-changes')
       .on('postgres_changes', 
@@ -94,7 +96,7 @@ export function useBalanceHistory(timeRange: TimeRange = '24H') {
             snapshot_time: payload.new.snapshot_time || ''
           };
           setHistory(prev => [...prev, newSnapshot]);
-          setCurrentBalance(newSnapshot.total_balance);
+          // Note: currentBalance comes from store, not from snapshots
         }
       )
       .subscribe();

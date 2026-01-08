@@ -1,13 +1,11 @@
 import { useEffect } from 'react';
 import { UnifiedControlBar } from '../panels/UnifiedControlBar';
 import { CompactMetricsBar } from '../panels/CompactMetricsBar';
-import { EquityChartPanel } from '../panels/EquityChartPanel';
 import { TradeActivityTerminal } from '../panels/TradeActivityTerminal';
 import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
-import { MarketWatchPanel } from '../panels/MarketWatchPanel';
-import { CloudStatusPanel } from '../panels/CloudStatusPanel';
-import { ExchangeInfoPanel } from '../panels/ExchangeInfoPanel';
 import { ScrollingPriceTicker } from '../panels/ScrollingPriceTicker';
+import { NewsPanel } from '../panels/NewsPanel';
+import { InfrastructurePanel } from '../panels/InfrastructurePanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
@@ -46,19 +44,16 @@ export function LiveDashboard() {
           <TradeActivityTerminal expanded />
         </div>
         
-        {/* RIGHT Column - Stacked Compact Panels */}
-        <div className="flex flex-col gap-1 min-h-0">
-          <div className="h-[100px] flex-shrink-0">
-            <EquityChartPanel compact />
+        {/* RIGHT Column - News (LONG) + Infrastructure (SMALL) */}
+        <div className="flex flex-col gap-1 min-h-0 h-full">
+          {/* News Panel - EXPANDED (takes most space) */}
+          <div className="flex-1 min-h-[400px]">
+            <NewsPanel />
           </div>
-          <div className="h-[180px] flex-shrink-0">
-            <MarketWatchPanel compact={false} limit={3} />
-          </div>
+          
+          {/* Infrastructure Panel - COMPACT (120px fixed) */}
           <div className="h-[120px] flex-shrink-0">
-            <ExchangeInfoPanel />
-          </div>
-          <div className="flex-1 min-h-0">
-            <CloudStatusPanel compact />
+            <InfrastructurePanel />
           </div>
         </div>
       </div>
