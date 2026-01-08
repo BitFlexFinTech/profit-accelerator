@@ -350,6 +350,69 @@ const server = http.createServer(async (req, res) => {
 
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, source: 'vps', pings: results }));
+  } else if (req.url === '/update-bot' && req.method === 'POST') {
+    // Self-update endpoint - accepts new health.js code via HTTP POST
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { code, secret } = JSON.parse(body);
+        
+        // Validate update secret
+        const updateSecret = process.env.BOT_UPDATE_SECRET || 'hft-update-2024';
+        if (secret !== updateSecret) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, error: 'Invalid update secret' }));
+          return;
+        }
+        
+        if (!code || typeof code !== 'string') {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Missing or invalid code' }));
+          return;
+        }
+        
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Write new code to temp file first
+        const tempPath = '/app/health.js.new';
+        const mainPath = '/app/health.js';
+        
+        console.log('[HFT] Writing new code to temp file...');
+        fs.writeFileSync(tempPath, code);
+        
+        // Basic syntax validation - try to parse as JS
+        try {
+          new Function(code);
+        } catch (syntaxErr) {
+          fs.unlinkSync(tempPath);
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Syntax error: ' + syntaxErr.message }));
+          return;
+        }
+        
+        // Replace current health.js with new code
+        console.log('[HFT] Replacing health.js...');
+        fs.renameSync(tempPath, mainPath);
+        
+        res.writeHead(200);
+        res.end(JSON.stringify({ 
+          success: true, 
+          message: 'Bot code updated, container will restart',
+          version: getMetrics().version
+        }));
+        
+        // Exit process - Docker will auto-restart with new code
+        console.log('[HFT] Exiting for restart with new code...');
+        setTimeout(() => process.exit(0), 200);
+        
+      } catch (err) {
+        console.error('[HFT] Update error:', err);
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: String(err) }));
+      }
+    });
   } else {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not found' }));
