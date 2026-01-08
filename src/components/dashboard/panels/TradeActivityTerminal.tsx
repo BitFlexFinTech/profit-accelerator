@@ -19,7 +19,11 @@ interface Trade {
   created_at: string | null;
 }
 
-export function TradeActivityTerminal() {
+interface TradeActivityTerminalProps {
+  expanded?: boolean;
+}
+
+export function TradeActivityTerminal({ expanded = false }: TradeActivityTerminalProps) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -29,7 +33,7 @@ export function TradeActivityTerminal() {
         .from('trading_journal')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(15);
+        .limit(expanded ? 30 : 15);
 
       if (error) throw error;
       setTrades(data || []);
@@ -58,7 +62,7 @@ export function TradeActivityTerminal() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [expanded]);
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '--';
@@ -80,12 +84,12 @@ export function TradeActivityTerminal() {
   };
 
   return (
-    <Card className="bg-card/50 border-border/50 backdrop-blur-sm h-full">
-      <CardHeader className="pb-2">
+    <Card className="bg-card/50 border-border/50 backdrop-blur-sm h-full flex flex-col">
+      <CardHeader className="pb-2 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="h-4 w-4 text-primary" />
-            <CardTitle className="text-sm font-medium">Trade Activity</CardTitle>
+            <CardTitle className="text-sm font-medium">Live Trade Activity</CardTitle>
           </div>
           <div className="flex items-center gap-1">
             <Activity className="h-3 w-3 text-green-500 animate-pulse" />
@@ -93,8 +97,8 @@ export function TradeActivityTerminal() {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
-        <ScrollArea className="h-[200px] pr-2">
+      <CardContent className="pt-0 flex-1 min-h-0 overflow-hidden">
+        <ScrollArea className="h-full pr-2">
           {loading ? (
             <div className="space-y-2">
               {[...Array(5)].map((_, i) => (
