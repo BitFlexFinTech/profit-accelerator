@@ -10,6 +10,7 @@ import { PortfolioBreakdownPanel } from '../panels/PortfolioBreakdownPanel';
 import { RateLimitMonitorPanel } from '../panels/RateLimitMonitorPanel';
 import { MarketWatchPanel } from '../panels/MarketWatchPanel';
 import { QuickActionsPanel } from '../panels/QuickActionsPanel';
+import { RiskDashboardPanel } from '../panels/RiskDashboardPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { supabase } from '@/integrations/supabase/client';
@@ -87,6 +88,11 @@ export function LiveDashboard() {
           {/* Cloud Status - Compact row */}
           <div className="flex-shrink-0">
             <CloudStatusPanel />
+          </div>
+
+          {/* Risk Dashboard */}
+          <div className="flex-shrink-0">
+            <RiskDashboardPanel />
           </div>
 
           {/* Sentiment Panel */}
