@@ -13,6 +13,8 @@ import { RiskManager } from '@/lib/riskManager';
 import { OrderManager } from '@/lib/orderManager';
 import { PaperTradingManager } from '@/lib/paperTrading';
 import { toast } from 'sonner';
+import { ActionButton } from '@/components/ui/ActionButton';
+import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 
 const POPULAR_PAIRS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'];
 
@@ -287,8 +289,9 @@ export function OrderForm() {
           />
           <div className="flex gap-1">
             {[25, 50, 75, 100].map(pct => (
-              <Button
+              <ActionButton
                 key={pct}
+                tooltip={BUTTON_TOOLTIPS[`amount${pct}` as keyof typeof BUTTON_TOOLTIPS]}
                 variant="outline"
                 size="sm"
                 className="flex-1 h-7 text-xs"
@@ -296,7 +299,7 @@ export function OrderForm() {
                 disabled={availableBalance <= 0}
               >
                 {pct}%
-              </Button>
+              </ActionButton>
             ))}
           </div>
         </div>
@@ -336,7 +339,8 @@ export function OrderForm() {
         )}
 
         {/* Submit Button */}
-        <Button
+        <ActionButton
+          tooltip={side === 'buy' ? BUTTON_TOOLTIPS.buyOrder : BUTTON_TOOLTIPS.sellOrder}
           className={`w-full ${side === 'buy' ? 'bg-success hover:bg-success/90' : 'bg-destructive hover:bg-destructive/90'}`}
           onClick={handleSubmit}
           disabled={isSubmitting || !!riskError || !exchange || !amount}
@@ -349,7 +353,7 @@ export function OrderForm() {
             <TrendingDown className="w-4 h-4 mr-2" />
           )}
           {paperTradingMode ? 'Paper ' : ''}{side === 'buy' ? 'Buy' : 'Sell'} {symbol.split('/')[0]}
-        </Button>
+        </ActionButton>
       </CardContent>
     </Card>
   );

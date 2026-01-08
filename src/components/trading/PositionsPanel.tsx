@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Target, TrendingUp, TrendingDown, X, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { useAppStore } from '@/store/useAppStore';
 import { OrderManager } from '@/lib/orderManager';
 import { toast } from 'sonner';
+import { ActionButton } from '@/components/ui/ActionButton';
+import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 
 interface Position {
   id: string;
@@ -177,7 +178,8 @@ export function PositionsPanel() {
                     {formatPnl(pos.unrealized_pnl)}
                   </TableCell>
                   <TableCell>
-                    <Button
+                    <ActionButton
+                      tooltip={BUTTON_TOOLTIPS.closePosition}
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-muted-foreground hover:text-destructive"
@@ -189,7 +191,7 @@ export function PositionsPanel() {
                       ) : (
                         <X className="w-3 h-3" />
                       )}
-                    </Button>
+                    </ActionButton>
                   </TableCell>
                 </TableRow>
               ))}

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Zap, StopCircle, RefreshCw, Bell, Loader2, Play, Square, RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useHFTDeployments } from '@/hooks/useHFTDeployments';
+import { ActionButton } from '@/components/ui/ActionButton';
+import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 
 export function QuickActionsPanel() {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -141,7 +142,8 @@ export function QuickActionsPanel() {
         </div>
         
         <div className="flex gap-2">
-          <Button
+          <ActionButton
+            tooltip={BUTTON_TOOLTIPS.startBot}
             size="sm"
             variant="outline"
             className="flex-1 gap-1.5 hover:bg-success/10 hover:border-success/50"
@@ -150,9 +152,10 @@ export function QuickActionsPanel() {
           >
             {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 text-success" />}
             Start
-          </Button>
+          </ActionButton>
           
-          <Button
+          <ActionButton
+            tooltip={BUTTON_TOOLTIPS.stopBot}
             size="sm"
             variant="outline"
             className="flex-1 gap-1.5 hover:bg-destructive/10 hover:border-destructive/50"
@@ -161,9 +164,10 @@ export function QuickActionsPanel() {
           >
             {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4 text-destructive" />}
             Stop
-          </Button>
+          </ActionButton>
           
-          <Button
+          <ActionButton
+            tooltip={BUTTON_TOOLTIPS.restartBot}
             size="sm"
             variant="outline"
             className="flex-1 gap-1.5"
@@ -172,12 +176,13 @@ export function QuickActionsPanel() {
           >
             {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
             Restart
-          </Button>
+          </ActionButton>
         </div>
       </div>
       
       <div className="grid grid-cols-2 gap-3">
-        <Button 
+        <ActionButton 
+          tooltip={BUTTON_TOOLTIPS.startTrading}
           variant="outline" 
           className="h-auto py-4 flex flex-col gap-2 hover:bg-success/10 hover:border-success/50"
           onClick={handleStartTrading}
@@ -189,9 +194,10 @@ export function QuickActionsPanel() {
             <Zap className="w-5 h-5 text-success" />
           )}
           <span className="text-sm">Start Trading</span>
-        </Button>
+        </ActionButton>
         
-        <Button 
+        <ActionButton 
+          tooltip={BUTTON_TOOLTIPS.pauseAll}
           variant="outline" 
           className="h-auto py-4 flex flex-col gap-2 hover:bg-destructive/10 hover:border-destructive/50"
           onClick={handlePauseAll}
@@ -203,9 +209,10 @@ export function QuickActionsPanel() {
             <StopCircle className="w-5 h-5 text-destructive" />
           )}
           <span className="text-sm">Pause All</span>
-        </Button>
+        </ActionButton>
         
-        <Button 
+        <ActionButton 
+          tooltip={BUTTON_TOOLTIPS.syncBalances}
           variant="outline" 
           className="h-auto py-4 flex flex-col gap-2 hover:bg-accent/10 hover:border-accent/50"
           onClick={handleSyncBalances}
@@ -217,9 +224,10 @@ export function QuickActionsPanel() {
             <RefreshCw className="w-5 h-5 text-accent" />
           )}
           <span className="text-sm">Sync Balances</span>
-        </Button>
+        </ActionButton>
         
-        <Button 
+        <ActionButton 
+          tooltip={BUTTON_TOOLTIPS.testAlert}
           variant="outline" 
           className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/10 hover:border-primary/50"
           onClick={handleTestAlert}
@@ -231,7 +239,7 @@ export function QuickActionsPanel() {
             <Bell className="w-5 h-5 text-primary" />
           )}
           <span className="text-sm">Test Alert</span>
-        </Button>
+        </ActionButton>
       </div>
     </div>
   );
