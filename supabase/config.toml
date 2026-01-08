@@ -168,3 +168,6 @@ verify_jwt = false
 
 [functions.ping-exchanges-vps]
 verify_jwt = false
+
+[functions.update-vps-bot]
+verify_jwt = false
