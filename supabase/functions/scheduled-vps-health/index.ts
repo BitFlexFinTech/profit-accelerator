@@ -217,9 +217,36 @@ serve(async (req) => {
           
           try {
             const health = await response.json();
-            cpuPercent = health.cpu || health.cpuPercent || 0;
-            ramPercent = health.memory || health.memoryPercent || health.ram || 0;
-            diskPercent = health.disk || health.diskPercent || 0;
+            // Normalize CPU: if array (load averages), convert to percentage
+            if (typeof health.cpu_percent === 'number') {
+              cpuPercent = health.cpu_percent;
+            } else if (Array.isArray(health.cpu)) {
+              cpuPercent = (health.cpu[0] ?? 0) * 100;
+            } else if (typeof health.cpu === 'number') {
+              cpuPercent = health.cpu;
+            } else if (typeof health.cpuPercent === 'number') {
+              cpuPercent = health.cpuPercent;
+            }
+            // Normalize RAM
+            if (typeof health.ram_percent === 'number') {
+              ramPercent = health.ram_percent;
+            } else if (typeof health.memory?.percent === 'number') {
+              ramPercent = health.memory.percent;
+            } else if (typeof health.memory === 'number') {
+              ramPercent = health.memory;
+            } else if (typeof health.memoryPercent === 'number') {
+              ramPercent = health.memoryPercent;
+            } else if (typeof health.ram === 'number') {
+              ramPercent = health.ram;
+            }
+            // Normalize disk
+            if (typeof health.disk_percent === 'number') {
+              diskPercent = health.disk_percent;
+            } else if (typeof health.disk === 'number') {
+              diskPercent = health.disk;
+            } else if (typeof health.diskPercent === 'number') {
+              diskPercent = health.diskPercent;
+            }
           } catch {
             // Response wasn't JSON, but VPS is reachable
             healthStatus = 'healthy';
