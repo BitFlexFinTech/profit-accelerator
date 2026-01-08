@@ -2,6 +2,8 @@ import { useAppStore } from '@/store/useAppStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { PieChart as PieChartIcon } from 'lucide-react';
+import { IconContainer } from '@/components/ui/IconContainer';
+import { cn } from '@/lib/utils';
 
 export function PortfolioBreakdownPanel() {
   const { getPortfolioBreakdown, getTotalEquity } = useAppStore();
@@ -19,10 +21,15 @@ export function PortfolioBreakdownPanel() {
   const hasData = chartData.length > 0 && totalEquity > 0;
 
   return (
-    <Card className="bg-card/50 backdrop-blur-sm border-border/50">
+    <Card className={cn(
+      "card-teal bg-card/50 backdrop-blur-sm overflow-hidden",
+      "hover:shadow-lg hover:shadow-teal-500/10 transition-all duration-300"
+    )}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <PieChartIcon className="h-4 w-4 text-primary" />
+          <IconContainer color="teal" size="sm" animated>
+            <PieChartIcon className="h-3.5 w-3.5" />
+          </IconContainer>
           Portfolio Breakdown
         </CardTitle>
       </CardHeader>
@@ -50,7 +57,9 @@ export function PortfolioBreakdownPanel() {
                       <Cell 
                         key={`cell-${index}`} 
                         fill={entry.color}
-                        className="transition-all duration-500"
+                        className="transition-all duration-500 hover:opacity-80"
+                        stroke="hsl(var(--background))"
+                        strokeWidth={2}
                       />
                     ))}
                   </Pie>
@@ -58,7 +67,7 @@ export function PortfolioBreakdownPanel() {
                     formatter={(value: number) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Balance']}
                     contentStyle={{
                       backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
+                      border: '1px solid hsl(174, 100%, 42%, 0.3)',
                       borderRadius: '6px',
                       fontSize: '12px'
                     }}
@@ -72,11 +81,14 @@ export function PortfolioBreakdownPanel() {
               {chartData.map((entry) => (
                 <div 
                   key={entry.name} 
-                  className="flex items-center justify-between text-xs transition-all duration-300 hover:bg-secondary/30 rounded px-1 -mx-1"
+                  className={cn(
+                    "flex items-center justify-between text-xs transition-all duration-300",
+                    "hover:bg-teal-500/10 rounded px-1 -mx-1"
+                  )}
                 >
                   <div className="flex items-center gap-2">
                     <div 
-                      className="w-2 h-2 rounded-full transition-transform duration-300 hover:scale-125" 
+                      className="w-2 h-2 rounded-full transition-transform duration-300 hover:scale-125 ring-1 ring-white/10" 
                       style={{ backgroundColor: entry.color }}
                     />
                     <span className="text-muted-foreground">{entry.name}</span>
@@ -88,17 +100,20 @@ export function PortfolioBreakdownPanel() {
               ))}
               
               {/* Total */}
-              <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
+              <div className="pt-2 border-t border-teal-500/20 flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Total Equity</span>
-                <span className="font-mono font-bold text-primary transition-all duration-500">
+                <span className="font-mono font-bold text-teal-400 transition-all duration-500">
                   ${totalEquity.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
           </div>
         ) : (
-          <div className="h-32 flex items-center justify-center text-muted-foreground text-sm">
-            No exchange balances to display
+          <div className="h-32 flex flex-col items-center justify-center text-muted-foreground text-sm">
+            <div className="w-10 h-10 rounded-full bg-teal-500/10 flex items-center justify-center mb-2">
+              <PieChartIcon className="w-5 h-5 text-teal-500/50" />
+            </div>
+            <p>No exchange balances to display</p>
           </div>
         )}
       </CardContent>

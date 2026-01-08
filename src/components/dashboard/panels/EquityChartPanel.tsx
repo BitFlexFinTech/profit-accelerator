@@ -2,10 +2,13 @@ import { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, LineChart } from 'lucide-react';
 import { useBalanceHistory } from '@/hooks/useBalanceHistory';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { Tooltip as UITooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconContainer } from '@/components/ui/IconContainer';
 
 type TimeRange = '1H' | '24H' | '7D' | '30D';
 
@@ -42,21 +45,33 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
   const chartHeight = compact ? 50 : 200;
 
   return (
-    <Card className="h-full bg-card/50 border-border/50 backdrop-blur-sm flex flex-col">
+    <Card className={cn(
+      "card-yellow h-full bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden",
+      "hover:shadow-lg hover:shadow-yellow-500/10 transition-all duration-300"
+    )}>
       <CardHeader className={compact ? "p-2 pb-1" : "pb-2"}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CardTitle className={`${compact ? 'text-sm' : 'text-lg'} font-medium text-foreground`}>
+            <IconContainer color="yellow" size="sm" animated>
+              <LineChart className="h-3.5 w-3.5" />
+            </IconContainer>
+            <CardTitle className={cn("font-medium text-foreground", compact ? 'text-sm' : 'text-lg')}>
               Total Equity
             </CardTitle>
             <div className="flex items-center gap-1.5">
-              <span className={`${compact ? 'text-lg' : 'text-2xl'} font-bold text-foreground`}>
+              <span className={cn("font-bold text-foreground", compact ? 'text-lg' : 'text-2xl')}>
                 {formatCurrency(currentBalance)}
               </span>
-              <div className={`flex items-center gap-0.5 ${compact ? 'text-xs' : 'text-sm'} font-medium ${
-                isPositive ? 'text-green-500' : 'text-red-500'
-              }`}>
-                {isPositive ? <TrendingUp className={compact ? "h-3 w-3" : "h-4 w-4"} /> : <TrendingDown className={compact ? "h-3 w-3" : "h-4 w-4"} />}
+              <div className={cn(
+                "flex items-center gap-0.5 font-medium",
+                compact ? 'text-xs' : 'text-sm',
+                isPositive ? 'text-green-400' : 'text-red-400'
+              )}>
+                {isPositive ? (
+                  <TrendingUp className={compact ? "h-3 w-3" : "h-4 w-4"} />
+                ) : (
+                  <TrendingDown className={compact ? "h-3 w-3" : "h-4 w-4"} />
+                )}
                 <span>{isPositive ? '+' : ''}{percentChange.toFixed(2)}%</span>
               </div>
             </div>
@@ -64,31 +79,43 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
           
           <div className="flex items-center gap-1">
             {(['1H', '24H', '7D', '30D'] as TimeRange[]).map((range) => (
-              <Button
-                key={range}
-                variant={timeRange === range ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setTimeRange(range)}
-                className={`${compact ? 'h-5 px-1.5 text-[10px]' : 'text-xs h-7 px-2'}`}
-              >
-                {range}
-              </Button>
+              <UITooltip key={range}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={timeRange === range ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setTimeRange(range)}
+                    className={cn(
+                      compact ? 'h-5 px-1.5 text-[10px]' : 'text-xs h-7 px-2',
+                      timeRange === range && 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                    )}
+                  >
+                    {range}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Show {range} price history</TooltipContent>
+              </UITooltip>
             ))}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => refetch()}
-              className={compact ? "h-5 w-5 p-0" : "h-7 w-7 p-0"}
-            >
-              <RefreshCw className={compact ? "h-3 w-3" : "h-4 w-4"} />
-            </Button>
+            <UITooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => refetch()}
+                  className={compact ? "h-5 w-5 p-0" : "h-7 w-7 p-0"}
+                >
+                  <RefreshCw className={compact ? "h-3 w-3" : "h-4 w-4"} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Refresh equity chart data</TooltipContent>
+            </UITooltip>
           </div>
         </div>
       </CardHeader>
       
-      <CardContent className={`${compact ? 'p-2 pt-0' : 'pt-0'} flex-1 min-h-0`}>
+      <CardContent className={cn("flex-1 min-h-0", compact ? 'p-2 pt-0' : 'pt-0')}>
         {loading ? (
-          <Skeleton className="h-full w-full" />
+          <Skeleton className="h-full w-full bg-yellow-500/10" />
         ) : chartData.length === 0 ? (
           <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
             No data available
@@ -97,9 +124,9 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
           <ResponsiveContainer width="100%" height={chartHeight}>
             <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={isPositive ? '#22c55e' : '#ef4444'} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={isPositive ? '#22c55e' : '#ef4444'} stopOpacity={0} />
+                <linearGradient id="equityGradientYellow" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={isPositive ? '#facc15' : '#ef4444'} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={isPositive ? '#facc15' : '#ef4444'} stopOpacity={0} />
                 </linearGradient>
               </defs>
               {!compact && (
@@ -124,7 +151,7 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
               <Tooltip
                 contentStyle={{
                   backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
+                  border: '1px solid hsl(48, 96%, 53%, 0.3)',
                   borderRadius: '8px',
                   fontSize: '12px'
                 }}
@@ -134,9 +161,9 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
               <Area
                 type="monotone"
                 dataKey="balance"
-                stroke={isPositive ? '#22c55e' : '#ef4444'}
+                stroke={isPositive ? '#facc15' : '#ef4444'}
                 strokeWidth={2}
-                fill="url(#equityGradient)"
+                fill="url(#equityGradientYellow)"
               />
             </AreaChart>
           </ResponsiveContainer>
