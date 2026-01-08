@@ -39,6 +39,8 @@ import { AzureWizard } from '../wizards/AzureWizard';
 import { SecurityHardeningWizard } from '../wizards/SecurityHardeningWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { SecurityVaultPanel } from '../panels/SecurityVaultPanel';
+import { LatencyComparisonChart } from '../panels/LatencyComparisonChart';
+import { LatencyHistoryChart } from '../panels/LatencyHistoryChart';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
 import { useHFTSettings } from '@/hooks/useHFTSettings';
@@ -709,11 +711,25 @@ export function SettingsTab() {
           <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
             <div>
               <p className="font-medium">Regional Routing</p>
-              <p className="text-xs text-muted-foreground">Locked to Singapore for lowest latency</p>
+              <p className="text-xs text-muted-foreground">
+                {isVpsConnected 
+                  ? `Connected to ${getRegionDisplayName(vps.region)} VPS`
+                  : 'No VPS connected - configure in Cloud Infrastructure'
+                }
+              </p>
             </div>
             <div className="flex items-center gap-2">
-              <Lock className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-mono text-accent">ap-southeast-1</span>
+              {isVpsConnected ? (
+                <>
+                  <div className="status-online" />
+                  <span className="text-sm font-mono text-accent">{vps.region || 'unknown'}</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-mono text-muted-foreground">Not configured</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -757,6 +773,12 @@ export function SettingsTab() {
             Save Latency Settings
           </Button>
         </div>
+      </div>
+
+      {/* Latency Analytics Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <LatencyComparisonChart />
+        <LatencyHistoryChart />
       </div>
 
       {/* Security & Notifications */}

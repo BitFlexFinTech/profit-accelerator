@@ -57,7 +57,7 @@ export function VPSAlertConfig() {
     { type: 'disk_high', label: 'High Disk Usage', icon: HardDrive, defaultThreshold: 90 },
     { type: 'instance_offline', label: 'Instance Offline', icon: Wifi, defaultThreshold: null },
     { type: 'bot_crashed', label: 'Bot Crashed', icon: Bot, defaultThreshold: null },
-    { type: 'latency_high', label: 'High Latency', icon: AlertTriangle, defaultThreshold: 1000 },
+    { type: 'latency_high', label: 'High VPS-Exchange Latency', icon: AlertTriangle, defaultThreshold: 100 },
   ];
 
   useEffect(() => {
