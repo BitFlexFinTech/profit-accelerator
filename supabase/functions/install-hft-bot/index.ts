@@ -156,39 +156,101 @@ const fetchBinanceBalance = async (apiKey, apiSecret) => {
   });
 };
 
-// Fetch OKX balance
+// Fetch OKX balance - BOTH Trading and Funding accounts with proper error handling
 const fetchOKXBalance = async (apiKey, apiSecret, passphrase) => {
-  return new Promise((resolve) => {
-    const timestamp = new Date().toISOString();
-    const path = '/api/v5/account/balance';
-    const sign = signOKX(timestamp, 'GET', path, '', apiSecret);
-    
-    const options = {
-      hostname: 'www.okx.com',
-      path,
-      method: 'GET',
-      headers: {
-        'OK-ACCESS-KEY': apiKey,
-        'OK-ACCESS-SIGN': sign,
-        'OK-ACCESS-TIMESTAMP': timestamp,
-        'OK-ACCESS-PASSPHRASE': passphrase || '',
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    https.get(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          const details = json.data?.[0]?.details || [];
-          const usdt = details.find(d => d.ccy === 'USDT');
-          resolve(parseFloat(usdt?.availBal || 0) + parseFloat(usdt?.frozenBal || 0));
-        } catch { resolve(0); }
+  let tradingBalance = 0;
+  let fundingBalance = 0;
+  let lastError = null;
+  let authSuccess = false;
+  
+  // 1. Fetch TRADING account balance
+  try {
+    const tradingResult = await new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
+      const path = '/api/v5/account/balance';
+      const sign = signOKX(timestamp, 'GET', path, '', apiSecret);
+      
+      const req = https.get({
+        hostname: 'www.okx.com',
+        path,
+        headers: {
+          'OK-ACCESS-KEY': apiKey,
+          'OK-ACCESS-SIGN': sign,
+          'OK-ACCESS-TIMESTAMP': timestamp,
+          'OK-ACCESS-PASSPHRASE': passphrase || '',
+          'Content-Type': 'application/json'
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => resolve({ status: res.statusCode, body: data }));
       });
-    }).on('error', () => resolve(0));
-  });
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
+    });
+    
+    const json = JSON.parse(tradingResult.body);
+    console.log('[OKX] Trading response:', json.code, json.msg || '');
+    if (json.code === '0') {
+      authSuccess = true;
+      const details = json.data?.[0]?.details || [];
+      const usdt = details.find(d => d.ccy === 'USDT');
+      tradingBalance = parseFloat(usdt?.availBal || 0) + parseFloat(usdt?.frozenBal || 0);
+    } else {
+      lastError = 'OKX error ' + json.code + ': ' + (json.msg || 'Unknown');
+    }
+  } catch (err) {
+    lastError = 'OKX Trading request failed: ' + err.message;
+  }
+  
+  // 2. Fetch FUNDING account balance (where deposits typically go!)
+  try {
+    const fundingResult = await new Promise((resolve, reject) => {
+      const timestamp = new Date().toISOString();
+      const path = '/api/v5/asset/balances';
+      const sign = signOKX(timestamp, 'GET', path, '', apiSecret);
+      
+      const req = https.get({
+        hostname: 'www.okx.com',
+        path,
+        headers: {
+          'OK-ACCESS-KEY': apiKey,
+          'OK-ACCESS-SIGN': sign,
+          'OK-ACCESS-TIMESTAMP': timestamp,
+          'OK-ACCESS-PASSPHRASE': passphrase || '',
+          'Content-Type': 'application/json'
+        }
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => resolve({ status: res.statusCode, body: data }));
+      });
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
+    });
+    
+    const json = JSON.parse(fundingResult.body);
+    console.log('[OKX] Funding response:', json.code, json.msg || '');
+    if (json.code === '0') {
+      authSuccess = true;
+      const usdt = json.data?.find(d => d.ccy === 'USDT');
+      fundingBalance = parseFloat(usdt?.availBal || 0) + parseFloat(usdt?.frozenBal || 0);
+    } else if (!lastError) {
+      lastError = 'OKX Funding error ' + json.code + ': ' + (json.msg || 'Unknown');
+    }
+  } catch (err) {
+    if (!lastError) lastError = 'OKX Funding request failed: ' + err.message;
+  }
+  
+  const totalBalance = tradingBalance + fundingBalance;
+  console.log('[OKX] Trading: $' + tradingBalance + ', Funding: $' + fundingBalance + ', Total: $' + totalBalance);
+  
+  // Return error if both endpoints failed
+  if (!authSuccess) {
+    return { success: false, balance: 0, error: lastError || 'OKX authentication failed' };
+  }
+  
+  return { success: true, balance: totalBalance };
 };
 
 const server = http.createServer(async (req, res) => {
@@ -220,17 +282,22 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const { exchange, apiKey, apiSecret, passphrase } = JSON.parse(body);
-        let balance = 0;
+        console.log('[Balance Proxy] Request for:', exchange);
         
         if (exchange === 'binance') {
-          balance = await fetchBinanceBalance(apiKey, apiSecret);
+          const balance = await fetchBinanceBalance(apiKey, apiSecret);
+          console.log('[Balance Proxy] Binance result: $' + balance);
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, balance, exchange }));
         } else if (exchange === 'okx') {
-          balance = await fetchOKXBalance(apiKey, apiSecret, passphrase);
+          const result = await fetchOKXBalance(apiKey, apiSecret, passphrase);
+          console.log('[Balance Proxy] OKX result:', JSON.stringify(result));
+          res.writeHead(200);
+          res.end(JSON.stringify({ ...result, exchange }));
+        } else {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Unsupported exchange: ' + exchange }));
         }
-        
-        console.log(\`[Balance Proxy] \${exchange}: $\${balance}\`);
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, balance, exchange }));
       } catch (err) {
         console.error('[Balance Proxy] Error:', err);
         res.writeHead(500);
