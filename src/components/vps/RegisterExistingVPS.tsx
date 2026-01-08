@@ -53,9 +53,9 @@ export function RegisterExistingVPS({
     setTestResult(null);
 
     try {
-      // Try to check health at the IP
+      // Try health check first (doesn't require storing keys in the browser)
       const { data, error } = await supabase.functions.invoke('check-vps-health', {
-        body: { ipAddress }
+        body: { ipAddress },
       });
 
       if (error) throw error;
@@ -63,25 +63,42 @@ export function RegisterExistingVPS({
       if (data?.healthy) {
         setTestResult('success');
         toast.success('Connection successful! Server is healthy.');
-      } else {
-        // Even if health endpoint fails, the server might still be reachable
-        // Let's try a simple SSH test
-        const { data: sshData, error: sshError } = await supabase.functions.invoke('ssh-command', {
-          body: {
-            ipAddress,
-            command: 'echo "connected"',
-            username: 'root',
-            timeout: 15000
-          }
-        });
+        return;
+      }
 
-        if (sshError || !sshData?.success) {
-          setTestResult('failed');
-          toast.error('Could not connect to server. Check the IP address.');
-        } else {
-          setTestResult('success');
-          toast.success('SSH connection successful!');
-        }
+      // If not healthy, attempt a simple SSH echo *only* if this VPS is already registered
+      // so the edge function can fetch the private key from `vps_instances` via instanceId.
+      const { data: instance, error: instanceError } = await supabase
+        .from('vps_instances')
+        .select('id')
+        .eq('ip_address', ipAddress)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (instanceError) throw instanceError;
+
+      if (!instance?.id) {
+        setTestResult('failed');
+        toast.error('Register this VPS first, then re-run Test Connection to validate SSH.');
+        return;
+      }
+
+      const { data: sshData, error: sshError } = await supabase.functions.invoke('ssh-command', {
+        body: {
+          instanceId: instance.id,
+          command: 'echo "connected"',
+          username: 'root',
+          timeout: 15000,
+        },
+      });
+
+      if (sshError || !sshData?.success) {
+        setTestResult('failed');
+        toast.error('SSH test failed. Verify the server allows key-based SSH for root.');
+      } else {
+        setTestResult('success');
+        toast.success('SSH connection successful!');
       }
     } catch (err) {
       console.error('Test connection error:', err);
