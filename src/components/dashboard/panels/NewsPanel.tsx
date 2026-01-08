@@ -33,7 +33,7 @@ function SentimentBadge({ sentiment }: { sentiment: 'bullish' | 'bearish' | 'neu
   const { icon: Icon, label, className } = config[sentiment];
   
   return (
-    <Badge variant="outline" className={cn('text-[8px] px-1 py-0 h-4 gap-0.5', className)}>
+    <Badge variant="outline" className={cn('text-[6px] px-0.5 py-0 h-3 gap-0.5', className)}>
       <Icon className="w-2 h-2" />
       {label}
     </Badge>
@@ -98,12 +98,12 @@ export function NewsPanel() {
                       onClick={() => setSelectedArticle({ title: item.title, url: item.url })}
                     >
                       <div className="flex items-start gap-2">
-                        {/* Thumbnail Image */}
+                        {/* Thumbnail Image - Larger for better visibility */}
                         {item.imageUrl && (
                           <img 
                             src={item.imageUrl} 
                             alt=""
-                            className="w-10 h-10 rounded object-cover flex-shrink-0"
+                            className="w-16 h-12 rounded object-cover flex-shrink-0"
                             onError={(e) => (e.currentTarget.style.display = 'none')}
                           />
                         )}

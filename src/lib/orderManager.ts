@@ -80,16 +80,13 @@ export class OrderManager {
 
       const vpsIp = vpsConfig?.[0]?.outbound_ip;
 
-      let result;
-      if (vpsIp) {
-        // Route through VPS for HFT - lowest latency
-        console.log('[OrderManager] Routing order through VPS:', vpsIp);
-        result = await this.executeViaVPS(vpsIp, request, clientOrderId);
-      } else {
-        // Fallback to edge function (higher latency)
-        console.log('[OrderManager] No VPS available, using edge function');
-        result = await this.executeViaEdgeFunction(request, clientOrderId, idempotencyKey);
+      // STRICT RULE: VPS-ONLY execution for HFT scalping - NO FALLBACK
+      if (!vpsIp) {
+        throw new Error('VPS not available. HFT bot requires VPS for trade execution. Please ensure VPS is running with a valid IP address.');
       }
+      
+      console.log('[OrderManager] Routing order through VPS for HFT:', vpsIp);
+      const result = await this.executeViaVPS(vpsIp, request, clientOrderId);
 
       // Update order with execution response
       await supabase
