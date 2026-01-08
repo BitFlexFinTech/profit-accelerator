@@ -276,6 +276,8 @@ services:
     image: node:20-alpine
     container_name: hft-bot
     working_dir: /app
+    env_file:
+      - .env.exchanges
     volumes:
       - ./app:/app
       - ./logs:/app/logs
@@ -285,19 +287,11 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=Asia/Tokyo
-      - STRATEGY_ENABLED=false
       - STRATEGY_NAME=profit-piranha
       - MIN_POSITION_SIZE=350
       - MAX_POSITION_SIZE=500
       - PROFIT_TARGET_SPOT=1
       - PROFIT_TARGET_LEVERAGE=3
-      - BINANCE_API_KEY=\${BINANCE_API_KEY:-}
-      - BINANCE_API_SECRET=\${BINANCE_API_SECRET:-}
-      - OKX_API_KEY=\${OKX_API_KEY:-}
-      - OKX_API_SECRET=\${OKX_API_SECRET:-}
-      - OKX_PASSPHRASE=\${OKX_PASSPHRASE:-}
-      - BYBIT_API_KEY=\${BYBIT_API_KEY:-}
-      - BYBIT_API_SECRET=\${BYBIT_API_SECRET:-}
     restart: always
     network_mode: host
     command: ["sh", "-c", "node health.js & node strategy.js"]
@@ -315,6 +309,13 @@ services:
 volumes:
   redis-data:
 COMPOSE_EOF
+
+# Create default .env.exchanges file (will be overwritten by bot-control on start)
+log_info "Creating default .env.exchanges file..."
+cat > .env.exchanges << 'ENVEOF'
+STRATEGY_ENABLED=false
+TRADE_MODE=SPOT
+ENVEOF
 
 # Create health check server with balance proxy
 log_info "Creating health check endpoint with balance proxy..."

@@ -354,16 +354,26 @@ serve(async (req) => {
     }
 
     // Register in failover_config for automatic failover support
-    console.log(`[deploy-bot] Registering ${provider} in failover_config...`);
+    // Check if any VPS is already primary
+    console.log(`[deploy-bot] Checking if any VPS is already primary...`);
+    const { data: existingPrimary } = await supabase
+      .from('failover_config')
+      .select('id')
+      .eq('is_primary', true)
+      .limit(1);
+
+    const isPrimary = !existingPrimary || existingPrimary.length === 0;
+    console.log(`[deploy-bot] Registering ${provider} in failover_config (is_primary: ${isPrimary})...`);
+    
     const { error: failoverError } = await supabase
       .from('failover_config')
       .upsert({
         provider: provider,
         region: config.region,
         is_enabled: true,
-        is_primary: false, // New VPS is secondary by default
+        is_primary: isPrimary, // First VPS becomes primary
         health_check_url: `http://${ipAddress}:8080/health`,
-        priority: 10,
+        priority: isPrimary ? 1 : 10,
         latency_ms: 0,
         consecutive_failures: 0,
       }, { onConflict: 'provider' });
@@ -371,8 +381,17 @@ serve(async (req) => {
     if (failoverError) {
       console.error('Error registering failover config:', failoverError);
     } else {
-      console.log(`[deploy-bot] ${provider} registered in failover_config`);
+      console.log(`[deploy-bot] ${provider} registered in failover_config (primary: ${isPrimary})`);
     }
+
+    // Update vps_config with VPS outbound IP for whitelisting
+    await supabase.from('vps_config').upsert({
+      provider: provider,
+      status: 'running',
+      outbound_ip: ipAddress,
+      region: config.region,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'provider' });
 
     // Stage 18: Complete
     await logStage(supabase, deploymentId, provider, 18, 'completed', 100, '✅ Deployment complete! Bot is running successfully.');

@@ -76,8 +76,23 @@ export function DigitalOceanWizard({ open, onOpenChange }: DigitalOceanWizardPro
     setIsValidating(true);
 
     try {
+      // Save credentials to database FIRST
+      const { error: saveError } = await supabase.from('cloud_credentials').upsert({
+        provider: 'digitalocean',
+        field_name: 'personal_access_token',
+        encrypted_value: apiToken.trim(),
+        status: 'active',
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'provider,field_name' });
 
-      toast.success('Token validated! Starting deployment...');
+      if (saveError) {
+        console.error('Failed to save credentials:', saveError);
+        toast.error('Failed to save credentials');
+        setIsValidating(false);
+        return;
+      }
+
+      toast.success('Credentials saved! Starting deployment...');
       setIsValidating(false);
       setIsDeploying(true);
       setStep('deploying');
