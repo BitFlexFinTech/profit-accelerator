@@ -235,19 +235,19 @@ serve(async (req) => {
               body: JSON.stringify({
                 model: cfg?.model || 'llama-3.3-70b-versatile',
                 messages: [
-                  { role: 'system', content: 'You are an HFT scalping AI. Reply JSON only. Predict profit timeframes for micro-scalping.' },
-                  { role: 'user', content: `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. HFT analysis. JSON only:
+                  { role: 'system', content: 'You are an HFT scalping AI. Reply JSON only. Assign profit_timeframe_minutes based on volatility: use 1m for high volatility (>0.5% moves), 3m for medium volatility, 5m for lower volatility. Be aggressive with 1m predictions for fast-moving assets. Distribute timeframes evenly across different assets.' },
+                  { role: 'user', content: `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. HFT micro-scalp analysis. JSON only:
 {
   "sentiment": "BULLISH" or "BEARISH" or "NEUTRAL",
   "confidence": 0-100,
-  "insight": "max 12 words",
+  "insight": "max 10 words",
   "support": number,
   "resistance": number,
-  "profit_timeframe_minutes": 1 or 3 or 5,
+  "profit_timeframe_minutes": 1 or 3 or 5 (based on volatility - distribute evenly),
   "recommended_side": "long" or "short",
   "expected_move_percent": 0.1 to 1.0
 }
-Target: $1 profit on $400 position = 0.25% move needed. Predict fastest timeframe to hit target.` }
+Target: $1 profit on $400 position = 0.25% move. Pick timeframe based on current volatility.` }
                 ],
                 max_tokens: 150,
               }),

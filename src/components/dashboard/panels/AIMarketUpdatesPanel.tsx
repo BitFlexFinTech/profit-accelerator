@@ -4,7 +4,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Progress } from '@/components/ui/progress';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -32,16 +31,16 @@ interface AIMarketUpdatesPanelProps {
 
 // 10 unique bright flat colors for recommendations
 const RECOMMENDATION_COLORS = [
-  { bg: 'bg-cyan-500/20', border: 'border-cyan-400', text: 'text-cyan-400' },
-  { bg: 'bg-pink-500/20', border: 'border-pink-400', text: 'text-pink-400' },
-  { bg: 'bg-amber-500/20', border: 'border-amber-400', text: 'text-amber-400' },
-  { bg: 'bg-violet-500/20', border: 'border-violet-400', text: 'text-violet-400' },
-  { bg: 'bg-emerald-500/20', border: 'border-emerald-400', text: 'text-emerald-400' },
-  { bg: 'bg-rose-500/20', border: 'border-rose-400', text: 'text-rose-400' },
-  { bg: 'bg-sky-500/20', border: 'border-sky-400', text: 'text-sky-400' },
-  { bg: 'bg-orange-500/20', border: 'border-orange-400', text: 'text-orange-400' },
-  { bg: 'bg-lime-500/20', border: 'border-lime-400', text: 'text-lime-400' },
-  { bg: 'bg-fuchsia-500/20', border: 'border-fuchsia-400', text: 'text-fuchsia-400' }
+  { bg: 'bg-cyan-500/20', border: 'border-cyan-400/40', text: 'text-cyan-400' },
+  { bg: 'bg-pink-500/20', border: 'border-pink-400/40', text: 'text-pink-400' },
+  { bg: 'bg-amber-500/20', border: 'border-amber-400/40', text: 'text-amber-400' },
+  { bg: 'bg-violet-500/20', border: 'border-violet-400/40', text: 'text-violet-400' },
+  { bg: 'bg-emerald-500/20', border: 'border-emerald-400/40', text: 'text-emerald-400' },
+  { bg: 'bg-rose-500/20', border: 'border-rose-400/40', text: 'text-rose-400' },
+  { bg: 'bg-sky-500/20', border: 'border-sky-400/40', text: 'text-sky-400' },
+  { bg: 'bg-orange-500/20', border: 'border-orange-400/40', text: 'text-orange-400' },
+  { bg: 'bg-lime-500/20', border: 'border-lime-400/40', text: 'text-lime-400' },
+  { bg: 'bg-fuchsia-500/20', border: 'border-fuchsia-400/40', text: 'text-fuchsia-400' }
 ];
 
 // Get color based on symbol hash for consistency
@@ -53,6 +52,8 @@ const getSymbolColor = (symbol: string) => {
   return RECOMMENDATION_COLORS[Math.abs(hash) % RECOMMENDATION_COLORS.length];
 };
 
+type TimeframeFilter = 'all' | 1 | 3 | 5;
+
 export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, className }: AIMarketUpdatesPanelProps) {
   const [updates, setUpdates] = useState<AIUpdate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +61,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   const [scanError, setScanError] = useState<string | null>(null);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
   const [nextScanIn, setNextScanIn] = useState(5);
+  const [activeTimeframe, setActiveTimeframe] = useState<TimeframeFilter>('all');
   const hasAutoScanned = useRef(false);
   
   const { vps } = useSystemStatus();
@@ -102,15 +104,16 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
     return () => clearInterval(countdownInterval);
   }, []);
 
-  // Fetch updates on mount and when SSOT updates
+  // Fetch updates on mount and when SSOT updates - SORTED BY CONFIDENCE (STRICT RULE)
   useEffect(() => {
     const fetchUpdates = async () => {
       try {
         const { data, error } = await supabase
           .from('ai_market_updates')
           .select('*')
-          .order('created_at', { ascending: false })
-          .limit(30);
+          .order('confidence', { ascending: false }) // PRIMARY SORT: confidence highest first
+          .order('created_at', { ascending: false }) // SECONDARY SORT: most recent
+          .limit(50);
 
         if (error) throw error;
         setUpdates((data as AIUpdate[]) || []);
@@ -167,69 +170,108 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   const getSentimentIcon = (sentiment: string) => {
     switch (sentiment) {
       case 'BULLISH':
-        return <TrendingUp className="w-3 h-3 text-emerald-400" />;
+        return <TrendingUp className="w-2.5 h-2.5 text-emerald-400" />;
       case 'BEARISH':
-        return <TrendingDown className="w-3 h-3 text-rose-400" />;
+        return <TrendingDown className="w-2.5 h-2.5 text-rose-400" />;
       default:
-        return <Minus className="w-3 h-3 text-muted-foreground" />;
+        return <Minus className="w-2.5 h-2.5 text-muted-foreground" />;
     }
   };
 
-  const getSentimentClass = (sentiment: string) => {
-    switch (sentiment) {
-      case 'BULLISH':
-        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-      case 'BEARISH':
-        return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
-      default:
-        return 'bg-secondary text-muted-foreground';
-    }
-  };
-
-  const getTimeframeClass = (minutes?: number) => {
+  const getTimeframeBadgeClass = (minutes?: number) => {
     switch (minutes) {
       case 1:
-        return 'bg-emerald-500/30 text-emerald-300 border-emerald-400/50';
+        return 'bg-emerald-500/40 text-emerald-300';
       case 3:
-        return 'bg-amber-500/30 text-amber-300 border-amber-400/50';
+        return 'bg-amber-500/40 text-amber-300';
       case 5:
-        return 'bg-sky-500/30 text-sky-300 border-sky-400/50';
+        return 'bg-sky-500/40 text-sky-300';
       default:
         return 'bg-muted text-muted-foreground';
     }
   };
 
+  const getSideBadgeClass = (side?: string) => {
+    return side === 'short' 
+      ? 'bg-rose-500/30 text-rose-300' 
+      : 'bg-emerald-500/30 text-emerald-300';
+  };
+
+  const getExchangeAbbr = (name: string) => {
+    const abbrs: Record<string, string> = {
+      binance: 'BIN',
+      okx: 'OKX',
+      bybit: 'BYB',
+      kucoin: 'KUC',
+      kraken: 'KRK'
+    };
+    return abbrs[name?.toLowerCase()] || name?.slice(0, 3).toUpperCase() || '???';
+  };
+
+  // Sort by confidence (STRICT RULE) and filter by timeframe
+  const sortedUpdates = [...updates].sort((a, b) => {
+    // Primary: confidence (highest first)
+    if (b.confidence !== a.confidence) {
+      return b.confidence - a.confidence;
+    }
+    // Secondary: most recent first
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
+  const filteredUpdates = activeTimeframe === 'all' 
+    ? sortedUpdates 
+    : sortedUpdates.filter(u => u.profit_timeframe_minutes === activeTimeframe);
+
   const binanceUpdates = updates.filter(u => u.exchange_name?.toLowerCase() === 'binance');
   const okxUpdates = updates.filter(u => u.exchange_name?.toLowerCase() === 'okx');
 
   return (
-    <div className={cn("glass-card p-3 flex flex-col min-h-0", fullHeight && "h-full", className)}>
+    <div className={cn("glass-card p-2 flex flex-col min-h-0", fullHeight && "h-full", className)}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-2 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-purple-500/20">
-            <Brain className="w-4 h-4 text-purple-400 animate-blink" />
+      <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          <div className="p-1 rounded-md bg-purple-500/20">
+            <Brain className="w-3.5 h-3.5 text-purple-400 animate-blink" />
           </div>
           <div>
-            <h3 className="font-semibold text-sm">AI Market Analysis</h3>
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-              <span className="flex items-center gap-1">
+            <h3 className="font-semibold text-xs">AI Market Analysis</h3>
+            <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
+              <span className="flex items-center gap-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-blink" />
-                5s scan
+                LIVE
               </span>
-              <span className="flex items-center gap-1">
-                <Zap className="w-2.5 h-2.5 text-amber-400 animate-blink" />
+              <span className="flex items-center gap-0.5 font-mono text-amber-400">
+                <Zap className="w-2 h-2 animate-blink" />
                 {nextScanIn}s
               </span>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        
+        <div className="flex items-center gap-1">
+          {/* Timeframe Filter Buttons */}
+          <div className="flex items-center gap-0.5 mr-1">
+            {(['all', 1, 3, 5] as TimeframeFilter[]).map(tf => (
+              <button
+                key={tf}
+                onClick={() => setActiveTimeframe(tf)}
+                className={cn(
+                  "px-1.5 py-0.5 text-[8px] font-medium rounded transition-all duration-200",
+                  activeTimeframe === tf 
+                    ? "bg-primary text-primary-foreground" 
+                    : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                )}
+              >
+                {tf === 'all' ? 'ALL' : `${tf}m`}
+              </button>
+            ))}
+          </div>
+          
           <div className={cn(
-            "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-all duration-300",
+            "flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-all duration-300",
             isVpsConnected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-secondary/50 text-muted-foreground'
           )}>
-            <Server className="w-3 h-3 animate-blink" />
+            <Server className="w-2.5 h-2.5 animate-blink" />
             {isVpsConnected ? 'VPS' : 'Off'}
           </div>
           <Button
@@ -237,9 +279,9 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
             size="sm"
             onClick={triggerManualScan}
             disabled={isScanning}
-            className="h-6 px-2 text-xs gap-1 transition-all duration-300"
+            className="h-5 px-1.5 text-[9px] gap-0.5 transition-all duration-300"
           >
-            <RefreshCw className={cn("w-3 h-3", isScanning && "animate-spin")} />
+            <RefreshCw className={cn("w-2.5 h-2.5", isScanning && "animate-spin")} />
             Scan
           </Button>
         </div>
@@ -247,99 +289,108 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
 
       {/* Error Display */}
       {scanError && (
-        <div className="text-[10px] text-rose-400 bg-rose-500/10 p-1.5 rounded mb-2 flex-shrink-0 animate-fade-slide-in">
+        <div className="text-[9px] text-rose-400 bg-rose-500/10 p-1 rounded mb-1 flex-shrink-0 animate-fade-slide-in">
           {scanError}
         </div>
       )}
 
-      {/* Main Content - Scrollable */}
-      <div className="flex-1 overflow-y-auto min-h-0 space-y-1.5 scrollbar-thin">
+      {/* Main Content - Scrollable Compact Cards */}
+      <div className="flex-1 overflow-y-auto min-h-0 space-y-0.5 scrollbar-thin">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            <Brain className="w-6 h-6 animate-blink mr-2" />
+          <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+            <Brain className="w-4 h-4 animate-blink mr-1" />
             Loading...
           </div>
-        ) : updates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
-            <Brain className="w-10 h-10 opacity-30" />
-            <p className="text-xs">No AI insights yet</p>
-            <p className="text-[10px]">Connect exchange + enable Groq AI</p>
+        ) : filteredUpdates.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-1">
+            <Brain className="w-8 h-8 opacity-30" />
+            <p className="text-[10px]">No AI insights yet</p>
+            <p className="text-[9px]">Connect exchange + enable Groq AI</p>
           </div>
         ) : (
-          updates.map((update, index) => {
+          filteredUpdates.map((update, index) => {
             const symbolColor = getSymbolColor(update.symbol);
+            const isHighConfidence = update.confidence >= 80;
+            
             return (
               <div 
                 key={update.id} 
                 className={cn(
-                  "p-2 rounded-lg border transition-all duration-300 animate-fade-slide-in",
+                  "px-1.5 py-1 rounded border flex items-center gap-1.5 transition-all duration-300 animate-fade-slide-in",
                   symbolColor.bg,
-                  symbolColor.border
+                  symbolColor.border,
+                  isHighConfidence && "ring-1 ring-emerald-400/40 shadow-[0_0_6px_rgba(52,211,153,0.2)]"
                 )}
-                style={{ animationDelay: `${index * 50}ms` }}
+                style={{ animationDelay: `${index * 30}ms` }}
               >
-                <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                  <span className="text-[10px] text-muted-foreground">
-                    {format(new Date(update.created_at), 'HH:mm:ss')}
-                  </span>
-                  <span className={cn(
-                    "text-[9px] px-1 py-0 rounded border",
-                    symbolColor.border,
-                    symbolColor.text
-                  )}>
-                    {update.exchange_name?.toUpperCase()}
-                  </span>
-                  <span className={cn("font-bold text-xs", symbolColor.text)}>
-                    {update.symbol}
-                  </span>
-                  <span className="text-xs">
-                    ${update.current_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '—'}
-                  </span>
-                  {update.price_change_24h !== null && (
-                    <span className={cn(
-                      "text-xs transition-colors duration-300",
-                      update.price_change_24h >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                    )}>
-                      {update.price_change_24h >= 0 ? '+' : ''}{update.price_change_24h.toFixed(2)}%
-                    </span>
-                  )}
-                  
-                  {/* Profit Timeframe Badge */}
-                  {update.profit_timeframe_minutes && (
-                    <span className={cn(
-                      "text-[9px] px-1.5 py-0.5 rounded-full border font-medium animate-blink",
-                      getTimeframeClass(update.profit_timeframe_minutes)
-                    )}>
-                      {update.profit_timeframe_minutes}m
-                    </span>
-                  )}
-                  
-                  <div className={cn(
-                    "ml-auto px-1.5 py-0.5 rounded flex items-center gap-1 transition-all duration-300",
-                    getSentimentClass(update.sentiment)
-                  )}>
-                    {getSentimentIcon(update.sentiment)}
-                    <span className="text-[10px] font-medium">{update.sentiment}</span>
-                  </div>
-                </div>
+                {/* Time */}
+                <span className="text-[8px] text-muted-foreground w-10 shrink-0 font-mono">
+                  {format(new Date(update.created_at), 'HH:mm:ss')}
+                </span>
                 
-                {/* Confidence Bar */}
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] text-muted-foreground">Conf:</span>
-                  <Progress value={update.confidence} className="h-1 flex-1" />
+                {/* Timeframe Badge */}
+                {update.profit_timeframe_minutes && (
                   <span className={cn(
-                    "text-[10px] font-medium transition-colors duration-300",
-                    update.confidence >= 70 ? 'text-emerald-400' : 
-                    update.confidence >= 50 ? 'text-amber-400' : 'text-muted-foreground'
+                    "text-[7px] px-1 py-0 rounded font-bold shrink-0",
+                    getTimeframeBadgeClass(update.profit_timeframe_minutes)
                   )}>
-                    {update.confidence}%
+                    {update.profit_timeframe_minutes}m
                   </span>
-                </div>
-
-                {/* Insight */}
-                <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">
+                )}
+                
+                {/* Exchange */}
+                <span className="text-[7px] px-0.5 rounded bg-secondary/50 text-muted-foreground shrink-0">
+                  {getExchangeAbbr(update.exchange_name)}
+                </span>
+                
+                {/* Symbol */}
+                <span className={cn("text-[10px] font-bold w-8 shrink-0", symbolColor.text)}>
+                  {update.symbol}
+                </span>
+                
+                {/* Price */}
+                <span className="text-[9px] w-14 shrink-0">
+                  ${update.current_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '—'}
+                </span>
+                
+                {/* Change */}
+                {update.price_change_24h !== null && (
+                  <span className={cn(
+                    "text-[8px] w-9 shrink-0 transition-colors duration-300",
+                    update.price_change_24h >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  )}>
+                    {update.price_change_24h >= 0 ? '+' : ''}{update.price_change_24h.toFixed(1)}%
+                  </span>
+                )}
+                
+                {/* Confidence */}
+                <span className={cn(
+                  "text-[8px] font-bold w-6 shrink-0 transition-colors duration-300",
+                  update.confidence >= 80 ? 'text-emerald-400' : 
+                  update.confidence >= 60 ? 'text-amber-400' : 'text-muted-foreground'
+                )}>
+                  {update.confidence}%
+                </span>
+                
+                {/* Side Badge */}
+                {update.recommended_side && (
+                  <span className={cn(
+                    "text-[7px] px-1 rounded font-medium shrink-0",
+                    getSideBadgeClass(update.recommended_side)
+                  )}>
+                    {update.recommended_side === 'short' ? 'SHORT' : 'LONG'}
+                  </span>
+                )}
+                
+                {/* Sentiment */}
+                <span className="shrink-0">
+                  {getSentimentIcon(update.sentiment)}
+                </span>
+                
+                {/* Insight (truncated) */}
+                <span className="text-[8px] text-muted-foreground flex-1 truncate min-w-0">
                   {update.insight}
-                </p>
+                </span>
               </div>
             );
           })
@@ -347,9 +398,9 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
       </div>
 
       {/* Footer Stats */}
-      <div className="mt-1.5 pt-1.5 border-t border-border/30 flex items-center justify-between text-[10px] text-muted-foreground flex-shrink-0">
-        <span>{updates.length} insights</span>
-        <span>Binance: {binanceUpdates.length} | OKX: {okxUpdates.length}</span>
+      <div className="mt-1 pt-1 border-t border-border/30 flex items-center justify-between text-[9px] text-muted-foreground flex-shrink-0">
+        <span>{filteredUpdates.length} of {updates.length} insights</span>
+        <span>BIN: {binanceUpdates.length} | OKX: {okxUpdates.length}</span>
         {lastScanTime && (
           <span>Last: {format(lastScanTime, 'HH:mm')}</span>
         )}
