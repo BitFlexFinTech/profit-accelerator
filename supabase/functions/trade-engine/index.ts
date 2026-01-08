@@ -408,28 +408,172 @@ serve(async (req) => {
       }
 
       case 'place-order': {
-        const { exchangeName, symbol, side, quantity, price } = params;
+        const { exchangeName, symbol, side, quantity, price, orderType = 'market' } = params;
         const orderPlacedAt = new Date();
+        
+        // Check kill switch
         const { data: config } = await supabase.from('trading_config').select('*').single();
-
         if (config?.global_kill_switch_enabled) {
-          return new Response(JSON.stringify({ success: false, error: 'Kill switch active' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-        if (!price) {
-          return new Response(JSON.stringify({ success: false, error: 'Price required' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          console.log('[trade-engine] Kill switch is ACTIVE - blocking order');
+          return new Response(JSON.stringify({ success: false, error: 'Kill switch is active. Disable it from the dashboard to trade.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        const orderId = `ORD-${Date.now()}`;
+        // Get exchange credentials
+        const { data: conn, error: connError } = await supabase
+          .from('exchange_connections')
+          .select('api_key, api_secret, api_passphrase')
+          .eq('exchange_name', exchangeName)
+          .eq('is_connected', true)
+          .single();
+        
+        if (connError || !conn?.api_key || !conn?.api_secret) {
+          console.error(`[trade-engine] No credentials for ${exchangeName}:`, connError?.message);
+          return new Response(JSON.stringify({ success: false, error: `Exchange ${exchangeName} not connected or missing credentials` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // Execute REAL order based on exchange
+        let orderId = '';
+        let filledPrice = price || 0;
+        let orderStatus = 'unknown';
+        const normalizedExchange = exchangeName.toLowerCase();
+
+        try {
+          if (normalizedExchange === 'binance') {
+            // Binance REAL order execution
+            const timestamp = Date.now();
+            const symbolFormatted = symbol.replace('/', '');
+            const sideUpper = side.toUpperCase();
+            const type = orderType === 'limit' && price ? 'LIMIT' : 'MARKET';
+            
+            let queryParams = `symbol=${symbolFormatted}&side=${sideUpper}&type=${type}&quantity=${quantity}&timestamp=${timestamp}`;
+            if (type === 'LIMIT' && price) {
+              queryParams += `&price=${price}&timeInForce=GTC`;
+            }
+            
+            const signature = await hmacSign(conn.api_secret, queryParams);
+            
+            console.log(`[trade-engine] Executing Binance ${type} ${sideUpper} order: ${quantity} ${symbolFormatted}`);
+            
+            const resp = await fetch(`https://api.binance.com/api/v3/order?${queryParams}&signature=${signature}`, {
+              method: 'POST',
+              headers: { 'X-MBX-APIKEY': conn.api_key }
+            });
+            
+            const result = await resp.json();
+            
+            if (!resp.ok || result.code) {
+              throw new Error(`Binance order failed: ${result.msg || result.code || resp.status}`);
+            }
+            
+            orderId = String(result.orderId);
+            filledPrice = parseFloat(result.fills?.[0]?.price || result.price || price || '0');
+            orderStatus = result.status;
+            console.log(`[trade-engine] Binance order ${orderId} executed: ${orderStatus} at ${filledPrice}`);
+            
+          } else if (normalizedExchange === 'okx') {
+            // OKX REAL order execution
+            const timestamp = new Date().toISOString();
+            const instId = symbol.replace('/', '-');
+            const body = JSON.stringify({
+              instId,
+              tdMode: 'cash',
+              side: side.toLowerCase(),
+              ordType: orderType === 'limit' && price ? 'limit' : 'market',
+              sz: String(quantity),
+              px: orderType === 'limit' && price ? String(price) : undefined
+            });
+            
+            const path = '/api/v5/trade/order';
+            const sign = await hmacSignB64(conn.api_secret, timestamp + 'POST' + path + body);
+            
+            console.log(`[trade-engine] Executing OKX ${orderType} ${side} order: ${quantity} ${instId}`);
+            
+            const resp = await fetch(`https://www.okx.com${path}`, {
+              method: 'POST',
+              headers: {
+                'OK-ACCESS-KEY': conn.api_key,
+                'OK-ACCESS-SIGN': sign,
+                'OK-ACCESS-TIMESTAMP': timestamp,
+                'OK-ACCESS-PASSPHRASE': conn.api_passphrase || '',
+                'Content-Type': 'application/json'
+              },
+              body
+            });
+            
+            const result = await resp.json();
+            
+            if (result.code !== '0') {
+              throw new Error(`OKX order failed: ${result.msg || result.code}`);
+            }
+            
+            orderId = result.data?.[0]?.ordId || '';
+            filledPrice = parseFloat(result.data?.[0]?.avgPx || price || '0');
+            orderStatus = result.data?.[0]?.state || 'filled';
+            console.log(`[trade-engine] OKX order ${orderId} executed: ${orderStatus}`);
+            
+          } else if (normalizedExchange === 'bybit') {
+            // Bybit REAL order execution
+            const timestamp = Date.now().toString();
+            const recvWindow = '5000';
+            const symbolFormatted = symbol.replace('/', '');
+            
+            const body = JSON.stringify({
+              category: 'spot',
+              symbol: symbolFormatted,
+              side: side.charAt(0).toUpperCase() + side.slice(1).toLowerCase(),
+              orderType: orderType === 'limit' && price ? 'Limit' : 'Market',
+              qty: String(quantity),
+              price: orderType === 'limit' && price ? String(price) : undefined
+            });
+            
+            const sign = await hmacSign(conn.api_secret, timestamp + conn.api_key + recvWindow + body);
+            
+            console.log(`[trade-engine] Executing Bybit ${orderType} ${side} order: ${quantity} ${symbolFormatted}`);
+            
+            const resp = await fetch('https://api.bybit.com/v5/order/create', {
+              method: 'POST',
+              headers: {
+                'X-BAPI-API-KEY': conn.api_key,
+                'X-BAPI-SIGN': sign,
+                'X-BAPI-TIMESTAMP': timestamp,
+                'X-BAPI-RECV-WINDOW': recvWindow,
+                'Content-Type': 'application/json'
+              },
+              body
+            });
+            
+            const result = await resp.json();
+            
+            if (result.retCode !== 0) {
+              throw new Error(`Bybit order failed: ${result.retMsg || result.retCode}`);
+            }
+            
+            orderId = result.result?.orderId || '';
+            filledPrice = parseFloat(result.result?.avgPrice || price || '0');
+            orderStatus = 'filled';
+            console.log(`[trade-engine] Bybit order ${orderId} executed`);
+            
+          } else {
+            throw new Error(`Exchange ${exchangeName} not yet supported for live orders`);
+          }
+        } catch (err) {
+          console.error(`[trade-engine] Order execution failed:`, err);
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: err instanceof Error ? err.message : 'Order execution failed'
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
         const orderFilledAt = new Date();
         const executionTimeMs = orderFilledAt.getTime() - orderPlacedAt.getTime();
 
-        // Record to trading_journal with latency
+        // Record to trading_journal with real order details
         await supabase.from('trading_journal').insert({
           exchange: exchangeName,
           symbol,
           side,
           quantity,
-          entry_price: price,
+          entry_price: filledPrice,
           status: 'open',
           execution_latency_ms: executionTimeMs
         });
@@ -446,8 +590,15 @@ serve(async (req) => {
           network_latency_ms: Math.max(0, Math.round(executionTimeMs * 0.3))
         });
 
-        console.log(`[trade-engine] Order ${orderId} executed in ${executionTimeMs}ms`);
-        return new Response(JSON.stringify({ success: true, orderId, executedPrice: price, executionTimeMs }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        console.log(`[trade-engine] ✅ REAL order ${orderId} executed on ${exchangeName} in ${executionTimeMs}ms at $${filledPrice}`);
+        return new Response(JSON.stringify({ 
+          success: true, 
+          orderId, 
+          executedPrice: filledPrice, 
+          executionTimeMs,
+          exchange: exchangeName,
+          orderStatus
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       case 'test-latency': {

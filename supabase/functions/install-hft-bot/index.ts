@@ -285,12 +285,19 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=Asia/Tokyo
-      - STRATEGY_ENABLED=true
+      - STRATEGY_ENABLED=false
       - STRATEGY_NAME=profit-piranha
       - MIN_POSITION_SIZE=350
       - MAX_POSITION_SIZE=500
       - PROFIT_TARGET_SPOT=1
       - PROFIT_TARGET_LEVERAGE=3
+      - BINANCE_API_KEY=\${BINANCE_API_KEY:-}
+      - BINANCE_API_SECRET=\${BINANCE_API_SECRET:-}
+      - OKX_API_KEY=\${OKX_API_KEY:-}
+      - OKX_API_SECRET=\${OKX_API_SECRET:-}
+      - OKX_PASSPHRASE=\${OKX_PASSPHRASE:-}
+      - BYBIT_API_KEY=\${BYBIT_API_KEY:-}
+      - BYBIT_API_SECRET=\${BYBIT_API_SECRET:-}
     restart: always
     network_mode: host
     command: ["sh", "-c", "node health.js & node strategy.js"]
@@ -867,16 +874,26 @@ async function runPiranha() {
   console.log('╚════════════════════════════════════════════════════════════╝');
   console.log('');
   
-  if (!CONFIG.ENABLED) {
-    console.log('[🐟 PIRANHA] Strategy is DISABLED. Set STRATEGY_ENABLED=true to start.');
-    console.log('[🐟 PIRANHA] Waiting for configuration...');
+  // CRITICAL: Bot NEVER starts automatically. Must wait for explicit start signal.
+  console.log('[🐟 PIRANHA] ⚠️  Bot is in STANDBY mode. Awaiting manual start command.');
+  console.log('[🐟 PIRANHA] Start the bot from the dashboard to begin trading.');
+  
+  // Wait for START_SIGNAL file to be created (by bot-control edge function)
+  const START_SIGNAL_FILE = '/app/data/START_SIGNAL';
+  
+  while (true) {
+    // Check for start signal file OR environment variable
+    const startSignalExists = fs.existsSync(START_SIGNAL_FILE);
+    const envEnabled = process.env.STRATEGY_ENABLED === 'true';
     
-    // Check every 30 seconds if strategy becomes enabled
-    while (!CONFIG.ENABLED) {
-      await sleep(30000);
-      // Re-read environment (in case it was updated)
-      CONFIG.ENABLED = process.env.STRATEGY_ENABLED === 'true';
+    if (startSignalExists || envEnabled) {
+      console.log('[🐟 PIRANHA] ✅ START SIGNAL RECEIVED! Beginning trading...');
+      break;
     }
+    
+    // Log waiting status every 30 seconds
+    console.log('[🐟 PIRANHA] ⏳ Waiting for start command... (check every 10s)');
+    await sleep(10000);
   }
   
   loadState();
@@ -1022,7 +1039,8 @@ BYBIT_API_KEY=your_api_key
 BYBIT_API_SECRET=your_api_secret
 
 # Strategy Settings
-STRATEGY_ENABLED=true
+# CRITICAL: Bot NEVER starts automatically. Set via dashboard only.
+STRATEGY_ENABLED=false
 MIN_POSITION_SIZE=350
 MAX_POSITION_SIZE=500
 PROFIT_TARGET_SPOT=1

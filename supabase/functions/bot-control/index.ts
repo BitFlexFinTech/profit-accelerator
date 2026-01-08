@@ -138,22 +138,43 @@ serve(async (req) => {
       );
     }
 
+    // Fetch exchange credentials for start action
+    let exchangeEnvVars = '';
+    if (action === 'start') {
+      const { data: exchanges } = await supabase
+        .from('exchange_connections')
+        .select('exchange_name, api_key, api_secret, api_passphrase')
+        .eq('is_connected', true);
+      
+      if (exchanges?.length) {
+        for (const ex of exchanges) {
+          const name = ex.exchange_name.toUpperCase();
+          if (ex.api_key) exchangeEnvVars += `export ${name}_API_KEY='${ex.api_key}' && `;
+          if (ex.api_secret) exchangeEnvVars += `export ${name}_API_SECRET='${ex.api_secret}' && `;
+          if (ex.api_passphrase) exchangeEnvVars += `export ${name}_PASSPHRASE='${ex.api_passphrase}' && `;
+        }
+        console.log(`[bot-control] Prepared credentials for ${exchanges.length} exchanges`);
+      }
+    }
+
     // Execute SSH command based on action
     let command = '';
     let newBotStatus = '';
 
     switch (action) {
       case 'start':
-        // Try Docker first (HFT bot), fallback to pm2 for legacy
-        command = 'docker compose -f /opt/hft-bot/docker-compose.yml start 2>/dev/null || docker start hft-bot 2>/dev/null || pm2 start trading-bot 2>/dev/null || echo "no_bot_found"';
+        // Create start signal file, set STRATEGY_ENABLED, inject credentials, restart container
+        command = `mkdir -p /opt/hft-bot/app/data && touch /opt/hft-bot/app/data/START_SIGNAL && cd /opt/hft-bot && ${exchangeEnvVars}export STRATEGY_ENABLED=true && docker compose down 2>/dev/null; docker compose up -d --remove-orphans`;
         newBotStatus = 'running';
         break;
       case 'stop':
-        command = 'docker compose -f /opt/hft-bot/docker-compose.yml stop 2>/dev/null || docker stop hft-bot 2>/dev/null || pm2 stop trading-bot 2>/dev/null || echo "no_bot_found"';
+        // Remove start signal file, stop strategy
+        command = `rm -f /opt/hft-bot/app/data/START_SIGNAL && cd /opt/hft-bot && export STRATEGY_ENABLED=false && docker compose down 2>/dev/null || docker stop hft-bot 2>/dev/null || echo "stopped"`;
         newBotStatus = 'stopped';
         break;
       case 'restart':
-        command = 'docker compose -f /opt/hft-bot/docker-compose.yml restart 2>/dev/null || docker restart hft-bot 2>/dev/null || pm2 restart trading-bot 2>/dev/null || echo "no_bot_found"';
+        // Restart with credentials
+        command = `cd /opt/hft-bot && ${exchangeEnvVars}export STRATEGY_ENABLED=true && docker compose down 2>/dev/null; docker compose up -d --remove-orphans`;
         newBotStatus = 'running';
         break;
       case 'status':
@@ -242,24 +263,39 @@ serve(async (req) => {
       );
     }
 
-    // Update deployment status in database
+    // Update deployment status in database - SYNC ALL RELATED TABLES
     if (newBotStatus) {
+      const updateTime = new Date().toISOString();
+      
+      // 1. Update hft_deployments
       await supabase
         .from('hft_deployments')
         .update({ 
           bot_status: newBotStatus,
-          updated_at: new Date().toISOString()
+          updated_at: updateTime
         })
         .eq('id', deployment.id);
 
-      // Also update vps_instances if linked
+      // 2. Update vps_instances if linked
       await supabase
         .from('vps_instances')
         .update({ 
           bot_status: newBotStatus,
-          updated_at: new Date().toISOString()
+          updated_at: updateTime
         })
         .or(`deployment_id.eq.${deployment.server_id},provider_instance_id.eq.${deployment.server_id}`);
+      
+      // 3. Update trading_config for global state sync
+      await supabase
+        .from('trading_config')
+        .update({ 
+          bot_status: newBotStatus,
+          trading_enabled: newBotStatus === 'running',
+          updated_at: updateTime
+        })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      console.log(`[bot-control] Synced bot_status=${newBotStatus} across all tables`);
     }
 
     console.log(`[bot-control] ${action} completed successfully for ${ipAddress}`);
