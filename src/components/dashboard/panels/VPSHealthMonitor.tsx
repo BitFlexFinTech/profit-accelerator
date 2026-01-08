@@ -51,11 +51,23 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
         .from('vps_config')
         .select('provider, status, outbound_ip, region');
 
-      // Fetch latest metrics for each provider
+      // Fetch latest metrics for each provider (CPU/RAM only)
       const { data: metricsData } = await supabase
         .from('vps_metrics')
-        .select('provider, cpu_percent, ram_percent, latency_ms, recorded_at')
+        .select('provider, cpu_percent, ram_percent, recorded_at')
         .order('recorded_at', { ascending: false });
+
+      // CRITICAL FIX: Fetch VPS→Exchange latency from exchange_pulse WHERE source='vps'
+      // This is the HFT-relevant latency, NOT the Edge→VPS latency in vps_metrics
+      const { data: pulseData } = await supabase
+        .from('exchange_pulse')
+        .select('latency_ms')
+        .eq('source', 'vps');
+
+      // Calculate average VPS→Exchange latency (HFT-relevant)
+      const avgExchangeLatency = pulseData?.length 
+        ? Math.round(pulseData.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / pulseData.length)
+        : 0;
 
       const providers = ['aws', 'digitalocean', 'vultr', 'contabo', 'oracle', 'gcp', 'alibaba', 'azure'];
       const healthList: VpsHealthData[] = [];
@@ -63,6 +75,7 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
       for (const provider of providers) {
         const config = vpsConfigs?.find(v => v.provider === provider);
         const metrics = metricsData?.find(m => m.provider === provider);
+        const isDeployed = config?.status === 'running';
         
         const statusMap: Record<string, 'healthy' | 'warning' | 'error' | 'offline'> = {
           running: 'healthy',
@@ -80,7 +93,8 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
           region: config?.region || '---',
           cpuPercent: metrics?.cpu_percent || 0,
           memoryPercent: metrics?.ram_percent || 0,
-          latencyMs: metrics?.latency_ms || 0,
+          // Use VPS→Exchange latency for deployed VPS, 0 for non-deployed
+          latencyMs: isDeployed ? avgExchangeLatency : 0,
           lastHealthCheck: metrics?.recorded_at ? new Date(metrics.recorded_at) : null,
         });
       }
@@ -232,10 +246,10 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
                           </span>
                         </div>
 
-                        {/* Latency */}
+                        {/* Latency - VPS→Exchange (HFT-relevant) */}
                         <div className="flex items-center gap-2">
                           <Wifi className="w-3 h-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground flex-1">Latency</span>
+                          <span className="text-xs text-muted-foreground flex-1">VPS→Exchange</span>
                           <span className={`text-xs font-mono ${
                             vps.latencyMs < 50 ? 'text-success' : 
                             vps.latencyMs < 100 ? 'text-yellow-400' : 'text-destructive'

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { ArrowUpRight, ArrowDownRight, Terminal, Activity } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Terminal, Activity, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -18,7 +18,22 @@ interface Trade {
   pnl: number | null;
   status: string | null;
   created_at: string | null;
+  execution_latency_ms?: number | null;
 }
+
+// Exchange badge colors
+const EXCHANGE_COLORS: Record<string, string> = {
+  binance: 'border-yellow-500 text-yellow-500',
+  okx: 'border-blue-500 text-blue-500',
+  bybit: 'border-orange-500 text-orange-500',
+  bitget: 'border-green-500 text-green-500',
+  mexc: 'border-sky-500 text-sky-500',
+  'gate.io': 'border-purple-500 text-purple-500',
+  kucoin: 'border-cyan-500 text-cyan-500',
+  kraken: 'border-violet-500 text-violet-500',
+  bingx: 'border-pink-500 text-pink-500',
+  hyperliquid: 'border-teal-500 text-teal-500',
+};
 
 interface TradeActivityTerminalProps {
   expanded?: boolean;
@@ -32,14 +47,37 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
 
   const fetchTrades = async () => {
     try {
-      const { data, error } = await supabase
+      const limit = expanded ? 50 : compact ? 10 : 15;
+      
+      // Fetch trades
+      const { data: tradesData, error } = await supabase
         .from('trading_journal')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(expanded ? 50 : compact ? 10 : 15);
+        .limit(limit);
 
       if (error) throw error;
-      setTrades(data || []);
+      
+      // Fetch execution metrics to get latency
+      const { data: metricsData } = await supabase
+        .from('trade_execution_metrics')
+        .select('symbol, exchange, execution_time_ms, order_placed_at')
+        .order('order_placed_at', { ascending: false })
+        .limit(limit);
+      
+      // Merge trades with execution metrics
+      const tradesWithMetrics = (tradesData || []).map(trade => {
+        const metric = metricsData?.find(m => 
+          m.symbol === trade.symbol && 
+          m.exchange === trade.exchange
+        );
+        return {
+          ...trade,
+          execution_latency_ms: metric?.execution_time_ms || null
+        };
+      });
+      
+      setTrades(tradesWithMetrics);
     } catch (err) {
       console.error('Failed to fetch trades:', err);
     } finally {
@@ -135,9 +173,21 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
                         )}
                       </div>
                       <span className="font-semibold text-foreground">{trade.symbol}</span>
-                      <Badge variant="outline" className="text-[10px] h-4 px-1">
-                        {trade.exchange}
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "text-[10px] h-4 px-1",
+                          EXCHANGE_COLORS[trade.exchange?.toLowerCase()] || 'border-muted-foreground text-muted-foreground'
+                        )}
+                      >
+                        {trade.exchange?.toUpperCase()}
                       </Badge>
+                      {trade.execution_latency_ms && (
+                        <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                          <Zap className="w-2.5 h-2.5 text-yellow-400" />
+                          {trade.execution_latency_ms}ms
+                        </span>
+                      )}
                     </div>
                     
                     <div className="flex items-center gap-3">

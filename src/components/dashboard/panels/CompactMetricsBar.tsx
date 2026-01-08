@@ -99,6 +99,11 @@ export function CompactMetricsBar() {
             <AlertCircle className="w-3 h-3" />
             <span className="text-xs">Not Connected</span>
           </div>
+        ) : dailyPnl === 0 && activeTrades === 0 ? (
+          <div className="flex items-center gap-1">
+            <span className="text-lg font-bold text-muted-foreground">$0</span>
+            <span className="text-[10px] text-muted-foreground">No trades</span>
+          </div>
         ) : (
           <div className="flex items-center gap-1">
             <span className={`text-lg font-bold ${dailyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
