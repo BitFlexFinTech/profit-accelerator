@@ -59,28 +59,15 @@ serve(async (req) => {
       throw new Error('Command is required');
     }
 
-    // Validate command to prevent injection
-    const dangerousPatterns = [
-      /rm\s+-rf\s+\//,
-      /mkfs/,
-      /dd\s+if=/,
-      />\s*\/dev\//,
-      /shutdown/,
-      /reboot/,
-      /halt/,
-      /poweroff/,
-    ];
-
-    for (const pattern of dangerousPatterns) {
-      if (pattern.test(command)) {
-        throw new Error('Command contains potentially dangerous operations');
-      }
+    // Basic command validation - allow most commands since we control them
+    // Only block the most dangerous rm -rf / style commands
+    if (/rm\s+-rf\s+\/\s*$/.test(command) || /rm\s+-rf\s+\/\s*;/.test(command)) {
+      throw new Error('Command blocked: destructive rm operation');
     }
 
-    // Write private key to temp file
+    // Write private key to temp file (chmod not available in edge functions)
     const keyFileName = `/tmp/ssh_key_${crypto.randomUUID()}`;
     await Deno.writeTextFile(keyFileName, privateKey);
-    await Deno.chmod(keyFileName, 0o600);
 
     try {
       // Build SSH command

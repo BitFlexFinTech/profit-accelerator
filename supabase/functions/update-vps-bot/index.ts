@@ -269,7 +269,17 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     );
 
-    // Get VPS config with SSH key
+    // Get SSH private key from Supabase secret
+    const sshPrivateKey = Deno.env.get('VULTR_SSH_PRIVATE_KEY');
+    
+    if (!sshPrivateKey) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'VULTR_SSH_PRIVATE_KEY secret not configured'
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Get VPS config
     const { data: vpsConfig } = await supabase
       .from('vps_config')
       .select('outbound_ip, provider, region')
@@ -281,20 +291,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: false,
         error: 'No active VPS found'
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    // Get SSH private key from vps_instances
-    const { data: vpsInstance } = await supabase
-      .from('vps_instances')
-      .select('ssh_private_key')
-      .eq('ip_address', vpsConfig.outbound_ip)
-      .single();
-
-    if (!vpsInstance?.ssh_private_key) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'No SSH key found for VPS'
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -316,8 +312,9 @@ curl -s http://localhost:8080/health | head -c 100`;
 
     const { data: sshResult, error: sshError } = await supabase.functions.invoke('ssh-command', {
       body: {
-        host: vpsConfig.outbound_ip,
-        privateKey: vpsInstance.ssh_private_key,
+        ipAddress: vpsConfig.outbound_ip,
+        privateKey: sshPrivateKey,
+        username: 'root',
         command: updateCommand
       }
     });
