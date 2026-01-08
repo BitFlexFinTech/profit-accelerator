@@ -160,23 +160,26 @@ export function useCloudInfrastructure() {
         .select('*')
         .order('run_at', { ascending: false });
 
-      // Build a map of latest latency from vps_metrics per provider
-      const latencyFromMetrics: Record<string, number> = {};
-      if (allMetrics) {
-        for (const metric of allMetrics) {
-          if (!latencyFromMetrics[metric.provider] && metric.latency_ms) {
-            latencyFromMetrics[metric.provider] = metric.latency_ms;
-          }
-        }
-      }
+      // CRITICAL FIX: Fetch VPS→Exchange latency from exchange_pulse (HFT-relevant)
+      // NOT from vps_metrics.latency_ms (which is Edge→VPS, irrelevant for HFT)
+      const { data: vpsPulseData } = await supabase
+        .from('exchange_pulse')
+        .select('latency_ms')
+        .eq('source', 'vps');
+      
+      // Calculate average VPS→Exchange latency (same source as InfrastructurePanel)
+      const avgVpsExchangeLatency = vpsPulseData?.length 
+        ? Math.round(vpsPulseData.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / vpsPulseData.length)
+        : 0;
 
       // Build providers list from failover configs
       const providers: CloudProvider[] = (failoverConfigs || []).map(fc => {
         const vps = vpsConfigs?.find(v => v.provider === fc.provider);
         const pricing = PROVIDER_PRICING[fc.provider] || { monthly: 0, free: false, region: 'unknown' };
+        const isDeployed = vps?.status === 'running';
         
-        // Use latency from vps_metrics first, then fallback to failover_config
-        const actualLatency = latencyFromMetrics[fc.provider] || fc.latency_ms || 0;
+        // Use VPS→Exchange latency for deployed VPS, otherwise 0
+        const actualLatency = isDeployed ? avgVpsExchangeLatency : 0;
         
         return {
           id: fc.id,
