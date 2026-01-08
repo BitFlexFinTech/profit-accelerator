@@ -45,7 +45,7 @@ export function ExchangeWizard({ open, onOpenChange, initialExchangeId }: Exchan
     table: 'exchange_connections',
     matchColumn: 'exchange_name',
     matchValue: selectedExchangeData?.name || '',
-    timeoutMs: 5000,
+    timeoutMs: 10000, // Extended timeout for reliability
   });
 
   // Handle initial exchange selection
@@ -65,6 +65,33 @@ export function ExchangeWizard({ open, onOpenChange, initialExchangeId }: Exchan
       onOpenChange(false);
     }
   }, [confirmation.isConfirmed, isSaving, selectedExchange, selectedExchangeData?.name]);
+
+  // Handle realtime confirmation timeout - fall back to checking the database
+  useEffect(() => {
+    if (confirmation.isTimeout && isSaving && selectedExchange) {
+      const checkDatabase = async () => {
+        const { data } = await supabase
+          .from('exchange_connections')
+          .select('is_connected')
+          .eq('exchange_name', selectedExchangeData?.name || '')
+          .single();
+
+        if (data?.is_connected) {
+          // Save was successful despite realtime not confirming
+          setIsSaving(false);
+          toast.success(`${selectedExchangeData?.name} connected successfully!`);
+          setConnectedExchanges(prev => [...prev, selectedExchange]);
+          resetForm();
+          onOpenChange(false);
+        } else {
+          // Actually failed
+          setIsSaving(false);
+          toast.error('Save may have failed. Please try again.');
+        }
+      };
+      checkDatabase();
+    }
+  }, [confirmation.isTimeout, isSaving, selectedExchange, selectedExchangeData?.name]);
 
   useEffect(() => {
     if (open) {
