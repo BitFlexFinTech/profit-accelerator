@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Check, Copy, Terminal, AlertCircle, Key } from 'lucide-react';
+import { Loader2, Check, Copy, Terminal, AlertCircle, Key, Server } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -12,11 +12,12 @@ interface VultrWizardProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type Step = 'credentials' | 'deploying' | 'auto-installing' | 'installing' | 'success';
+type Step = 'credentials' | 'checking' | 'deploying' | 'installing' | 'success';
 
 export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
   const [step, setStep] = useState<Step>('credentials');
   const [apiKey, setApiKey] = useState('');
+  const [existingIp, setExistingIp] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [instanceData, setInstanceData] = useState<{
@@ -26,6 +27,32 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
   const [copied, setCopied] = useState(false);
 
   const installCommand = `curl -sSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash`;
+
+  // Load existing Vultr config on open
+  useEffect(() => {
+    if (open) {
+      loadExistingConfig();
+    }
+  }, [open]);
+
+  const loadExistingConfig = async () => {
+    try {
+      const { data: vpsConfig } = await supabase
+        .from('vps_config')
+        .select('outbound_ip, provider, status')
+        .eq('provider', 'vultr')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (vpsConfig?.outbound_ip) {
+        setExistingIp(vpsConfig.outbound_ip);
+        console.log('[VultrWizard] Pre-filled existing IP:', vpsConfig.outbound_ip);
+      }
+    } catch (err) {
+      console.error('[VultrWizard] Failed to load existing config:', err);
+    }
+  };
 
   const handleReset = () => {
     setStep('credentials');
@@ -41,7 +68,6 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
       return;
     }
     
-    // Validate API key format (Vultr keys are typically 36+ chars)
     if (apiKey.trim().length < 30) {
       toast.error('Invalid API key format - Vultr keys are typically 36+ characters');
       return;
@@ -50,7 +76,7 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
     setIsValidating(true);
 
     try {
-      // Validate API key
+      // Step 1: Validate API key
       const { data: validateData, error: validateError } = await supabase.functions.invoke('vultr-cloud', {
         body: { action: 'validate-api-key', apiKey: apiKey.trim() }
       });
@@ -63,12 +89,63 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
         return;
       }
 
-      toast.success('API key validated! Starting deployment...');
+      toast.success('API key validated!');
+
+      // Step 2: Check if existing server IP was provided
+      if (existingIp.trim()) {
+        setStep('checking');
+        console.log('[VultrWizard] Checking for existing instance at IP:', existingIp);
+
+        const { data: existingData, error: existingError } = await supabase.functions.invoke('vultr-cloud', {
+          body: { action: 'get-instance-by-ip', apiKey: apiKey.trim(), ipAddress: existingIp.trim() }
+        });
+
+        if (!existingError && existingData?.found) {
+          console.log('[VultrWizard] Found existing instance:', existingData);
+          toast.success('Found existing Vultr instance!');
+
+          setInstanceData({
+            instanceId: existingData.instanceId,
+            publicIp: existingData.publicIp,
+          });
+
+          // Upsert vps_config with the existing instance
+          await supabase.from('vps_config').upsert({
+            provider: 'vultr',
+            region: existingData.region || 'nrt',
+            status: 'running',
+            outbound_ip: existingData.publicIp,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'provider' });
+
+          // Also upsert into vps_instances
+          await supabase.from('vps_instances').upsert({
+            provider: 'vultr',
+            provider_instance_id: existingData.instanceId,
+            ip_address: existingData.publicIp,
+            status: 'running',
+            region: existingData.region || 'nrt',
+            instance_size: existingData.plan || 'vhf-1c-1gb',
+            nickname: existingData.label || 'Tokyo HFT Bot',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'provider_instance_id' });
+
+          setIsValidating(false);
+
+          // Now verify if the bot is installed by checking health
+          await verifyBotHealth(existingData.publicIp);
+          return;
+        } else {
+          console.log('[VultrWizard] No existing instance found at IP, will deploy new');
+          toast.info('No existing instance found at that IP. Deploying new server...');
+        }
+      }
+
+      // Step 3: Deploy new instance (only if no existing found)
       setIsValidating(false);
       setIsDeploying(true);
       setStep('deploying');
 
-      // Deploy instance
       const { data: deployData, error: deployError } = await supabase.functions.invoke('vultr-cloud', {
         body: {
           action: 'deploy-instance',
@@ -97,15 +174,6 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
         updated_at: new Date().toISOString()
       }, { onConflict: 'provider' });
 
-      // Update failover config
-      await supabase.from('failover_config')
-        .update({ 
-          latency_ms: 0,
-          consecutive_failures: 0,
-          last_health_check: new Date().toISOString()
-        })
-        .eq('provider', 'vultr');
-
       // Send Telegram notification
       await supabase.functions.invoke('telegram-bot', {
         body: {
@@ -114,57 +182,26 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
         }
       });
 
-      // Attempt automatic bot installation via SSH
-      setStep('auto-installing');
       setIsDeploying(false);
-
-      try {
-        // Wait a bit for VPS to be fully booted
-        await new Promise(resolve => setTimeout(resolve, 30000));
-
-        console.log('[VultrWizard] Attempting automatic SSH installation...');
-        
-        const { data: sshResult, error: sshError } = await supabase.functions.invoke('ssh-command', {
-          body: {
-            ipAddress: deployData.publicIp,
-            privateKey: deployData.sshPrivateKey,
-            command: installCommand,
-            username: 'root',
-            timeout: 120000
-          }
-        });
-
-        if (sshError || !sshResult?.success) {
-          console.log('[VultrWizard] Auto-install failed, falling back to manual');
-          setStep('installing');
-        } else {
-          console.log('[VultrWizard] Auto-install succeeded!');
-          toast.success('HFT bot installed automatically!');
-          setStep('success');
-        }
-      } catch (sshErr) {
-        console.error('[VultrWizard] SSH installation error:', sshErr);
-        // Fall back to manual installation
-        setStep('installing');
-      }
+      // Go to manual install step (no auto SSH to avoid errors)
+      setStep('installing');
+      toast.success('Server deployed! Please install the HFT bot manually.');
 
     } catch (err: any) {
       console.error('Vultr deployment error:', err);
-      toast.error(`Deployment failed: ${err.message}`);
+      toast.error(`Failed: ${err.message}`);
       setIsValidating(false);
       setIsDeploying(false);
       setStep('credentials');
     }
   };
 
-  const handleVerifyInstallation = async () => {
-    if (!instanceData?.publicIp) return;
-
+  const verifyBotHealth = async (ip: string) => {
     setIsDeploying(true);
 
     try {
       const { data, error } = await supabase.functions.invoke('check-vps-health', {
-        body: { ip: instanceData.publicIp, provider: 'vultr' }
+        body: { ipAddress: ip }
       });
 
       if (error) throw error;
@@ -175,15 +212,24 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
           .eq('provider', 'vultr');
 
         setStep('success');
-        toast.success('Vultr VPS connected and verified!');
+        toast.success('Vultr VPS verified - bot is running!');
       } else {
-        toast.info('HFT bot not responding yet. Please wait for installation to complete.');
+        // Bot not running, show install instructions
+        setStep('installing');
+        toast.info('Server found but bot not responding. Please verify installation.');
       }
     } catch (err: any) {
-      toast.error('Verification failed. Please ensure the install script completed.');
+      console.error('Health check error:', err);
+      setStep('installing');
+      toast.info('Could not verify bot health. Please check installation.');
     } finally {
       setIsDeploying(false);
     }
+  };
+
+  const handleVerifyInstallation = async () => {
+    if (!instanceData?.publicIp) return;
+    await verifyBotHealth(instanceData.publicIp);
   };
 
   const handleCopyCommand = () => {
@@ -212,7 +258,7 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
           <div className="space-y-6">
             <div className="p-4 rounded-lg bg-primary/10 border border-primary/30">
               <p className="text-sm">
-                Enter your Vultr API key to deploy a high-frequency VPS in Tokyo (NRT).
+                Enter your Vultr API key. If you already have a server, enter its IP to adopt it.
               </p>
             </div>
 
@@ -235,6 +281,24 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
                   <a href="https://my.vultr.com/settings/#settingsapi" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                     Vultr API Settings
                   </a>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="existingIp" className="flex items-center gap-2">
+                  <Server className="w-4 h-4" />
+                  Existing Server IP (optional)
+                </Label>
+                <Input
+                  id="existingIp"
+                  type="text"
+                  placeholder="e.g. 107.191.61.107"
+                  value={existingIp}
+                  onChange={(e) => setExistingIp(e.target.value)}
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  If you already created a Vultr server, enter its IP to adopt it instead of deploying new.
                 </p>
               </div>
 
@@ -262,6 +326,18 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
           </div>
         )}
 
+        {step === 'checking' && (
+          <div className="py-12 text-center space-y-4">
+            <Loader2 className="w-12 h-12 mx-auto text-primary animate-spin" />
+            <div>
+              <p className="font-medium">Checking Existing Server</p>
+              <p className="text-sm text-muted-foreground">
+                Looking for instance at {existingIp}...
+              </p>
+            </div>
+          </div>
+        )}
+
         {step === 'deploying' && (
           <div className="py-12 text-center space-y-4">
             <Loader2 className="w-12 h-12 mx-auto text-primary animate-spin" />
@@ -277,29 +353,14 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
           </div>
         )}
 
-        {step === 'auto-installing' && (
-          <div className="py-12 text-center space-y-4">
-            <Loader2 className="w-12 h-12 mx-auto text-primary animate-spin" />
-            <div>
-              <p className="font-medium">Installing HFT Bot</p>
-              <p className="text-sm text-muted-foreground">
-                Automatically installing via SSH...
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                This may take 1-2 minutes
-              </p>
-            </div>
-          </div>
-        )}
-
         {step === 'installing' && (
           <div className="space-y-6">
             <div className="p-4 rounded-lg bg-success/10 border border-success/30 flex items-start gap-3">
               <Check className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium">Instance Created!</p>
+                <p className="text-sm font-medium">Instance Ready!</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  IP: <span className="font-mono">{instanceData?.publicIp}</span>
+                  IP: <span className="font-mono">{instanceData?.publicIp || existingIp}</span>
                 </p>
               </div>
             </div>
@@ -368,7 +429,7 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
             <div>
               <p className="text-lg font-medium">Vultr VPS Connected!</p>
               <p className="text-sm text-muted-foreground mt-2">
-                Your HFT bot is running on <span className="font-mono">{instanceData?.publicIp}</span>
+                Your HFT bot is running on <span className="font-mono">{instanceData?.publicIp || existingIp}</span>
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-secondary/30">
