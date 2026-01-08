@@ -9,6 +9,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
+import { ActionButton } from '@/components/ui/ActionButton';
+import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 
 interface TelegramWizardProps {
   open: boolean;
@@ -143,21 +145,23 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
                 </ol>
               </div>
               
-              <Button
+              <ActionButton
                 className="w-full gap-2"
                 onClick={() => window.open('https://t.me/BotFather', '_blank')}
+                tooltip={BUTTON_TOOLTIPS.openBotFather}
               >
                 <ExternalLink className="w-4 h-4" />
                 Open @BotFather in Telegram
-              </Button>
+              </ActionButton>
 
-              <Button
+              <ActionButton
                 variant="outline"
                 className="w-full"
                 onClick={() => setStep(2)}
+                tooltip={BUTTON_TOOLTIPS.haveBotToken}
               >
                 I have my bot token →
-              </Button>
+              </ActionButton>
             </div>
           )}
 
@@ -183,13 +187,14 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
               )}
 
               <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setStep(1)}>
+                <ActionButton variant="outline" onClick={() => setStep(1)} tooltip={BUTTON_TOOLTIPS.goBack}>
                   ← Back
-                </Button>
-                <Button
+                </ActionButton>
+                <ActionButton
                   className="flex-1"
                   onClick={handleValidateToken}
                   disabled={!botToken || isLoading}
+                  tooltip={BUTTON_TOOLTIPS.validateToken}
                 >
                   {isLoading ? (
                     <>
@@ -199,7 +204,7 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
                   ) : (
                     'Validate Token'
                   )}
-                </Button>
+                </ActionButton>
               </div>
             </div>
           )}
@@ -213,13 +218,14 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
                 </p>
               </div>
 
-              <Button
+              <ActionButton
                 className="w-full gap-2"
                 onClick={() => window.open(`https://t.me/${botUsername}`, '_blank')}
+                tooltip={BUTTON_TOOLTIPS.openTelegramBot}
               >
                 <Send className="w-4 h-4" />
                 Open @{botUsername}
-              </Button>
+              </ActionButton>
 
               <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -230,9 +236,9 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
                 <p className="text-destructive text-sm text-center">{error}</p>
               )}
 
-              <Button variant="outline" className="w-full" onClick={() => setStep(2)}>
+              <ActionButton variant="outline" className="w-full" onClick={() => setStep(2)} tooltip={BUTTON_TOOLTIPS.goBack}>
                 ← Back
-              </Button>
+              </ActionButton>
             </div>
           )}
 
@@ -267,9 +273,9 @@ export function TelegramWizard({ open, onOpenChange }: TelegramWizardProps) {
                 </ul>
               </div>
 
-              <Button className="w-full" onClick={resetAndClose}>
+              <ActionButton className="w-full" onClick={resetAndClose} tooltip={BUTTON_TOOLTIPS.done}>
                 Done
-              </Button>
+              </ActionButton>
             </div>
           )}
         </div>

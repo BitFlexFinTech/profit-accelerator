@@ -13,6 +13,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useRealtimeConfirmation } from '@/hooks/useRealtimeConfirmation';
 import { SUPPORTED_EXCHANGES, SupportedExchange } from '@/lib/supportedExchanges';
+import { ActionButton } from '@/components/ui/ActionButton';
+import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 
 interface ExchangeWizardProps {
   open: boolean;
@@ -438,14 +440,15 @@ export function ExchangeWizard({ open, onOpenChange, initialExchangeId }: Exchan
               )}
 
               <div className="flex gap-3">
-                <Button variant="outline" onClick={resetForm}>
+                <ActionButton variant="outline" onClick={resetForm} tooltip={BUTTON_TOOLTIPS.goBack}>
                   ← Back
-                </Button>
-                <Button
+                </ActionButton>
+                <ActionButton
                   variant="outline"
                   onClick={handleTest}
                   disabled={!isFormValid() || isLoading}
                   className="flex-1"
+                  tooltip={BUTTON_TOOLTIPS.testConnection}
                 >
                   {isLoading && !testResult ? (
                     <>
@@ -455,11 +458,12 @@ export function ExchangeWizard({ open, onOpenChange, initialExchangeId }: Exchan
                   ) : (
                     'Test Connection'
                   )}
-                </Button>
-                <Button
+                </ActionButton>
+                <ActionButton
                   onClick={handleSave}
                   disabled={!testResult?.success || isSaving}
                   className="flex-1"
+                  tooltip={BUTTON_TOOLTIPS.saveExchange}
                 >
                   {isSaving ? (
                     <>
@@ -469,7 +473,7 @@ export function ExchangeWizard({ open, onOpenChange, initialExchangeId }: Exchan
                   ) : (
                     'Save & Connect'
                   )}
-                </Button>
+                </ActionButton>
               </div>
             </div>
           )}

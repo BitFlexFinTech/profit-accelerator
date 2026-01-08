@@ -44,6 +44,8 @@ import { VPSInstance, Provider } from '@/types/cloudCredentials';
 import { useVPSInstances } from '@/hooks/useVPSInstances';
 import { useVPSMetrics } from '@/hooks/useVPSMetrics';
 import { cn } from '@/lib/utils';
+import { ActionButton } from '@/components/ui/ActionButton';
+import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 
 interface ServerManagementCardProps {
   instance: VPSInstance;
@@ -197,14 +199,15 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
                   <p className="font-semibold truncate">
                     {instance.nickname || `${instance.provider}-${instance.region}`}
                   </p>
-                  <Button
+                  <ActionButton
                     variant="ghost"
                     size="icon"
                     className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => setIsEditingName(true)}
+                    tooltip={BUTTON_TOOLTIPS.editName}
                   >
                     <Pencil className="h-3 w-3" />
-                  </Button>
+                  </ActionButton>
                 </div>
               )}
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -266,14 +269,15 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
         {instance.ipAddress && (
           <div className="flex items-center gap-2 mb-3 p-2 rounded-md bg-muted/50">
             <code className="text-xs font-mono flex-1 truncate">{instance.ipAddress}</code>
-            <Button
+            <ActionButton
               variant="ghost"
               size="icon"
               className="h-6 w-6"
               onClick={handleCopyIP}
+              tooltip={BUTTON_TOOLTIPS.copyIP}
             >
               {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
-            </Button>
+            </ActionButton>
           </div>
         )}
 
@@ -324,54 +328,56 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
 
         {/* Quick Actions */}
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/50">
-          <Button
+          <ActionButton
             variant="outline"
             size="sm"
             className="flex-1 text-xs h-8"
             onClick={() => onViewLogs(instance)}
+            tooltip={BUTTON_TOOLTIPS.viewLogs}
           >
             <FileText className="h-3 w-3 mr-1" />
             Logs
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
             variant="outline"
             size="sm"
             className="flex-1 text-xs h-8"
             onClick={() => onSSH(instance)}
+            tooltip={BUTTON_TOOLTIPS.viewSSH}
           >
             <Terminal className="h-3 w-3 mr-1" />
             SSH
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
             variant="outline"
             size="sm"
             className="text-xs h-8 px-2"
             onClick={handleStartBot}
             disabled={isStarting || instance.botStatus === 'running'}
-            title="Start Bot"
+            tooltip={BUTTON_TOOLTIPS.startBot}
           >
             <Play className={cn("h-3 w-3 text-success", isStarting && "animate-pulse")} />
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
             variant="outline"
             size="sm"
             className="text-xs h-8 px-2"
             onClick={handleStopBot}
             disabled={isStopping || instance.botStatus === 'stopped'}
-            title="Stop Bot"
+            tooltip={BUTTON_TOOLTIPS.stopBot}
           >
             <Square className={cn("h-3 w-3 text-destructive", isStopping && "animate-pulse")} />
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
             variant="outline"
             size="sm"
             className="text-xs h-8 px-2"
             onClick={handleRestartBot}
             disabled={isRestarting}
-            title="Restart Bot"
+            tooltip={BUTTON_TOOLTIPS.restartBot}
           >
             <RefreshCw className={cn("h-3 w-3", isRestarting && "animate-spin")} />
-          </Button>
+          </ActionButton>
         </div>
       </Card>
 
