@@ -229,18 +229,18 @@ export function AIMarketUpdatesPanel() {
         <div className="flex-1 p-2 rounded-lg bg-secondary/30 flex items-center gap-2">
           <Globe className="w-4 h-4 text-yellow-500" />
           <span className="text-xs font-medium">Binance</span>
-          <Badge variant="outline" className={`ml-auto text-xs ${binanceLatency < 500 ? 'text-success border-success/30' : 'text-warning border-warning/30'}`}>
-            <Zap className="w-3 h-3 mr-1" />
+          <span className={`ml-auto text-xs px-2 py-0.5 rounded border ${binanceLatency < 500 ? 'text-success border-success/30' : 'text-warning border-warning/30'}`}>
+            <Zap className="w-3 h-3 mr-1 inline" />
             {binanceLatency}ms
-          </Badge>
+          </span>
         </div>
         <div className="flex-1 p-2 rounded-lg bg-secondary/30 flex items-center gap-2">
           <Globe className="w-4 h-4 text-blue-500" />
           <span className="text-xs font-medium">OKX</span>
-          <Badge variant="outline" className={`ml-auto text-xs ${okxLatency < 500 ? 'text-success border-success/30' : 'text-warning border-warning/30'}`}>
-            <Zap className="w-3 h-3 mr-1" />
+          <span className={`ml-auto text-xs px-2 py-0.5 rounded border ${okxLatency < 500 ? 'text-success border-success/30' : 'text-warning border-warning/30'}`}>
+            <Zap className="w-3 h-3 mr-1 inline" />
             {okxLatency}ms
-          </Badge>
+          </span>
         </div>
       </div>
 
@@ -274,9 +274,9 @@ export function AIMarketUpdatesPanel() {
                 <span className="text-xs text-muted-foreground">
                   {format(new Date(update.created_at), 'HH:mm:ss')}
                 </span>
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                <span className="text-[10px] px-1.5 py-0 rounded border border-border">
                   {update.exchange_name?.toUpperCase()}
-                </Badge>
+                </span>
                 <span className="font-bold text-sm">{update.symbol}</span>
                 <span className="text-sm font-medium">
                   ${update.current_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '—'}

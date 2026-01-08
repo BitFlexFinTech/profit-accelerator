@@ -134,17 +134,16 @@ export function CloudStatusPanel() {
                 <p className="text-xs font-semibold">{tokyoDeployment.server_name || 'Tokyo HFT'}</p>
                 <p className="text-[10px] text-muted-foreground font-mono">{tokyoDeployment.ip_address}</p>
               </div>
-              <Badge 
-                variant="outline" 
+              <span 
                 className={cn(
-                  "text-[10px] h-4",
+                  "text-[10px] h-4 px-1.5 py-0.5 rounded border",
                   tokyoDeployment.bot_status === 'running' 
                     ? 'bg-success/10 text-success border-success/30' 
-                    : 'bg-muted text-muted-foreground'
+                    : 'bg-muted text-muted-foreground border-border'
                 )}
               >
                 {tokyoDeployment.bot_status === 'running' ? 'Bot Running' : 'Bot Stopped'}
-              </Badge>
+              </span>
             </div>
             <div className="flex gap-1">
               <Button
