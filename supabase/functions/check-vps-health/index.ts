@@ -119,13 +119,21 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Update VPS status to running if we have an ID
+        // Update VPS status to running - update by provider if we have one, or by ID
         if (vpsConfigId) {
           await supabase
             .from('vps_config')
             .update({ status: 'running', updated_at: new Date().toISOString() })
             .eq('id', vpsConfigId);
+        } else if (provider) {
+          // Update by provider when checking via request IP
+          await supabase
+            .from('vps_config')
+            .update({ status: 'running', updated_at: new Date().toISOString() })
+            .eq('provider', provider);
         }
+        
+        console.log(`[check-vps-health] VPS marked as running`);
       }
     } catch (fetchError) {
       console.error('[check-vps-health] Fetch failed:', fetchError);
