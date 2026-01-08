@@ -11,7 +11,8 @@ import {
   Power,
   Menu,
   X,
-  Zap
+  Zap,
+  ArrowLeftRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -21,12 +22,14 @@ import { StrategyBuilder } from './tabs/StrategyBuilder';
 import { Backtesting } from './tabs/Backtesting';
 import { Leaderboard } from './tabs/Leaderboard';
 import { SettingsTab } from './tabs/SettingsTab';
+import { TradingTab } from './tabs/TradingTab';
 import { KillSwitchDialog } from './KillSwitchDialog';
 import { SystemHealthBar } from './SystemHealthBar';
 import { initializeAppStore } from '@/store/useAppStore';
 
 const tabs = [
   { id: 'dashboard', label: 'Live Dashboard', icon: LayoutDashboard },
+  { id: 'trading', label: 'Trading', icon: ArrowLeftRight },
   { id: 'analytics', label: 'Analytics', icon: LineChart },
   { id: 'strategy', label: 'Strategy', icon: Blocks },
   { id: 'backtest', label: 'Backtesting', icon: FlaskConical },
@@ -52,6 +55,8 @@ export function DashboardLayout() {
     switch (activeTab) {
       case 'dashboard':
         return <LiveDashboard />;
+      case 'trading':
+        return <TradingTab />;
       case 'analytics':
         return <PortfolioAnalytics />;
       case 'strategy':
