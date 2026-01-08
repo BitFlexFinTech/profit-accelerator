@@ -101,6 +101,45 @@ async function getTop10Pairs(exchange: string): Promise<string[]> {
   }
 }
 
+// Validate Groq API key format and test connection
+async function validateGroqKey(): Promise<{ valid: boolean; error?: string }> {
+  if (!GROQ_API_KEY) {
+    return { valid: false, error: 'GROQ_API_KEY not set in Supabase secrets' };
+  }
+  
+  // Check for obvious placeholder values
+  if (GROQ_API_KEY.length < 30 || GROQ_API_KEY.includes('test_key') || GROQ_API_KEY.startsWith('sk-test')) {
+    return { valid: false, error: 'GROQ_API_KEY appears to be a placeholder. Get a real key from console.groq.com' };
+  }
+  
+  // Quick validation test with minimal tokens
+  try {
+    const testResp = await fetch(GROQ_API_URL, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${GROQ_API_KEY}`, 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ 
+        model: 'llama-3.3-70b-versatile', 
+        messages: [{ role: 'user', content: 'hi' }], 
+        max_tokens: 1 
+      }),
+    });
+    
+    if (!testResp.ok) {
+      const errText = await testResp.text();
+      console.error(`[ai-analyze] GROQ_API_KEY validation failed: status=${testResp.status}, body=${errText.slice(0, 200)}`);
+      return { valid: false, error: `Groq API key invalid: ${testResp.status} - ${errText.slice(0, 100)}` };
+    }
+    
+    return { valid: true };
+  } catch (e) {
+    console.error('[ai-analyze] Groq key validation error:', e);
+    return { valid: false, error: `Groq connection failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -114,19 +153,11 @@ serve(async (req) => {
 
     const body = await req.json();
     const { action, symbol, model } = body;
-    console.log(`[ai-analyze] Action: ${action}, hasKey: ${!!GROQ_API_KEY}`);
+    console.log(`[ai-analyze] Action: ${action}, hasKey: ${!!GROQ_API_KEY}, keyLength: ${GROQ_API_KEY?.length || 0}`);
 
     if (action === 'validate-key') {
-      if (!GROQ_API_KEY) {
-        return new Response(JSON.stringify({ success: false, error: 'GROQ_API_KEY not set in Supabase secrets' }), 
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      const resp = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'Hi' }], max_tokens: 5 }),
-      });
-      return new Response(JSON.stringify({ success: resp.ok, error: resp.ok ? null : 'Invalid key' }), 
+      const validation = await validateGroqKey();
+      return new Response(JSON.stringify({ success: validation.valid, error: validation.error }), 
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -141,10 +172,13 @@ serve(async (req) => {
     }
 
     if (action === 'analyze') {
-      if (!GROQ_API_KEY) {
-        return new Response(JSON.stringify({ success: false, error: 'GROQ_API_KEY not configured' }), 
+      // Validate key first
+      const validation = await validateGroqKey();
+      if (!validation.valid) {
+        return new Response(JSON.stringify({ success: false, error: validation.error }), 
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+      
       const { data: cfg } = await supabase.from('ai_config').select('model, is_active, id').eq('provider', 'groq').single();
       if (cfg && !cfg.is_active) {
         return new Response(JSON.stringify({ success: false, error: 'AI not active' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -164,7 +198,11 @@ serve(async (req) => {
           max_tokens: 400,
         }),
       });
-      if (!resp.ok) return new Response(JSON.stringify({ success: false, error: 'Groq API error' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        console.error(`[ai-analyze] Groq API error: status=${resp.status}, body=${errText.slice(0, 200)}`);
+        return new Response(JSON.stringify({ success: false, error: `Groq API error: ${resp.status}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       const d = await resp.json();
       if (cfg?.id) await supabase.from('ai_config').update({ last_used_at: new Date().toISOString() }).eq('id', cfg.id);
       return new Response(JSON.stringify({ success: true, symbol: sym, analysis: d.choices?.[0]?.message?.content || 'No analysis' }), 
@@ -172,7 +210,16 @@ serve(async (req) => {
     }
 
     if (action === 'market-scan') {
-      console.log('[ai-analyze] market-scan start - analyzing top 10 pairs per connected exchange (5s updates)');
+      console.log('[ai-analyze] market-scan start - real-time 5s updates with GROQ AI');
+      
+      // CRITICAL: Validate Groq key FIRST before attempting any analysis
+      const validation = await validateGroqKey();
+      if (!validation.valid) {
+        console.error(`[ai-analyze] market-scan aborted: ${validation.error}`);
+        return new Response(JSON.stringify({ success: false, error: validation.error }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      console.log('[ai-analyze] Groq API key validated successfully');
       
       // Get ALL connected exchanges
       const { data: exchanges } = await supabase
@@ -185,14 +232,16 @@ serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       
-      if (!GROQ_API_KEY) {
-        return new Response(JSON.stringify({ success: false, error: 'GROQ_API_KEY not set' }), 
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      
       const { data: cfg } = await supabase.from('ai_config').select('model, id').eq('provider', 'groq').single();
       let totalAnalyzed = 0;
+      let totalErrors = 0;
       const exchangeResults: Record<string, number> = {};
+
+      // Clean old entries (older than 2 minutes) to keep table fresh
+      await supabase
+        .from('ai_market_updates')
+        .delete()
+        .lt('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString());
 
       // Process each connected exchange
       for (const ex of exchanges) {
@@ -205,7 +254,7 @@ serve(async (req) => {
         
         let exchangeCount = 0;
         
-        // Analyze each symbol with faster rate limiting (200ms delay for 5s updates)
+        // Analyze each symbol with 100ms delay (faster for 5s updates)
         for (const sym of top10) {
           try {
             // Fetch price with caching
@@ -215,19 +264,7 @@ serve(async (req) => {
             const { price, change } = priceData;
             const cleanSymbol = sym.replace('USDT', '');
             
-            // Skip if very recent update exists (within 3 seconds) - faster updates
-            const { data: recent } = await supabase
-              .from('ai_market_updates')
-              .select('id, current_price')
-              .eq('symbol', cleanSymbol)
-              .eq('exchange_name', exName)
-              .gte('created_at', new Date(Date.now() - 3 * 1000).toISOString())
-              .limit(1);
-            
-            if (recent?.length) {
-              continue; // Skip - already analyzed very recently
-            }
-            
+            // NO SKIP LOGIC - Always update for real-time 5s updates
             // Call Groq API for HFT analysis with profit timeframe prediction
             const gr = await fetch(GROQ_API_URL, {
               method: 'POST',
@@ -235,26 +272,24 @@ serve(async (req) => {
               body: JSON.stringify({
                 model: cfg?.model || 'llama-3.3-70b-versatile',
                 messages: [
-                  { role: 'system', content: 'You are an HFT scalping AI. Reply JSON only. Assign profit_timeframe_minutes based on volatility: use 1m for high volatility (>0.5% moves), 3m for medium volatility, 5m for lower volatility. Be aggressive with 1m predictions for fast-moving assets. Distribute timeframes evenly across different assets.' },
-                  { role: 'user', content: `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. HFT micro-scalp analysis. JSON only:
-{
-  "sentiment": "BULLISH" or "BEARISH" or "NEUTRAL",
-  "confidence": 0-100,
-  "insight": "max 10 words",
-  "support": number,
-  "resistance": number,
-  "profit_timeframe_minutes": 1 or 3 or 5 (based on volatility - distribute evenly),
-  "recommended_side": "long" or "short",
-  "expected_move_percent": 0.1 to 1.0
-}
-Target: $1 profit on $400 position = 0.25% move. Pick timeframe based on current volatility.` }
+                  { role: 'system', content: 'You are an HFT scalping AI. Reply JSON only. Vary confidence 50-95 based on signal strength. Assign profit_timeframe_minutes based on volatility: use 1m for high volatility (>0.5% moves), 3m for medium volatility, 5m for lower volatility.' },
+                  { role: 'user', content: `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. JSON only:
+{"sentiment":"BULLISH"|"BEARISH"|"NEUTRAL","confidence":50-95,"insight":"max 8 words","support":number,"resistance":number,"profit_timeframe_minutes":1|3|5,"recommended_side":"long"|"short","expected_move_percent":0.1-1.0}` }
                 ],
-                max_tokens: 150,
+                max_tokens: 120,
               }),
             });
             
             if (!gr.ok) {
-              console.error(`[ai-analyze] Groq API error for ${sym}`);
+              const errText = await gr.text();
+              console.error(`[ai-analyze] Groq API error for ${sym}: status=${gr.status}, body=${errText.slice(0, 150)}`);
+              totalErrors++;
+              
+              // If rate limited (429), wait longer before continuing
+              if (gr.status === 429) {
+                console.warn(`[ai-analyze] Rate limited, waiting 2s...`);
+                await new Promise(r => setTimeout(r, 2000));
+              }
               continue;
             }
             
@@ -270,7 +305,7 @@ Target: $1 profit on $400 position = 0.25% move. Pick timeframe based on current
             // Validate and normalize profit_timeframe_minutes
             let profitTimeframe = parseInt(a.profit_timeframe_minutes) || 5;
             if (![1, 3, 5].includes(profitTimeframe)) {
-              profitTimeframe = 5; // Default to 5 minutes if invalid
+              profitTimeframe = 5;
             }
             
             // Validate recommended_side
@@ -280,11 +315,16 @@ Target: $1 profit on $400 position = 0.25% move. Pick timeframe based on current
             let expectedMove = parseFloat(a.expected_move_percent) || 0.25;
             expectedMove = Math.max(0.1, Math.min(2.0, expectedMove));
             
-            await supabase.from('ai_market_updates').insert({
+            // Validate confidence - vary between 50-95 (STRICT RULE)
+            let confidence = parseInt(a.confidence) || 70;
+            confidence = Math.max(50, Math.min(95, confidence));
+            
+            // UPSERT instead of INSERT for continuous updates (STRICT RULE)
+            const { error: upsertError } = await supabase.from('ai_market_updates').upsert({
               symbol: cleanSymbol,
               exchange_name: exName,
               sentiment: a.sentiment || 'NEUTRAL',
-              confidence: Math.min(100, Math.max(0, parseInt(a.confidence) || 50)),
+              confidence: confidence,
               insight: a.insight || 'Analysis pending',
               current_price: price,
               price_change_24h: change,
@@ -292,17 +332,26 @@ Target: $1 profit on $400 position = 0.25% move. Pick timeframe based on current
               resistance_level: a.resistance || null,
               profit_timeframe_minutes: profitTimeframe,
               recommended_side: recommendedSide,
-              expected_move_percent: expectedMove
+              expected_move_percent: expectedMove,
+              created_at: new Date().toISOString() // Force timestamp update
+            }, { 
+              onConflict: 'symbol,exchange_name',
+              ignoreDuplicates: false 
             });
             
-            exchangeCount++;
-            totalAnalyzed++;
+            if (upsertError) {
+              console.error(`[ai-analyze] Upsert error for ${cleanSymbol}:`, upsertError);
+            } else {
+              exchangeCount++;
+              totalAnalyzed++;
+            }
             
-            // Rate limit: 200ms between API calls for faster updates (5s scan interval)
-            await new Promise(r => setTimeout(r, 200));
+            // Rate limit: 100ms between API calls for faster 5s updates
+            await new Promise(r => setTimeout(r, 100));
             
           } catch (e) {
             console.error(`[ai-analyze] Error analyzing ${sym}:`, e);
+            totalErrors++;
           }
         }
         
@@ -313,11 +362,12 @@ Target: $1 profit on $400 position = 0.25% move. Pick timeframe based on current
         await supabase.from('ai_config').update({ last_used_at: new Date().toISOString() }).eq('id', cfg.id);
       }
       
-      console.log(`[ai-analyze] market-scan complete: ${totalAnalyzed} total analyzed`, exchangeResults);
+      console.log(`[ai-analyze] market-scan complete: ${totalAnalyzed} analyzed, ${totalErrors} errors`, exchangeResults);
       
       return new Response(JSON.stringify({ 
         success: true, 
-        analyzed: totalAnalyzed, 
+        analyzed: totalAnalyzed,
+        errors: totalErrors,
         exchanges: exchangeResults,
         message: `Analyzed top 10 pairs for ${Object.keys(exchangeResults).length} exchange(s)`
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

@@ -132,6 +132,41 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
     fetchUpdates();
   }, [lastUpdate]);
 
+  // REALTIME SUBSCRIPTION - Instant updates when AI inserts/updates data (STRICT RULE)
+  useEffect(() => {
+    const channel = supabase
+      .channel('ai-market-realtime-' + Date.now())
+      .on('postgres_changes', {
+        event: '*', // INSERT and UPDATE
+        schema: 'public',
+        table: 'ai_market_updates'
+      }, (payload) => {
+        console.log('[AIMarketUpdatesPanel] Realtime update:', payload.eventType);
+        
+        setUpdates(prev => {
+          const newUpdate = payload.new as AIUpdate;
+          // Remove old entry for same symbol/exchange, add new one
+          const filtered = prev.filter(u => 
+            !(u.symbol === newUpdate.symbol && u.exchange_name === newUpdate.exchange_name)
+          );
+          // Add new update and sort by confidence (STRICT RULE)
+          return [newUpdate, ...filtered]
+            .sort((a, b) => {
+              if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            })
+            .slice(0, 50);
+        });
+      })
+      .subscribe((status) => {
+        console.log('[AIMarketUpdatesPanel] Realtime subscription:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   // Auto-scan every 5 seconds (STRICT RULE)
   useEffect(() => {
     const scanInterval = setInterval(() => {
