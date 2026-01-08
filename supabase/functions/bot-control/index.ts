@@ -144,19 +144,26 @@ serve(async (req) => {
 
     switch (action) {
       case 'start':
-        command = 'pm2 start trading-bot 2>/dev/null || cd /opt/trading-bot && pm2 start npm --name trading-bot -- start';
+        // Try Docker first (HFT bot), fallback to pm2 for legacy
+        command = 'docker compose -f /opt/hft-bot/docker-compose.yml start 2>/dev/null || docker start hft-bot 2>/dev/null || pm2 start trading-bot 2>/dev/null || echo "no_bot_found"';
         newBotStatus = 'running';
         break;
       case 'stop':
-        command = 'pm2 stop trading-bot';
+        command = 'docker compose -f /opt/hft-bot/docker-compose.yml stop 2>/dev/null || docker stop hft-bot 2>/dev/null || pm2 stop trading-bot 2>/dev/null || echo "no_bot_found"';
         newBotStatus = 'stopped';
         break;
       case 'restart':
-        command = 'pm2 restart trading-bot';
+        command = 'docker compose -f /opt/hft-bot/docker-compose.yml restart 2>/dev/null || docker restart hft-bot 2>/dev/null || pm2 restart trading-bot 2>/dev/null || echo "no_bot_found"';
         newBotStatus = 'running';
         break;
       case 'status':
-        command = 'pm2 status trading-bot --format json 2>/dev/null || echo "not_found"';
+        command = 'curl -s http://localhost:8080/health 2>/dev/null || docker ps --filter name=hft-bot --format "{{.Status}}" 2>/dev/null || pm2 jlist 2>/dev/null || echo "not_found"';
+        break;
+      case 'logs':
+        command = 'docker compose -f /opt/hft-bot/docker-compose.yml logs --tail=50 2>/dev/null || docker logs hft-bot --tail=50 2>/dev/null || pm2 logs trading-bot --lines 50 --nostream 2>/dev/null || echo "no_logs"';
+        break;
+      case 'health':
+        command = 'curl -s http://localhost:8080/health';
         break;
       default:
         return new Response(
@@ -184,15 +191,27 @@ serve(async (req) => {
       );
     }
 
-    // For status action, parse and return the result
-    if (action === 'status') {
+    // For status/health action, parse and return the result
+    if (action === 'status' || action === 'health') {
       let botStatus = 'unknown';
+      let healthData = null;
+      
       try {
-        if (sshResult.output?.includes('online')) {
+        const output = sshResult.output || '';
+        
+        // Try to parse health endpoint JSON response
+        if (output.includes('"status":"ok"') || output.includes('"status": "ok"')) {
           botStatus = 'running';
-        } else if (sshResult.output?.includes('stopped') || sshResult.output?.includes('errored')) {
+          try {
+            healthData = JSON.parse(output.trim());
+          } catch {}
+        } else if (output.includes('Up') || output.includes('running')) {
+          botStatus = 'running';
+        } else if (output.includes('online')) {
+          botStatus = 'running';
+        } else if (output.includes('Exited') || output.includes('stopped') || output.includes('errored')) {
           botStatus = 'stopped';
-        } else if (sshResult.output?.includes('not_found')) {
+        } else if (output.includes('not_found') || output.includes('no_bot_found')) {
           botStatus = 'not_deployed';
         }
       } catch {
@@ -202,8 +221,21 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           success: true, 
-          status: botStatus, 
+          status: botStatus,
+          health: healthData,
           output: sshResult.output,
+          ipAddress 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // For logs action, return the output directly
+    if (action === 'logs') {
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          logs: sshResult.output,
           ipAddress 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
