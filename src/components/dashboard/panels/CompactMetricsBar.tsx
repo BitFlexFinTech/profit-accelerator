@@ -11,8 +11,7 @@ export function CompactMetricsBar() {
     getConnectedExchangeCount, 
     dailyPnl, 
     weeklyPnl, 
-    isLoading: storeLoading, 
-    syncFromDatabase,
+    isLoading: storeLoading,
     lastUpdate
   } = useAppStore();
   
@@ -22,13 +21,13 @@ export function CompactMetricsBar() {
   
   const [activeTrades, setActiveTrades] = useState(0);
   const [latestAI, setLatestAI] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [localLoading, setLocalLoading] = useState(true);
 
   useEffect(() => {
-    // Initial sync
-    syncFromDatabase();
+    // NO syncFromDatabase() call here - store initializes itself via initializeAppStore()
+    // This prevents duplicate fetches and flickering
     
-    const fetchData = async () => {
+    const fetchLocalData = async () => {
       try {
         // Fetch active trades count
         const { data: trades } = await supabase
@@ -52,20 +51,20 @@ export function CompactMetricsBar() {
       } catch (err) {
         console.error('[CompactMetricsBar] Error:', err);
       } finally {
-        setIsLoading(false);
+        setLocalLoading(false);
       }
     };
 
-    fetchData();
+    fetchLocalData();
 
-    // Subscribe to realtime updates
+    // Subscribe to realtime updates for LOCAL data only (trades, AI)
     const channel = supabase
-      .channel('compact-metrics-updates')
+      .channel('compact-metrics-local')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'trading_journal'
-      }, () => fetchData())
+      }, () => fetchLocalData())
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -79,11 +78,10 @@ export function CompactMetricsBar() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [syncFromDatabase]);
+  }, []);
 
   const dailyPercent = totalBalance > 0 ? (dailyPnl / totalBalance) * 100 : 0;
   const weeklyPercent = totalBalance > 0 ? (weeklyPnl / totalBalance) * 100 : 0;
-  const isDataLoading = isLoading || storeLoading;
   const hasNoData = totalBalance === 0 && !storeLoading;
 
   return (
@@ -94,7 +92,7 @@ export function CompactMetricsBar() {
           <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Today</span>
           <DollarSign className="w-3 h-3 text-success" />
         </div>
-        {isDataLoading ? (
+        {storeLoading ? (
           <Skeleton className="h-6 w-20" />
         ) : hasNoData ? (
           <div className="flex items-center gap-1 text-muted-foreground">
@@ -123,7 +121,7 @@ export function CompactMetricsBar() {
             <TrendingDown className="w-3 h-3 text-destructive" />
           )}
         </div>
-        {isDataLoading ? (
+        {storeLoading ? (
           <Skeleton className="h-6 w-20" />
         ) : hasNoData ? (
           <div className="flex items-center gap-1 text-muted-foreground">
@@ -178,7 +176,7 @@ export function CompactMetricsBar() {
           <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Trades</span>
           <Activity className="w-3 h-3 text-accent" />
         </div>
-        {isLoading ? (
+        {localLoading ? (
           <Skeleton className="h-6 w-12" />
         ) : (
           <div className="flex items-center gap-1">
@@ -194,7 +192,7 @@ export function CompactMetricsBar() {
       <div className="glass-card p-3 col-span-2 md:col-span-1">
         <div className="flex items-center gap-1.5">
           <Brain className="w-4 h-4 text-purple-400 flex-shrink-0" />
-          {isLoading ? (
+          {localLoading ? (
             <Skeleton className="h-5 w-full" />
           ) : latestAI ? (
             <span className="text-xs truncate">
