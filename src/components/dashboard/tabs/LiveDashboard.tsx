@@ -51,8 +51,8 @@ export function LiveDashboard() {
             <NewsPanel />
           </div>
           
-          {/* Infrastructure Panel - COMPACT (120px fixed) */}
-          <div className="h-[120px] flex-shrink-0">
+          {/* Infrastructure Panel - Shows latency (180px fixed) */}
+          <div className="h-[180px] flex-shrink-0">
             <InfrastructurePanel />
           </div>
         </div>

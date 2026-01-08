@@ -169,18 +169,18 @@ export function InfrastructurePanel() {
   };
 
   return (
-    <div className="glass-card p-2 h-full flex flex-col gap-1">
+    <div className="glass-card p-3 h-full flex flex-col gap-2">
       {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <Activity className="w-3 h-3 text-primary" />
-          <span className="text-[10px] font-semibold">INFRASTRUCTURE</span>
+          <Activity className="w-3.5 h-3.5 text-primary" />
+          <span className="text-xs font-semibold">INFRASTRUCTURE</span>
         </div>
-        <div className="flex items-center gap-1">
-          <span className={`text-xs font-bold ${getSentimentColor(sentimentIndex)}`}>
+        <div className="flex items-center gap-1.5">
+          <span className={`text-sm font-bold ${getSentimentColor(sentimentIndex)}`}>
             {sentimentIndex ?? '--'}
           </span>
-          <div className="w-6 h-1 bg-secondary rounded-full overflow-hidden">
+          <div className="w-8 h-1.5 bg-secondary rounded-full overflow-hidden">
             <div 
               className="h-full rounded-full"
               style={{ 
@@ -192,29 +192,36 @@ export function InfrastructurePanel() {
         </div>
       </div>
 
-      {/* Row 1: Exchange Pulse - 6 mini boxes */}
+      {/* Row 1: Exchange Pulse - 6 boxes with latency */}
       <div className="flex-shrink-0">
-        <div className="flex items-center gap-1 mb-0.5">
-          <Zap className="w-2 h-2 text-primary" />
-          <span className="text-[8px] text-muted-foreground">Exchanges</span>
+        <div className="flex items-center gap-1 mb-1">
+          <Zap className="w-2.5 h-2.5 text-primary" />
+          <span className="text-[9px] text-muted-foreground font-medium">Exchange Latency</span>
         </div>
-        <div className="grid grid-cols-6 gap-0.5">
+        <div className="grid grid-cols-6 gap-1">
           {pulses.slice(0, 6).map((pulse) => (
             <div
               key={pulse.id}
               className={cn(
-                "p-0.5 rounded text-center",
+                "p-1.5 rounded text-center",
                 pulse.status === 'healthy' ? 'bg-green-500/10 border border-green-500/30' :
                 pulse.status === 'jitter' ? 'bg-yellow-500/10 border border-yellow-500/30' :
                 'bg-red-500/10 border border-red-500/30',
                 pulse.is_connected && 'ring-1 ring-primary/50'
               )}
             >
-              <div className="flex items-center justify-center">
+              <div className="flex items-center justify-center gap-0.5">
                 {getStatusIcon(pulse.status)}
+                <span className="text-[8px] font-medium">
+                  {pulse.exchange_name.slice(0, 3).toUpperCase()}
+                </span>
               </div>
-              <p className="text-[7px] font-medium truncate">
-                {pulse.exchange_name.slice(0, 3).toUpperCase()}
+              <p className={cn(
+                "text-[9px] font-bold mt-0.5",
+                pulse.latency_ms < 50 ? 'text-green-400' :
+                pulse.latency_ms < 150 ? 'text-yellow-400' : 'text-red-400'
+              )}>
+                {pulse.latency_ms}ms
               </p>
             </div>
           ))}
