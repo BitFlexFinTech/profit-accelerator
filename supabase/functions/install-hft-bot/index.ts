@@ -44,9 +44,44 @@ log_info "Updating system packages..."
 apt-get update -qq
 apt-get upgrade -y -qq
 
-# Install dependencies
-log_info "Installing dependencies..."
-apt-get install -y -qq docker.io docker-compose curl wget htop net-tools jq ufw fail2ban
+# Install base dependencies (NO docker.io or docker-compose from Ubuntu)
+log_info "Installing base dependencies..."
+apt-get install -y -qq curl wget htop net-tools jq ufw fail2ban ca-certificates gnupg lsb-release
+
+# Remove any legacy Docker installations to prevent conflicts
+log_info "Removing legacy Docker packages..."
+systemctl stop docker 2>/dev/null || true
+apt-get remove -y docker docker.io docker-compose docker-compose-v2 containerd runc 2>/dev/null || true
+rm -rf /var/lib/docker /var/lib/containerd 2>/dev/null || true
+rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null || true
+rm -f /etc/apt/keyrings/docker.gpg 2>/dev/null || true
+apt-get autoremove -y -qq 2>/dev/null || true
+
+# Install Docker from OFFICIAL Docker repository (includes Compose V2)
+log_info "Installing Docker from official Docker repository..."
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu \$(lsb_release -cs) stable" | \
+  tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+apt-get update -qq
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Verify Docker Compose V2 is installed
+log_info "Verifying Docker installation..."
+docker --version
+docker compose version || {
+  log_error "Docker Compose V2 installation failed!"
+  exit 1
+}
+
+# Use Docker Compose V2 (docker compose, not docker-compose)
+COMPOSE="docker compose"
+log_info "Using: \$COMPOSE"
 
 # Enable Docker
 log_info "Configuring Docker..."
@@ -957,6 +992,9 @@ else
   echo ""
 fi
 
+DOCKER_VER=\$(docker --version | cut -d' ' -f3 | tr -d ',')
+COMPOSE_VER=\$(docker compose version --short)
+
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║        🐟 PROFIT PIRANHA - INSTALLATION COMPLETE!          ║"
@@ -964,6 +1002,9 @@ echo "╠═══════════════════════�
 echo "║  📍 Server: \$SERVER_IP                                     ║"
 echo "║  🔍 Health: http://\$SERVER_IP:8080/health                  ║"
 echo "║  📁 Path:   /opt/hft-bot/                                  ║"
+echo "╠════════════════════════════════════════════════════════════╣"
+echo "║  🐳 Docker: \$DOCKER_VER                                    ║"
+echo "║  📦 Compose: \$COMPOSE_VER (V2)                             ║"
 echo "╠════════════════════════════════════════════════════════════╣"
 echo "║  Strategy Settings:                                        ║"
 echo "║  💰 Position Size: \$350 - \$500                             ║"
