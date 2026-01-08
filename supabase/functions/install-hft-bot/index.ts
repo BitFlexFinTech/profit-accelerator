@@ -334,28 +334,36 @@ cat > app/package.json << 'PKG_EOF'
 }
 PKG_EOF
 
-# Create systemd service
+# Detect compose command (docker-compose vs docker compose)
+log_info "Detecting Docker Compose command..."
+if command -v docker-compose &> /dev/null; then
+  COMPOSE="docker-compose"
+  log_info "Using: docker-compose"
+elif docker compose version &> /dev/null; then
+  COMPOSE="docker compose"
+  log_info "Using: docker compose (plugin)"
+else
+  log_error "Neither docker-compose nor docker compose found!"
+  exit 1
+fi
+
+# Create systemd service (oneshot + detached for reliable startup)
 log_info "Creating systemd service..."
-cat > /etc/systemd/system/hft-bot.service << 'SERVICE_EOF'
+cat > /etc/systemd/system/hft-bot.service << SERVICE_EOF
 [Unit]
-Description=HFT Trading Bot with Self-Healing Watchdog
+Description=HFT Trading Bot
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=oneshot
+RemainAfterExit=yes
 WorkingDirectory=/opt/hft-bot
-ExecStartPre=/usr/bin/docker-compose pull --quiet
-ExecStart=/usr/bin/docker-compose up --remove-orphans
-ExecStop=/usr/bin/docker-compose down
-Restart=always
-RestartSec=5
-TimeoutStartSec=120
+ExecStart=$COMPOSE up -d --remove-orphans
+ExecStop=$COMPOSE down
+TimeoutStartSec=300
 TimeoutStopSec=60
-
-# Ensure service restarts on any failure
-RestartForceExitStatus=SIGKILL SIGTERM
 
 [Install]
 WantedBy=multi-user.target
@@ -423,21 +431,40 @@ FAIL2BAN_EOF
 systemctl enable fail2ban
 systemctl restart fail2ban
 
-# Enable and start HFT service
-log_info "Starting HFT Bot service..."
+# Pull images BEFORE starting service (avoids systemd timeout)
+log_info "Pulling Docker images (this may take a few minutes)..."
+cd /opt/hft-bot
+$COMPOSE pull --quiet || {
+  log_warn "Pull failed, retrying..."
+  $COMPOSE pull
+}
+
+# Start containers directly first
+log_info "Starting containers..."
+$COMPOSE up -d --remove-orphans
+
+# Wait for containers to be healthy
+log_info "Waiting for containers to start..."
+sleep 5
+
+# Enable systemd service for boot persistence
+log_info "Enabling HFT Bot service for auto-start..."
 systemctl daemon-reload
 systemctl enable hft-bot
-systemctl start hft-bot
-
-# Wait for health check
-sleep 5
 
 # Verify installation
 log_info "Verifying installation..."
 if curl -s http://localhost:8080/health | jq -e '.status == "ok"' > /dev/null 2>&1; then
   log_info "Health check: ✓ PASSED"
 else
-  log_warn "Health check not responding yet (may take a moment)"
+  log_warn "Health check not responding yet, checking containers..."
+  echo ""
+  echo "=== Container Status ==="
+  $COMPOSE ps
+  echo ""
+  echo "=== Container Logs ==="
+  $COMPOSE logs --tail=50
+  echo ""
 fi
 
 echo ""
