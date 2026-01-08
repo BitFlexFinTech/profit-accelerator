@@ -142,7 +142,7 @@ serve(async (req) => {
     
     for (const ping of pingResults) {
       const status = ping.status === 'ok' 
-        ? (ping.latency_ms < 30 ? 'healthy' : ping.latency_ms < 80 ? 'jitter' : 'error')
+        ? (ping.latency_ms < 50 ? 'healthy' : ping.latency_ms < 150 ? 'jitter' : 'error')
         : 'error';
 
       updates.push(

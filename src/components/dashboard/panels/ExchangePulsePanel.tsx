@@ -180,9 +180,9 @@ export function ExchangePulsePanel() {
   // Get VPS latency color thresholds (stricter for VPS since it should be faster)
   const getVPSLatencyColor = (latency: number, source?: string) => {
     if (source === 'vps') {
-      // VPS thresholds: <30ms green, 30-80ms yellow, >80ms red
-      if (latency < 30) return 'text-green-400';
-      if (latency < 80) return 'text-yellow-400';
+      // VPS thresholds: <50ms green, 50-150ms yellow, >150ms red
+      if (latency < 50) return 'text-green-400';
+      if (latency < 150) return 'text-yellow-400';
       return 'text-red-400';
     }
     // Edge thresholds (more lenient): <100ms green, 100-300ms yellow, >300ms red
@@ -343,21 +343,21 @@ export function ExchangePulsePanel() {
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-green-400" /> 
-                Healthy (&lt;30ms)
+                Healthy (&lt;50ms)
               </span>
               <span className="flex items-center gap-1 group relative cursor-help">
                 <span className="w-2 h-2 rounded-full bg-yellow-400" /> 
-                Jitter (30-80ms)
+                Jitter (50-150ms)
                 <HelpCircle className="w-3 h-3 ml-0.5" />
                 <div className="absolute bottom-full left-0 mb-2 w-64 p-3 rounded-lg bg-popover border border-border shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
                   <p className="font-semibold text-foreground mb-1">What is Jitter?</p>
-                  <p className="text-muted-foreground">Jitter indicates variable/inconsistent latency. Your VPS connection to this exchange fluctuates between 30-80ms.</p>
+                  <p className="text-muted-foreground">Jitter indicates variable/inconsistent latency. Your VPS connection to this exchange fluctuates between 50-150ms.</p>
                   <p className="text-muted-foreground mt-2">For HFT, consistent low latency is crucial. Consider using a VPS closer to the exchange datacenter.</p>
                 </div>
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-red-400" /> 
-                Slow (&gt;80ms)
+                Slow (&gt;150ms)
               </span>
             </>
           ) : (
