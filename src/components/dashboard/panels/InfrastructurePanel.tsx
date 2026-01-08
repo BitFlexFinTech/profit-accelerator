@@ -29,7 +29,7 @@ export function InfrastructurePanel() {
   const { deployments } = useHFTDeployments();
   const [vpsConfig, setVpsConfig] = useState<{ provider: string } | null>(null);
 
-  // Fetch exchange pulse - prioritize connected exchanges
+  // Fetch exchange pulse - ONLY show connected exchanges
   const fetchPulses = useCallback(async () => {
     try {
       const { data: connections } = await supabase
@@ -39,25 +39,26 @@ export function InfrastructurePanel() {
       
       const connectedNames = connections?.map(c => c.exchange_name.toLowerCase()) || [];
       
+      if (connectedNames.length === 0) {
+        setPulses([]);
+        return;
+      }
+      
       const { data } = await supabase
         .from('exchange_pulse')
         .select('id, exchange_name, status, latency_ms')
-        .order('exchange_name')
-        .limit(6);
+        .order('exchange_name');
 
       if (data) {
-        const sorted = [...data].sort((a, b) => {
-          const aConnected = connectedNames.includes(a.exchange_name.toLowerCase());
-          const bConnected = connectedNames.includes(b.exchange_name.toLowerCase());
-          if (aConnected && !bConnected) return -1;
-          if (!aConnected && bConnected) return 1;
-          return 0;
-        }).map(p => ({
+        // ONLY keep connected exchanges - filter out all others
+        const connectedOnly = data.filter(p => 
+          connectedNames.includes(p.exchange_name.toLowerCase())
+        ).map(p => ({
           ...p,
-          is_connected: connectedNames.includes(p.exchange_name.toLowerCase())
+          is_connected: true
         }));
         
-        setPulses(sorted as ExchangePulse[]);
+        setPulses(connectedOnly as ExchangePulse[]);
       }
     } catch (err) {
       console.error('[InfrastructurePanel] Pulse error:', err);
@@ -207,8 +208,11 @@ export function InfrastructurePanel() {
           <Zap className="w-2.5 h-2.5 text-primary" />
           <span className="text-[9px] text-muted-foreground font-medium">Exchange Latency</span>
         </div>
-        <div className="grid grid-cols-6 gap-1">
-          {pulses.slice(0, 6).map((pulse) => (
+        <div className={`grid gap-1 ${
+          pulses.length <= 2 ? 'grid-cols-2' : 
+          pulses.length <= 4 ? 'grid-cols-4' : 'grid-cols-6'
+        }`}>
+          {pulses.map((pulse) => (
             <div
               key={pulse.id}
               className={cn(

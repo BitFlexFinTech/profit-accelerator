@@ -23,50 +23,67 @@ export function ScrollingPriceTicker() {
   const [connectedExchanges, setConnectedExchanges] = useState<string[]>([]);
 
   useEffect(() => {
-    fetchConnectedExchanges();
-    const interval = setInterval(fetchPrices, 2000);
-    return () => clearInterval(interval);
-  }, [connectedExchanges.length]);
-
-  const fetchConnectedExchanges = async () => {
-    try {
-      const { data } = await supabase
-        .from('exchange_connections')
-        .select('exchange_name')
-        .eq('is_connected', true);
-      
-      if (data) {
-        setConnectedExchanges(data.map(e => e.exchange_name));
-      }
-    } catch (err) {
-      console.error('[ScrollingPriceTicker] Error fetching exchanges:', err);
-    }
-  };
-
-  const fetchPrices = async () => {
-    if (connectedExchanges.length === 0) return;
+    let interval: NodeJS.Timeout | null = null;
+    let mounted = true;
     
-    try {
-      const { data } = await supabase.functions.invoke('trade-engine', {
-        body: { 
-          action: 'get-tickers',
-          symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT']
-        }
-      });
+    const fetchPricesWithExchanges = async (exchanges: string[]) => {
+      if (exchanges.length === 0) return;
+      
+      try {
+        const { data } = await supabase.functions.invoke('trade-engine', {
+          body: { 
+            action: 'get-tickers',
+            symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT']
+          }
+        });
 
-      if (data?.tickers) {
-        const tickerPrices: TickerPrice[] = data.tickers.map((t: any) => ({
-          symbol: t.symbol.replace('USDT', ''),
-          price: t.lastPrice,
-          change24h: t.priceChange24h,
-          exchange: t.exchange?.toLowerCase() || connectedExchanges[0]
-        }));
-        setPrices(tickerPrices);
+        if (data?.tickers && mounted) {
+          const tickerPrices: TickerPrice[] = data.tickers.map((t: any) => ({
+            symbol: t.symbol.replace('USDT', ''),
+            price: t.lastPrice,
+            change24h: t.priceChange24h,
+            exchange: t.exchange?.toLowerCase() || exchanges[0]?.toLowerCase() || 'unknown'
+          }));
+          setPrices(tickerPrices);
+        }
+      } catch (err) {
+        console.error('[ScrollingPriceTicker] Price fetch error:', err);
       }
-    } catch (err) {
-      console.error('[ScrollingPriceTicker] Error:', err);
-    }
-  };
+    };
+    
+    const initialize = async () => {
+      try {
+        // Step 1: Get connected exchanges FIRST
+        const { data } = await supabase
+          .from('exchange_connections')
+          .select('exchange_name')
+          .eq('is_connected', true);
+        
+        const exchanges = data?.map(e => e.exchange_name) || [];
+        
+        if (!mounted) return;
+        setConnectedExchanges(exchanges);
+        
+        if (exchanges.length === 0) return;
+        
+        // Step 2: Fetch prices immediately with the loaded exchanges
+        await fetchPricesWithExchanges(exchanges);
+        
+        // Step 3: Set up interval with exchanges baked in
+        interval = setInterval(() => fetchPricesWithExchanges(exchanges), 2000);
+        
+      } catch (err) {
+        console.error('[ScrollingPriceTicker] Initialize error:', err);
+      }
+    };
+    
+    initialize();
+    
+    return () => {
+      mounted = false;
+      if (interval) clearInterval(interval);
+    };
+  }, []);
 
   const formatPrice = (price: number) => {
     if (price >= 1000) {
