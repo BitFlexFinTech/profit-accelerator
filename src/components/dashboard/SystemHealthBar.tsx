@@ -71,33 +71,43 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
   const isDeploying = status.vps.status === 'deploying';
   const isReadyForSetup = !status.vps.ip && botStatus === 'stopped';
 
+  // Determine VPS connection state: 'connected' (green) | 'warning' (yellow) | 'disconnected' (red)
+  const getVpsColorState = (): 'connected' | 'warning' | 'disconnected' => {
+    // Red: No IP and not active, or explicit error/failed status
+    if (status.vps.status === 'error' || status.vps.status === 'failed') return 'disconnected';
+    if (!status.vps.ip && status.vps.status === 'inactive') return 'disconnected';
+    
+    // Yellow: Deploying, starting, or unknown states
+    if (status.vps.status === 'deploying' || status.vps.status === 'starting') return 'warning';
+    
+    // Green: Running or idle with a valid IP
+    if ((status.vps.status === 'running' || status.vps.status === 'idle') && status.vps.ip) return 'connected';
+    if (status.vps.ip) return 'connected'; // Has IP = connected
+    
+    return 'warning'; // Default to warning for unknown states
+  };
+
+  const vpsColorState = getVpsColorState();
+
   const getVpsTooltip = () => {
     if (isReadyForSetup) {
       return 'Ready for Setup - Configure VPS in Settings';
     }
-    if (botStatus === 'running') {
+    if (vpsColorState === 'connected' && status.vps.ip) {
       const provider = status.vps.provider 
         ? `${status.vps.provider.charAt(0).toUpperCase()}${status.vps.provider.slice(1)}` 
         : '';
-      return `Running on ${status.vps.ip || 'VPS'}${provider ? ` - ${provider}` : ''}`;
-    }
-    if (status.vps.status === 'idle' && status.vps.ip) {
-      return `Connected (Idle) - ${status.vps.ip}`;
+      return `Connected - ${status.vps.ip}${provider ? ` (${provider})` : ''}`;
     }
     if (status.vps.status === 'deploying') {
       return 'Deploying instance...';
     }
-    return 'VPS inactive';
+    if (vpsColorState === 'warning') {
+      return 'VPS starting...';
+    }
+    return 'VPS not connected';
   };
 
-  // VPS pulse when vps.status is running OR we have a valid IP with running status
-  // Show green pulse for connected VPS even if bot isn't running yet
-  const isVpsActive = status.vps.status === 'running' || 
-                      (status.vps.ip && botStatus === 'running');
-  const isVpsConnected = status.vps.status === 'running' || 
-                         status.vps.status === 'idle' || 
-                         !!status.vps.ip;
-  
   const indicators = [
     {
       id: 'ai',
@@ -105,6 +115,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       icon: Brain,
       isActive: status.ai.isActive,
       isDeploying: false,
+      colorState: status.ai.isActive ? 'connected' : 'disconnected',
       tooltip: status.ai.isActive 
         ? `Active: ${status.ai.model || 'Groq'}` 
         : 'AI not configured',
@@ -115,6 +126,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       icon: Activity,
       isActive: status.exchanges.connected > 0,
       isDeploying: false,
+      colorState: status.exchanges.connected > 0 ? 'connected' : 'disconnected',
       tooltip: status.exchanges.connected > 0
         ? `$${status.exchanges.balanceUsdt.toLocaleString(undefined, { minimumFractionDigits: 2 })} USDT`
         : 'No exchanges connected',
@@ -123,12 +135,12 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       id: 'vps',
       label: 'VPS',
       icon: Server,
-      isActive: isVpsActive,
-      isConnected: isVpsConnected,
+      isActive: vpsColorState === 'connected',
       isDeploying: isDeploying,
+      colorState: vpsColorState,
       tooltip: getVpsTooltip(),
     },
-  ];
+  ] as const;
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -151,7 +163,26 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       <div className="flex items-center gap-1.5">
         {indicators.map((indicator) => {
           const isFlashing = flashingIndicators.has(indicator.id);
-          const isConnectedOnly = 'isConnected' in indicator && indicator.isConnected && !indicator.isActive;
+          const colorState = indicator.colorState;
+          
+          // Determine colors based on state
+          const bgClass = colorState === 'connected' 
+            ? 'bg-success/20 border-success/40 text-success'
+            : colorState === 'warning' || indicator.isDeploying
+            ? 'bg-warning/20 border-warning/40 text-warning'
+            : 'bg-muted/50 border-border text-muted-foreground';
+
+          const dotColor = colorState === 'connected'
+            ? 'bg-success'
+            : colorState === 'warning' || indicator.isDeploying
+            ? 'bg-warning'
+            : 'bg-muted-foreground/50';
+
+          const pingColor = colorState === 'connected'
+            ? 'bg-success'
+            : colorState === 'warning' || indicator.isDeploying
+            ? 'bg-warning'
+            : '';
           
           return (
             <Tooltip key={indicator.id}>
@@ -161,32 +192,18 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
                   className={cn(
                     'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all',
                     'border hover:scale-105 active:scale-95',
-                    indicator.isActive
-                      ? 'bg-primary/20 border-primary/40 text-primary'
-                      : indicator.isDeploying
-                      ? 'bg-warning/20 border-warning/40 text-warning'
-                      : isConnectedOnly
-                      ? 'bg-success/10 border-success/40 text-success'
-                      : 'bg-muted/50 border-border text-muted-foreground',
+                    bgClass,
                     isFlashing && 'animate-pulse ring-2 ring-primary/50'
                   )}
                 >
                   <span className="relative flex h-2 w-2">
-                    {indicator.isActive && (
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                    {(colorState === 'connected' || colorState === 'warning' || indicator.isDeploying) && (
+                      <span className={cn(
+                        'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
+                        pingColor
+                      )} />
                     )}
-                    {indicator.isDeploying && (
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75" />
-                    )}
-                    <span
-                      className={cn(
-                        'relative inline-flex rounded-full h-2 w-2',
-                        indicator.isActive ? 'bg-primary' : 
-                        indicator.isDeploying ? 'bg-warning' : 
-                        isConnectedOnly ? 'bg-success' :
-                        'bg-muted-foreground/50'
-                      )}
-                    />
+                    <span className={cn('relative inline-flex rounded-full h-2 w-2', dotColor)} />
                   </span>
                   {indicator.isDeploying ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
