@@ -814,6 +814,7 @@ export type Database = {
           last_check: string | null
           latency_ms: number | null
           region: string | null
+          source: string | null
           status: string | null
         }
         Insert: {
@@ -825,6 +826,7 @@ export type Database = {
           last_check?: string | null
           latency_ms?: number | null
           region?: string | null
+          source?: string | null
           status?: string | null
         }
         Update: {
@@ -836,6 +838,7 @@ export type Database = {
           last_check?: string | null
           latency_ms?: number | null
           region?: string | null
+          source?: string | null
           status?: string | null
         }
         Relationships: []

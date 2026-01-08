@@ -304,6 +304,52 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: String(err) }));
       }
     });
+  } else if (req.url === '/ping-exchanges' && req.method === 'GET') {
+    // Ping all major exchanges and measure latency from VPS
+    const exchanges = [
+      { name: 'binance', url: 'https://api.binance.com/api/v3/ping' },
+      { name: 'okx', url: 'https://www.okx.com/api/v5/public/time' },
+      { name: 'bybit', url: 'https://api.bybit.com/v5/market/time' },
+      { name: 'bitget', url: 'https://api.bitget.com/api/v2/public/time' },
+      { name: 'bingx', url: 'https://open-api.bingx.com/openApi/swap/v2/server/time' },
+      { name: 'mexc', url: 'https://api.mexc.com/api/v3/ping' },
+      { name: 'gateio', url: 'https://api.gateio.ws/api/v4/spot/time' },
+      { name: 'kucoin', url: 'https://api.kucoin.com/api/v1/timestamp' },
+      { name: 'kraken', url: 'https://api.kraken.com/0/public/Time' },
+      { name: 'hyperliquid', url: 'https://api.hyperliquid.xyz/info' }
+    ];
+
+    console.log('[HFT] Pinging ' + exchanges.length + ' exchanges...');
+    
+    const results = await Promise.all(exchanges.map(async (ex) => {
+      const start = Date.now();
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        
+        await new Promise((resolve, reject) => {
+          const req = https.get(ex.url, { timeout: 5000 }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve(data));
+          });
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        });
+        
+        clearTimeout(timeout);
+        const latency = Date.now() - start;
+        console.log('[HFT] ' + ex.name + ': ' + latency + 'ms');
+        return { exchange: ex.name, latency_ms: latency, status: 'ok' };
+      } catch (err) {
+        const latency = Date.now() - start;
+        console.log('[HFT] ' + ex.name + ': ERROR - ' + err.message);
+        return { exchange: ex.name, latency_ms: latency, status: 'error', error: err.message };
+      }
+    }));
+
+    res.writeHead(200);
+    res.end(JSON.stringify({ success: true, source: 'vps', pings: results }));
   } else {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not found' }));
