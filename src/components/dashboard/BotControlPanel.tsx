@@ -89,6 +89,15 @@ export function BotControlPanel() {
   const handleStartBot = async () => {
     setIsStarting(true);
     try {
+      // CRITICAL: Disable kill switch FIRST before starting bot
+      console.log('[BotControl] Disabling kill switch...');
+      await supabase.from('trading_config')
+        .update({ 
+          global_kill_switch_enabled: false,
+          updated_at: new Date().toISOString()
+        })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
       // Try to get deployment from hft_deployments first
       const { data: deployment } = await supabase
         .from('hft_deployments')
@@ -110,19 +119,26 @@ export function BotControlPanel() {
 
       if (deploymentId) {
         // Use the proper bot-control edge function with Docker support
+        // This will create START_SIGNAL file and inject exchange credentials
         const { data, error: vpsError } = await supabase.functions.invoke('bot-control', {
           body: { action: 'start', deploymentId }
         });
 
         if (vpsError) {
           console.error('[BotControl] VPS signal error:', vpsError);
+          toast.error('Failed to start VPS bot: ' + vpsError.message);
           // Continue anyway to update local state
         } else {
           console.log('[BotControl] Bot start result:', data);
+          if (data?.success) {
+            toast.success('VPS bot started successfully on ' + data.ipAddress);
+          }
         }
+      } else {
+        toast.warning('No VPS deployment found - bot status updated locally only');
       }
 
-      // Update trading_config
+      // Update trading_config (bot-control also does this, but ensure local sync)
       await supabase.from('trading_config')
         .update({ 
           bot_status: 'running', 
