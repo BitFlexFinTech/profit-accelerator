@@ -629,3 +629,130 @@
     transform: translateY(-1px);
   }
 }
+
+/* Black & White Theme */
+.theme-bw {
+  --background: 0 0% 0%;
+  --foreground: 0 0% 100%;
+
+  --card: 0 0% 3%;
+  --card-foreground: 0 0% 100%;
+
+  --popover: 0 0% 5%;
+  --popover-foreground: 0 0% 100%;
+
+  --primary: 0 0% 100%;
+  --primary-foreground: 0 0% 0%;
+
+  --secondary: 0 0% 8%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 0 0% 10%;
+  --muted-foreground: 0 0% 65%;
+
+  --accent: 0 0% 100%;
+  --accent-foreground: 0 0% 0%;
+
+  --destructive: 0 0% 100%;
+  --destructive-foreground: 0 0% 0%;
+
+  --success: 0 0% 100%;
+  --success-foreground: 0 0% 0%;
+
+  --warning: 0 0% 100%;
+  --warning-foreground: 0 0% 0%;
+
+  --profit: 0 0% 100%;
+  --loss: 0 0% 60%;
+
+  --border: 0 0% 20%;
+  --input: 0 0% 12%;
+  --ring: 0 0% 100%;
+
+  /* All accent colors become white/gray in B&W mode */
+  --color-cyan: 0 0% 100%;
+  --color-magenta: 0 0% 85%;
+  --color-yellow: 0 0% 90%;
+  --color-green: 0 0% 100%;
+  --color-orange: 0 0% 80%;
+  --color-purple: 0 0% 75%;
+  --color-pink: 0 0% 85%;
+  --color-blue: 0 0% 95%;
+  --color-red: 0 0% 70%;
+  --color-teal: 0 0% 90%;
+
+  --glass-bg: 0 0% 3% / 0.9;
+  --glass-border: 0 0% 25% / 0.5;
+  --glass-shadow: 0 0% 0% / 0.8;
+
+  --sidebar-background: 0 0% 2%;
+  --sidebar-foreground: 0 0% 95%;
+  --sidebar-primary: 0 0% 100%;
+  --sidebar-primary-foreground: 0 0% 0%;
+  --sidebar-accent: 0 0% 10%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-border: 0 0% 20%;
+  --sidebar-ring: 0 0% 100%;
+
+  --chart-1: 0 0% 100%;
+  --chart-2: 0 0% 80%;
+  --chart-3: 0 0% 60%;
+  --chart-4: 0 0% 40%;
+  --chart-5: 0 0% 20%;
+}
+
+.theme-bw body,
+.theme-bw #root {
+  background: #000000 !important;
+}
+
+.theme-bw .glass-card,
+.theme-bw .card-cyan,
+.theme-bw .card-green,
+.theme-bw .card-purple,
+.theme-bw .card-magenta,
+.theme-bw .card-yellow,
+.theme-bw .card-orange,
+.theme-bw .card-pink,
+.theme-bw .card-blue,
+.theme-bw .card-red,
+.theme-bw .card-teal {
+  border-color: hsl(0 0% 25%) !important;
+  background: hsl(0 0% 3%) !important;
+}
+
+.theme-bw .glass-card:hover,
+.theme-bw .card-cyan:hover,
+.theme-bw .card-green:hover,
+.theme-bw .card-purple:hover {
+  border-color: hsl(0 0% 40%) !important;
+  box-shadow: 0 0 20px hsl(0 0% 100% / 0.1) !important;
+}
+
+/* B&W status indicators */
+.theme-bw .status-online,
+.theme-bw .status-warning {
+  background: hsl(0 0% 100%);
+  box-shadow: 0 0 8px hsl(0 0% 100% / 0.5);
+}
+
+.theme-bw .status-offline {
+  background: hsl(0 0% 50%);
+  box-shadow: 0 0 8px hsl(0 0% 50% / 0.5);
+}
+
+/* B&W chart colors */
+.theme-bw .recharts-line,
+.theme-bw .recharts-area,
+.theme-bw .recharts-bar {
+  stroke: hsl(0 0% 100%) !important;
+  fill: hsl(0 0% 100% / 0.3) !important;
+}
+
+.theme-bw .recharts-cartesian-grid line {
+  stroke: hsl(0 0% 20%) !important;
+}
+
+.theme-bw .recharts-text {
+  fill: hsl(0 0% 70%) !important;
+}

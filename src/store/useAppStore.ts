@@ -69,6 +69,10 @@ interface AppState {
   liveModeUnlocked: boolean;
   successfulPaperTrades: number;
   
+  // Theme state
+  theme: 'colorful' | 'bw';
+  setTheme: (theme: 'colorful' | 'bw') => void;
+  
   // COMPUTED SELECTORS (single source of truth calculations)
   getTotalEquity: () => number;
   getTotalPnL24h: () => number;
@@ -118,6 +122,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   paperModeUnlocked: false,
   liveModeUnlocked: false,
   successfulPaperTrades: 0,
+  
+  // Theme state
+  theme: (typeof window !== 'undefined' && localStorage.getItem('app-theme') as 'colorful' | 'bw') || 'colorful',
+  
+  setTheme: (theme) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('app-theme', theme);
+      if (theme === 'bw') {
+        document.documentElement.classList.add('theme-bw');
+      } else {
+        document.documentElement.classList.remove('theme-bw');
+      }
+    }
+    set({ theme });
+  },
   
   // COMPUTED SELECTORS
   getTotalEquity: () => {

@@ -16,7 +16,12 @@ import {
   ArrowRight,
   ArrowLeft,
   Rocket,
-  TrendingUp
+  TrendingUp,
+  Bot,
+  Workflow,
+  Terminal,
+  Activity,
+  Palette
 } from 'lucide-react';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { useCloudInfrastructure, PROVIDER_PRICING, PROVIDER_ICONS } from '@/hooks/useCloudInfrastructure';
@@ -37,14 +42,20 @@ import { OracleWizard } from '../wizards/OracleWizard';
 import { AlibabaWizard } from '../wizards/AlibabaWizard';
 import { AzureWizard } from '../wizards/AzureWizard';
 import { SecurityHardeningWizard } from '../wizards/SecurityHardeningWizard';
+import { FreqtradeWizard } from '../wizards/FreqtradeWizard';
+import { HummingbotWizard } from '../wizards/HummingbotWizard';
+import { OctoBotWizard } from '../wizards/OctoBotWizard';
+import { JesseWizard } from '../wizards/JesseWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { SecurityVaultPanel } from '../panels/SecurityVaultPanel';
 import { LatencyComparisonChart } from '../panels/LatencyComparisonChart';
 import { LatencyHistoryChart } from '../panels/LatencyHistoryChart';
+import { AIProviderRankingPanel } from '../panels/AIProviderRankingPanel';
 import { useTelegramStatus } from '@/hooks/useTelegramStatus';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
 import { useHFTSettings } from '@/hooks/useHFTSettings';
 import { useAIConfig } from '@/hooks/useAIConfig';
+import { useAppStore } from '@/store/useAppStore';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -305,11 +316,41 @@ export function SettingsTab() {
   };
 
   const isVpsConnected = vps.status === 'running' || vps.status === 'idle';
+  const theme = useAppStore((s) => s.theme);
+  const setTheme = useAppStore((s) => s.setTheme);
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Settings</h2>
+        
+        {/* Theme Toggle */}
+        <div className="flex items-center gap-3 p-2 px-4 rounded-lg bg-secondary/30 border border-border/50">
+          <Palette className="w-4 h-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Theme</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setTheme('colorful')}
+              className={`px-2 py-1 text-xs rounded transition-all ${
+                theme === 'colorful' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Colorful
+            </button>
+            <button
+              onClick={() => setTheme('bw')}
+              className={`px-2 py-1 text-xs rounded transition-all ${
+                theme === 'bw' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              B&W
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* One-Click Wizards */}
@@ -446,6 +487,9 @@ export function SettingsTab() {
           </div>
         )}
       </div>
+
+      {/* AI Provider Performance Ranking */}
+      <AIProviderRankingPanel />
 
       {/* Cloud Infrastructure Section - 8 Provider Grid */}
       <div className="glass-card p-6">
@@ -620,6 +664,65 @@ export function SettingsTab() {
             )}
             {isDeployingMesh ? 'Deploying...' : 'Deploy Mesh'}
           </Button>
+        </div>
+      </div>
+
+      {/* Trading Bot Frameworks */}
+      <div className="glass-card p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+            <Bot className="w-5 h-5 text-emerald-500" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold">Trading Bot Frameworks</h3>
+            <p className="text-sm text-muted-foreground">Deploy open-source trading bots to your VPS</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <button
+            onClick={() => setActiveWizard('freqtrade')}
+            className="p-4 rounded-lg bg-sky-500/10 border border-sky-500/30 hover:bg-sky-500/20 text-left group transition-all"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Bot className="w-6 h-6 text-sky-400" />
+              <span className="font-medium">Freqtrade</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Python HFT Bot</p>
+          </button>
+          
+          <button
+            onClick={() => setActiveWizard('hummingbot')}
+            className="p-4 rounded-lg bg-teal-500/10 border border-teal-500/30 hover:bg-teal-500/20 text-left group transition-all"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Workflow className="w-6 h-6 text-teal-400" />
+              <span className="font-medium">Hummingbot</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Market Making</p>
+          </button>
+          
+          <button
+            onClick={() => setActiveWizard('octobot')}
+            className="p-4 rounded-lg bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 text-left group transition-all"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Terminal className="w-6 h-6 text-red-400" />
+              <span className="font-medium">OctoBot</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Web UI Bot</p>
+          </button>
+          
+          <button
+            onClick={() => setActiveWizard('jesse')}
+            className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20 text-left group transition-all"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Activity className="w-6 h-6 text-blue-400" />
+              <span className="font-medium">Jesse</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Algo Research</p>
+          </button>
         </div>
       </div>
 
@@ -945,6 +1048,22 @@ export function SettingsTab() {
       />
       <SecurityHardeningWizard 
         open={activeWizard === 'security-hardening'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <FreqtradeWizard 
+        open={activeWizard === 'freqtrade'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <HummingbotWizard 
+        open={activeWizard === 'hummingbot'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <OctoBotWizard 
+        open={activeWizard === 'octobot'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <JesseWizard 
+        open={activeWizard === 'jesse'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
     </div>

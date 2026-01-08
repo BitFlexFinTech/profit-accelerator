@@ -12,7 +12,7 @@ import VPSSetup from "./pages/VPSSetup";
 import UserSettings from "./pages/UserSettings";
 import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { initializeAppStore } from "@/store/useAppStore";
+import { initializeAppStore, useAppStore } from "@/store/useAppStore";
 import { useCrossTabSync } from "@/hooks/useCrossTabSync";
 
 const queryClient = new QueryClient();
@@ -20,6 +20,17 @@ const queryClient = new QueryClient();
 function AppContent() {
   // Cross-tab sync only - realtime handled by initializeAppStore (SSOT)
   useCrossTabSync();
+  
+  // Apply saved theme on mount
+  const theme = useAppStore((s) => s.theme);
+  
+  useEffect(() => {
+    if (theme === 'bw') {
+      document.documentElement.classList.add('theme-bw');
+    } else {
+      document.documentElement.classList.remove('theme-bw');
+    }
+  }, [theme]);
 
   return (
     <BrowserRouter>

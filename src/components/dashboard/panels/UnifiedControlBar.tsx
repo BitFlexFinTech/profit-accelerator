@@ -376,26 +376,6 @@ export function UnifiedControlBar() {
               Simulate
             </Button>
 
-            <Button 
-              size="sm" 
-              variant={botStatus === 'running' ? 'outline' : 'default'}
-              onClick={botStatus === 'running' ? handleStopBot : handleStartBot}
-              disabled={isLoading || isStartingUp}
-              className={`h-7 text-xs px-2 ${botStatus !== 'running' ? 'bg-success hover:bg-success/90' : ''}`}
-            >
-              {botStatus === 'running' ? (
-                <>
-                  <Pause className="w-3 h-3 mr-1" />
-                  Pause All
-                </>
-              ) : (
-                <>
-                  <Zap className="w-3 h-3 mr-1" />
-                  Trade
-                </>
-              )}
-            </Button>
-
             <Activity className={`w-4 h-4 ml-2 ${botStatus === 'running' ? 'text-success' : 'text-muted-foreground'}`} />
           </div>
         </div>
