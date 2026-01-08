@@ -70,7 +70,7 @@ export function ScrollingPriceTicker() {
         await fetchPricesWithExchanges(exchanges);
         
         // Step 3: Set up interval with exchanges baked in
-        interval = setInterval(() => fetchPricesWithExchanges(exchanges), 2000);
+        interval = setInterval(() => fetchPricesWithExchanges(exchanges), 10000);
         
       } catch (err) {
         console.error('[ScrollingPriceTicker] Initialize error:', err);
