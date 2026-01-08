@@ -885,10 +885,14 @@ const CONFIG = {
   PROFIT_TARGET_SPOT: parseFloat(process.env.PROFIT_TARGET_SPOT) || 1.00,
   PROFIT_TARGET_LEVERAGE: parseFloat(process.env.PROFIT_TARGET_LEVERAGE) || 3.00,
   
+  // AI Trading settings
+  MAX_CONCURRENT_POSITIONS: 8,  // Maximum 8 concurrent positions
+  AI_FETCH_INTERVAL: 1000,      // Fetch AI signals every 1 second
+  
   // Trading settings
   ENABLED: process.env.STRATEGY_ENABLED === 'true',
-  SUPABASE_URL: process.env.SUPABASE_URL || '',
-  SUPABASE_KEY: process.env.SUPABASE_ANON_KEY || '',
+  SUPABASE_URL: process.env.SUPABASE_URL || 'https://iibdlazwkossyelyroap.supabase.co',
+  SUPABASE_KEY: process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpYmRsYXp3a29zc3llbHlyb2FwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2MzQzNDUsImV4cCI6MjA4MzIxMDM0NX0.xZ0VbkoKzrFLYpbKrUjcvTY-qs-nA3ynHU-SAluOUQ4',
   
   // Data paths
   STATE_FILE: '/app/data/strategy-state.json',
@@ -1053,6 +1057,152 @@ async function fetchPrice(exchange, symbol) {
   });
 }
 
+// ============== AI SIGNAL FUNCTIONS ==============
+
+// Fetch high-confidence AI signals from Supabase
+async function fetchAIRecommendations() {
+  return new Promise((resolve) => {
+    const cutoffTime = new Date(Date.now() - 60 * 1000).toISOString();
+    const url = CONFIG.SUPABASE_URL + '/rest/v1/ai_market_updates?' +
+      'select=id,symbol,exchange_name,sentiment,confidence,current_price,' +
+      'profit_timeframe_minutes,recommended_side,expected_move_percent&' +
+      'confidence=gte.70&' +
+      'created_at=gte.' + encodeURIComponent(cutoffTime) +
+      '&order=confidence.desc&limit=10';
+    
+    https.get(url, {
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const signals = JSON.parse(data);
+          if (signals?.length > 0) {
+            console.log('[🐟 PIRANHA] Fetched ' + signals.length + ' AI signals (>=70% confidence)');
+          }
+          resolve(Array.isArray(signals) ? signals : []);
+        } catch { resolve([]); }
+      });
+    }).on('error', () => resolve([]));
+  });
+}
+
+// Sync trade to Supabase trading_journal
+async function recordTradeToSupabase(trade, status) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({
+      exchange: trade.exchange,
+      symbol: trade.symbol,
+      side: trade.side,
+      quantity: trade.quantity,
+      entry_price: trade.entryPrice,
+      exit_price: trade.exitPrice || null,
+      pnl: trade.netPnL || null,
+      status: status,
+      execution_latency_ms: trade.latencyMs || 0,
+      ai_reasoning: 'AI Signal: ' + (trade.aiConfidence || 0) + '% confidence, ' + (trade.aiTimeframe || 0) + 'min timeframe'
+    });
+    
+    const urlParts = new URL(CONFIG.SUPABASE_URL);
+    const options = {
+      hostname: urlParts.hostname,
+      path: '/rest/v1/trading_journal',
+      method: 'POST',
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      console.log('[🐟 PIRANHA] Trade synced to Supabase:', status, res.statusCode);
+      resolve(res.statusCode === 201);
+    });
+    req.on('error', (e) => {
+      console.log('[🐟 PIRANHA] Trade sync error:', e.message);
+      resolve(false);
+    });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// Open position based on AI signal
+async function openPosition(signal, credentials) {
+  const exchange = (signal.exchange_name || 'binance').toLowerCase();
+  const symbol = signal.symbol.includes('USDT') ? signal.symbol : signal.symbol + 'USDT';
+  
+  // Check for duplicate position
+  const existingPosition = state.positions.find(
+    p => p.symbol === symbol && p.exchange === exchange
+  );
+  if (existingPosition) {
+    console.log('[🐟 PIRANHA] Already have position in', symbol);
+    return null;
+  }
+  
+  // Calculate position size: $350-$500
+  const positionSize = Math.min(
+    Math.max(CONFIG.MIN_POSITION_SIZE, 500 * 0.95),
+    CONFIG.MAX_POSITION_SIZE
+  );
+  
+  // Determine side from AI recommendation
+  const side = signal.recommended_side === 'short' ? 'short' : 'long';
+  
+  // Get current price
+  const currentPrice = signal.current_price || await fetchPrice(exchange, symbol);
+  if (!currentPrice) {
+    console.log('[🐟 PIRANHA] Could not get price for', symbol);
+    return null;
+  }
+  
+  const quantity = positionSize / currentPrice;
+  
+  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+  console.log('[🐟 PIRANHA] 🎯 OPENING POSITION FROM AI SIGNAL');
+  console.log('[🐟 PIRANHA]   Exchange: ' + exchange.toUpperCase());
+  console.log('[🐟 PIRANHA]   Symbol: ' + symbol);
+  console.log('[🐟 PIRANHA]   Side: ' + side.toUpperCase());
+  console.log('[🐟 PIRANHA]   Size: $' + positionSize.toFixed(2));
+  console.log('[🐟 PIRANHA]   Entry: $' + currentPrice.toFixed(4));
+  console.log('[🐟 PIRANHA]   Quantity: ' + quantity.toFixed(6));
+  console.log('[🐟 PIRANHA]   AI Confidence: ' + signal.confidence + '%');
+  console.log('[🐟 PIRANHA]   AI Timeframe: ' + signal.profit_timeframe_minutes + ' min');
+  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+  
+  // Create position record
+  const position = {
+    id: crypto.randomUUID(),
+    exchange: exchange,
+    symbol: symbol,
+    side: side,
+    size: positionSize,
+    quantity: quantity,
+    entryPrice: currentPrice,
+    entryTime: new Date().toISOString(),
+    isLeverage: false,
+    aiSignalId: signal.id,
+    aiConfidence: signal.confidence,
+    aiTimeframe: signal.profit_timeframe_minutes
+  };
+  
+  state.positions.push(position);
+  saveState();
+  
+  // Sync to Supabase
+  await recordTradeToSupabase(position, 'open');
+  
+  console.log('[🐟 PIRANHA] ✅ Position opened! Total positions: ' + state.positions.length + '/' + CONFIG.MAX_CONCURRENT_POSITIONS);
+  return position;
+}
+
 // ============== MAIN STRATEGY LOOP ==============
 async function runPiranha() {
   console.log('');
@@ -1091,15 +1241,51 @@ async function runPiranha() {
   saveState();
   
   console.log('[🐟 PIRANHA] Strategy is now ACTIVE');
-  console.log('[🐟 PIRANHA] Monitoring positions and looking for entry opportunities...');
+  console.log('[🐟 PIRANHA] Monitoring positions and AI signals...');
+  console.log('[🐟 PIRANHA] Max concurrent positions: ' + CONFIG.MAX_CONCURRENT_POSITIONS);
+  console.log('[🐟 PIRANHA] AI signal check: every ' + CONFIG.AI_FETCH_INTERVAL + 'ms');
+  
+  // AI signal tracking
+  let lastAIFetch = 0;
   
   // Main loop - runs forever (24/7)
   let loopCount = 0;
   while (true) {
     try {
       loopCount++;
+      const now = Date.now();
       
-      // Check each open position for profit target
+      // ═══════════════════════════════════════════════════════════
+      // AI SIGNAL FETCH - Every 1 second (aggressive signal detection)
+      // ═══════════════════════════════════════════════════════════
+      if (now - lastAIFetch > CONFIG.AI_FETCH_INTERVAL) {
+        lastAIFetch = now;
+        
+        // Only fetch if we have room for more positions
+        if (state.positions.length < CONFIG.MAX_CONCURRENT_POSITIONS) {
+          const signals = await fetchAIRecommendations();
+          
+          // Filter: 70%+ confidence, 1/3/5 min timeframe, not already in position
+          const tradableSignals = signals.filter(s => 
+            s.confidence >= 70 && 
+            [1, 3, 5].includes(s.profit_timeframe_minutes) &&
+            !state.positions.some(p => p.symbol === (s.symbol.includes('USDT') ? s.symbol : s.symbol + 'USDT'))
+          );
+          
+          // Open positions up to max limit
+          for (const signal of tradableSignals) {
+            if (state.positions.length >= CONFIG.MAX_CONCURRENT_POSITIONS) {
+              console.log('[🐟 PIRANHA] Max positions reached (' + CONFIG.MAX_CONCURRENT_POSITIONS + '), waiting for closes...');
+              break;
+            }
+            await openPosition(signal, {});
+          }
+        }
+      }
+      
+      // ═══════════════════════════════════════════════════════════
+      // POSITION MONITORING - Check profit targets (100ms interval)
+      // ═══════════════════════════════════════════════════════════
       for (const position of state.positions) {
         const currentPrice = await fetchPrice(position.exchange, position.symbol);
         if (!currentPrice) continue;
@@ -1118,12 +1304,14 @@ async function runPiranha() {
         
         // Check if profit target reached
         if (isProfitTargetReached(netPnL, position.isLeverage)) {
-          console.log('[🐟 PIRANHA] 🎯 PROFIT TARGET HIT!');
-          console.log('  Symbol:', position.symbol);
-          console.log('  Side:', position.side);
-          console.log('  Entry:', position.entryPrice);
-          console.log('  Exit:', currentPrice);
-          console.log('  P&L: $' + netPnL.toFixed(2));
+          console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+          console.log('[🐟 PIRANHA] 💰 PROFIT TARGET HIT!');
+          console.log('[🐟 PIRANHA]   Symbol: ' + position.symbol);
+          console.log('[🐟 PIRANHA]   Side: ' + position.side.toUpperCase());
+          console.log('[🐟 PIRANHA]   Entry: $' + position.entryPrice);
+          console.log('[🐟 PIRANHA]   Exit: $' + currentPrice);
+          console.log('[🐟 PIRANHA]   Net P&L: $' + netPnL.toFixed(2));
+          console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
           
           // Log the completed trade
           const completedTrade = {
@@ -1135,14 +1323,34 @@ async function runPiranha() {
           };
           logTrade(completedTrade);
           
+          // Sync closed trade to Supabase
+          await recordTradeToSupabase(completedTrade, 'closed');
+          
           // Update totals
           state.totalTrades++;
           state.totalPnL += netPnL;
           
-          // Remove from positions (will re-enter immediately)
+          // Remove from positions
           state.positions = state.positions.filter(p => p.id !== position.id);
           
-          console.log('[🐟 PIRANHA] Total trades:', state.totalTrades, '| Total P&L: $' + state.totalPnL.toFixed(2));
+          console.log('[🐟 PIRANHA] Total trades: ' + state.totalTrades + ' | Total P&L: $' + state.totalPnL.toFixed(2));
+          
+          // ═══════════════════════════════════════════════════════════
+          // INSTANT REDEPLOY - Look for next opportunity immediately
+          // ═══════════════════════════════════════════════════════════
+          if (state.positions.length < CONFIG.MAX_CONCURRENT_POSITIONS) {
+            console.log('[🐟 PIRANHA] 🔄 Searching for instant redeploy opportunity...');
+            const redeploySignals = await fetchAIRecommendations();
+            const bestSignal = redeploySignals.find(s => 
+              s.confidence >= 70 && 
+              [1, 3, 5].includes(s.profit_timeframe_minutes) &&
+              !state.positions.some(p => p.symbol === (s.symbol.includes('USDT') ? s.symbol : s.symbol + 'USDT'))
+            );
+            if (bestSignal) {
+              console.log('[🐟 PIRANHA] ⚡ INSTANT REDEPLOY with ' + bestSignal.symbol + ' (' + bestSignal.confidence + '% confidence)');
+              await openPosition(bestSignal, {});
+            }
+          }
         }
       }
       
@@ -1153,7 +1361,7 @@ async function runPiranha() {
       
       // Log status every 600 loops (every minute at 100ms)
       if (loopCount % 600 === 0) {
-        console.log('[🐟 PIRANHA] Status: ' + state.positions.length + ' positions | ' + state.totalTrades + ' trades | $' + state.totalPnL.toFixed(2) + ' P&L');
+        console.log('[🐟 PIRANHA] 📊 Status: ' + state.positions.length + '/' + CONFIG.MAX_CONCURRENT_POSITIONS + ' positions | ' + state.totalTrades + ' trades | $' + state.totalPnL.toFixed(2) + ' P&L');
       }
       
     } catch (err) {
