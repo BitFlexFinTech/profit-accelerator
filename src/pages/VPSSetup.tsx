@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Settings, Server, DollarSign, Zap, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Plus, Settings, Server, DollarSign, Zap, RefreshCw, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -132,25 +132,19 @@ export default function VPSSetup() {
 
                   {/* Actions */}
                   <div className="flex flex-col gap-2">
-                    {status === 'not_configured' || status === 'error' ? (
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => navigate('/cloud-credentials')}
-                      >
-                        <Settings className="h-4 w-4 mr-2" />
-                        Configure Credentials
-                      </Button>
-                    ) : status === 'pending' ? (
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => navigate('/cloud-credentials')}
-                      >
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Validate Credentials
-                      </Button>
-                    ) : (
+                    {/* Always show Save/Edit Credentials button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => navigate('/cloud-credentials')}
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      {status === 'not_configured' ? 'Add' : 'Edit'} & Save Credentials
+                    </Button>
+                    
+                    {/* Show Deploy button only when validated */}
+                    {status === 'validated' && (
                       <Button
                         className="w-full bg-green-600 hover:bg-green-700"
                         onClick={() => handleDeployClick(provider.name)}
