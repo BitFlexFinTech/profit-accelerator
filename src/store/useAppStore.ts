@@ -43,6 +43,12 @@ interface AppState {
   lastUpdate: number;
   isLoading: boolean;
   
+  // Paper trading mode
+  paperTradingMode: boolean;
+  
+  // Connection status
+  connectionStatus: 'connected' | 'disconnected' | 'error';
+  
   // COMPUTED SELECTORS (single source of truth calculations)
   getTotalEquity: () => number;
   getTotalPnL24h: () => number;
@@ -63,6 +69,8 @@ interface AppState {
   setExchangePulse: (exchange: string, pulse: ExchangePulse) => void;
   setPnlData: (daily: number, weekly: number) => void;
   syncFromDatabase: () => Promise<void>;
+  togglePaperTrading: () => void;
+  setConnectionStatus: (status: 'connected' | 'disconnected' | 'error') => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -74,6 +82,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   weeklyPnl: 0,
   lastUpdate: 0,
   isLoading: true,
+  paperTradingMode: false,
+  connectionStatus: 'connected',
   
   // COMPUTED SELECTORS
   getTotalEquity: () => {
@@ -174,9 +184,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ dailyPnl: daily, weeklyPnl: weekly, lastUpdate: Date.now() });
   },
   
+  togglePaperTrading: () => {
+    set(state => ({ paperTradingMode: !state.paperTradingMode }));
+  },
+  
+  setConnectionStatus: (status) => {
+    set({ connectionStatus: status });
+  },
+  
   syncFromDatabase: async () => {
     try {
-      set({ isLoading: true });
+      set({ isLoading: true, connectionStatus: 'connected' });
       
       // Fetch exchange balances
       const { data: exchanges } = await supabase
@@ -268,15 +286,48 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ isLoading: false, lastUpdate: Date.now() });
     } catch (error) {
       console.error('[useAppStore] Sync error:', error);
-      set({ isLoading: false });
+      set({ isLoading: false, connectionStatus: 'error' });
     }
   }
 }));
+
+// Auto-polling with background tab handling
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+const startPolling = () => {
+  if (pollInterval) return;
+  pollInterval = setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      useAppStore.getState().syncFromDatabase();
+    }
+  }, 5000);
+};
+
+const stopPolling = () => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+};
 
 // Initialize store and set up realtime subscriptions
 export function initializeAppStore() {
   const store = useAppStore.getState();
   store.syncFromDatabase();
+  
+  // Start polling
+  if (typeof window !== 'undefined') {
+    startPolling();
+    
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        startPolling();
+        store.syncFromDatabase();
+      } else {
+        stopPolling();
+      }
+    });
+  }
   
   // Subscribe to realtime updates
   const channel = supabase
@@ -298,9 +349,26 @@ export function initializeAppStore() {
       console.log('[useAppStore] balance_history INSERT, syncing...');
       store.syncFromDatabase();
     })
-    .subscribe();
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+      console.log('[useAppStore] orders changed, syncing...');
+      store.syncFromDatabase();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, () => {
+      console.log('[useAppStore] positions changed, syncing...');
+      store.syncFromDatabase();
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[useAppStore] Realtime subscribed');
+        store.setConnectionStatus('connected');
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[useAppStore] Realtime connection lost');
+        store.setConnectionStatus('error');
+      }
+    });
   
   return () => {
+    stopPolling();
     supabase.removeChannel(channel);
   };
 }

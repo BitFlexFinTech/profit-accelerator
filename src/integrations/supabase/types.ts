@@ -339,6 +339,7 @@ export type Database = {
           id: string
           snapshot_time: string | null
           total_balance: number
+          version: number | null
         }
         Insert: {
           created_at?: string | null
@@ -346,6 +347,7 @@ export type Database = {
           id?: string
           snapshot_time?: string | null
           total_balance?: number
+          version?: number | null
         }
         Update: {
           created_at?: string | null
@@ -353,6 +355,7 @@ export type Database = {
           id?: string
           snapshot_time?: string | null
           total_balance?: number
+          version?: number | null
         }
         Relationships: []
       }
@@ -756,6 +759,7 @@ export type Database = {
           last_ping_at: string | null
           last_ping_ms: number | null
           updated_at: string | null
+          version: number | null
           wallet_address: string | null
         }
         Insert: {
@@ -772,6 +776,7 @@ export type Database = {
           last_ping_at?: string | null
           last_ping_ms?: number | null
           updated_at?: string | null
+          version?: number | null
           wallet_address?: string | null
         }
         Update: {
@@ -788,6 +793,7 @@ export type Database = {
           last_ping_at?: string | null
           last_ping_ms?: number | null
           updated_at?: string | null
+          version?: number | null
           wallet_address?: string | null
         }
         Relationships: []
@@ -1084,6 +1090,177 @@ export type Database = {
         }
         Relationships: []
       }
+      orders: {
+        Row: {
+          amount: number
+          average_fill_price: number | null
+          cancelled_at: string | null
+          client_order_id: string | null
+          created_at: string | null
+          exchange_name: string
+          exchange_order_id: string | null
+          filled_amount: number | null
+          filled_at: string | null
+          id: string
+          idempotency_key: string | null
+          price: number | null
+          side: string
+          status: string
+          symbol: string
+          type: string
+          updated_at: string | null
+          version: number | null
+        }
+        Insert: {
+          amount: number
+          average_fill_price?: number | null
+          cancelled_at?: string | null
+          client_order_id?: string | null
+          created_at?: string | null
+          exchange_name: string
+          exchange_order_id?: string | null
+          filled_amount?: number | null
+          filled_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          price?: number | null
+          side: string
+          status?: string
+          symbol: string
+          type: string
+          updated_at?: string | null
+          version?: number | null
+        }
+        Update: {
+          amount?: number
+          average_fill_price?: number | null
+          cancelled_at?: string | null
+          client_order_id?: string | null
+          created_at?: string | null
+          exchange_name?: string
+          exchange_order_id?: string | null
+          filled_amount?: number | null
+          filled_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          price?: number | null
+          side?: string
+          status?: string
+          symbol?: string
+          type?: string
+          updated_at?: string | null
+          version?: number | null
+        }
+        Relationships: []
+      }
+      paper_balance_history: {
+        Row: {
+          breakdown: Json | null
+          created_at: string | null
+          exchange_name: string
+          id: string
+          total_equity: number
+        }
+        Insert: {
+          breakdown?: Json | null
+          created_at?: string | null
+          exchange_name: string
+          id?: string
+          total_equity: number
+        }
+        Update: {
+          breakdown?: Json | null
+          created_at?: string | null
+          exchange_name?: string
+          id?: string
+          total_equity?: number
+        }
+        Relationships: []
+      }
+      paper_orders: {
+        Row: {
+          amount: number
+          created_at: string | null
+          exchange_name: string
+          fill_price: number | null
+          filled_amount: number | null
+          filled_at: string | null
+          id: string
+          price: number | null
+          side: string
+          status: string
+          symbol: string
+          type: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          exchange_name: string
+          fill_price?: number | null
+          filled_amount?: number | null
+          filled_at?: string | null
+          id?: string
+          price?: number | null
+          side: string
+          status?: string
+          symbol: string
+          type: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          exchange_name?: string
+          fill_price?: number | null
+          filled_amount?: number | null
+          filled_at?: string | null
+          id?: string
+          price?: number | null
+          side?: string
+          status?: string
+          symbol?: string
+          type?: string
+        }
+        Relationships: []
+      }
+      paper_positions: {
+        Row: {
+          created_at: string | null
+          current_price: number | null
+          entry_price: number
+          exchange_name: string
+          id: string
+          side: string
+          size: number
+          symbol: string
+          unrealized_pnl: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          current_price?: number | null
+          entry_price: number
+          exchange_name: string
+          id?: string
+          side: string
+          size: number
+          symbol: string
+          unrealized_pnl?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          current_price?: number | null
+          entry_price?: number
+          exchange_name?: string
+          id?: string
+          side?: string
+          size?: number
+          symbol?: string
+          unrealized_pnl?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       portfolio_snapshots: {
         Row: {
           created_at: string | null
@@ -1111,6 +1288,57 @@ export type Database = {
           snapshot_date?: string | null
           total_balance?: number
           weekly_pnl?: number | null
+        }
+        Relationships: []
+      }
+      positions: {
+        Row: {
+          created_at: string | null
+          current_price: number | null
+          entry_price: number
+          exchange_name: string
+          id: string
+          leverage: number | null
+          liquidation_price: number | null
+          margin: number | null
+          realized_pnl: number | null
+          side: string
+          size: number
+          symbol: string
+          unrealized_pnl: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          current_price?: number | null
+          entry_price: number
+          exchange_name: string
+          id?: string
+          leverage?: number | null
+          liquidation_price?: number | null
+          margin?: number | null
+          realized_pnl?: number | null
+          side: string
+          size: number
+          symbol: string
+          unrealized_pnl?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          current_price?: number | null
+          entry_price?: number
+          exchange_name?: string
+          id?: string
+          leverage?: number | null
+          liquidation_price?: number | null
+          margin?: number | null
+          realized_pnl?: number | null
+          side?: string
+          size?: number
+          symbol?: string
+          unrealized_pnl?: number | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -1525,6 +1753,39 @@ export type Database = {
           updated_at?: string | null
           vps_ip?: string | null
           win_rate?: number | null
+        }
+        Relationships: []
+      }
+      transaction_log: {
+        Row: {
+          action_type: string
+          created_at: string | null
+          details: Json | null
+          error_message: string | null
+          exchange_name: string | null
+          id: string
+          status: string | null
+          symbol: string | null
+        }
+        Insert: {
+          action_type: string
+          created_at?: string | null
+          details?: Json | null
+          error_message?: string | null
+          exchange_name?: string | null
+          id?: string
+          status?: string | null
+          symbol?: string | null
+        }
+        Update: {
+          action_type?: string
+          created_at?: string | null
+          details?: Json | null
+          error_message?: string | null
+          exchange_name?: string | null
+          id?: string
+          status?: string | null
+          symbol?: string | null
         }
         Relationships: []
       }
