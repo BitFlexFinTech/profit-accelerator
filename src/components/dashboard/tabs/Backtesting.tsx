@@ -56,8 +56,8 @@ export function Backtesting() {
   const runBacktest = async () => {
     setIsRunning(true);
     try {
-      // Insert a new backtest request - in production this would trigger actual backtesting
-      const { data, error } = await supabase
+      // First, insert a pending backtest record
+      const { data: insertedRecord, error: insertError } = await supabase
         .from('backtest_results')
         .insert({
           strategy_name: strategy,
@@ -73,13 +73,43 @@ export function Backtesting() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (insertError) throw insertError;
       
-      toast.success('Backtest started - results will appear when complete');
-      if (data) setResults(data);
-    } catch (err) {
-      console.error('Failed to start backtest:', err);
-      toast.error('Failed to start backtest');
+      toast.info('Backtest started - fetching historical data...');
+      
+      // Call the backtest edge function to run the actual simulation
+      const { data: backtestResult, error: fnError } = await supabase.functions.invoke('run-backtest', {
+        body: {
+          backtestId: insertedRecord.id,
+          strategy,
+          symbol: 'BTC/USDT',
+          startDate,
+          endDate,
+          initialBalance,
+        }
+      });
+      
+      if (fnError) throw fnError;
+      
+      if (!backtestResult?.success) {
+        throw new Error(backtestResult?.error || 'Backtest failed');
+      }
+      
+      // Refetch the updated result
+      const { data: updatedResult } = await supabase
+        .from('backtest_results')
+        .select('*')
+        .eq('id', insertedRecord.id)
+        .single();
+      
+      if (updatedResult) {
+        setResults(updatedResult);
+      }
+      
+      toast.success(`Backtest complete! ${backtestResult.results.totalTrades} trades simulated`);
+    } catch (err: any) {
+      console.error('Failed to run backtest:', err);
+      toast.error(err.message || 'Failed to run backtest');
     } finally {
       setIsRunning(false);
     }

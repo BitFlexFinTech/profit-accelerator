@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ShoppingCart, TrendingUp, TrendingDown, Loader2, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,9 +16,15 @@ import { toast } from 'sonner';
 
 const POPULAR_PAIRS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'];
 
+interface ExchangeBalance {
+  exchange_name: string;
+  balance_usdt: number | null;
+}
+
 export function OrderForm() {
   const paperTradingMode = useAppStore(state => state.paperTradingMode);
   const [exchanges, setExchanges] = useState<string[]>([]);
+  const [exchangeBalances, setExchangeBalances] = useState<Record<string, number>>({});
   const [exchange, setExchange] = useState('');
   const [symbol, setSymbol] = useState('BTC/USDT');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
@@ -29,21 +35,53 @@ export function OrderForm() {
   const [riskWarnings, setRiskWarnings] = useState<string[]>([]);
   const [riskError, setRiskError] = useState<string | null>(null);
 
-  // Fetch connected exchanges
+  // Get available balance for selected exchange
+  const availableBalance = useMemo(() => {
+    if (!exchange) return 0;
+    return exchangeBalances[exchange] || 0;
+  }, [exchange, exchangeBalances]);
+
+  // Fetch connected exchanges with balances
   useEffect(() => {
     const fetchExchanges = async () => {
       const { data } = await supabase
         .from('exchange_connections')
-        .select('exchange_name')
+        .select('exchange_name, balance_usdt')
         .eq('is_connected', true);
       
       if (data && data.length > 0) {
         const names = data.map(e => e.exchange_name);
+        const balances: Record<string, number> = {};
+        data.forEach((e: ExchangeBalance) => {
+          balances[e.exchange_name] = e.balance_usdt || 0;
+        });
+        
         setExchanges(names);
+        setExchangeBalances(balances);
         setExchange(names[0]);
       }
     };
     fetchExchanges();
+
+    // Subscribe to balance updates
+    const channel = supabase
+      .channel('exchange-balance-updates')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'exchange_connections'
+      }, (payload) => {
+        const updated = payload.new as ExchangeBalance;
+        setExchangeBalances(prev => ({
+          ...prev,
+          [updated.exchange_name]: updated.balance_usdt || 0
+        }));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Validate risk on amount/price change
@@ -78,9 +116,12 @@ export function OrderForm() {
   }, [amount, price, exchange, symbol, side]);
 
   const handlePercentage = (percent: number) => {
-    // This would calculate based on available balance
-    // For now, just set a placeholder
-    setAmount((1000 * percent / 100).toFixed(2));
+    if (availableBalance <= 0) {
+      toast.error('No balance available on this exchange');
+      return;
+    }
+    const calculatedAmount = (availableBalance * percent / 100).toFixed(2);
+    setAmount(calculatedAmount);
   };
 
   const handleSubmit = async () => {
@@ -212,7 +253,12 @@ export function OrderForm() {
 
         {/* Amount Input */}
         <div className="space-y-1.5">
-          <Label className="text-xs">Amount</Label>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Amount (USDT)</Label>
+            <span className="text-xs text-muted-foreground">
+              Available: ${availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
           <Input
             type="number"
             value={amount}
@@ -228,6 +274,7 @@ export function OrderForm() {
                 size="sm"
                 className="flex-1 h-7 text-xs"
                 onClick={() => handlePercentage(pct)}
+                disabled={availableBalance <= 0}
               >
                 {pct}%
               </Button>

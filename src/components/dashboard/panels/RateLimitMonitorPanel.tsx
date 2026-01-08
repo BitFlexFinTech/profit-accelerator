@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, CheckCircle, Zap } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface RateLimitStats {
   service: string;
@@ -14,58 +15,69 @@ interface RateLimitStats {
   status: 'ok' | 'warning' | 'critical';
 }
 
-const SERVICE_LIMITS = {
+const SERVICE_LIMITS: Record<string, { limit: number; label: string }> = {
   binance: { limit: 1200, label: 'Binance' },
   okx: { limit: 3000, label: 'OKX' },
+  kucoin: { limit: 2000, label: 'KuCoin' },
+  bybit: { limit: 2500, label: 'Bybit' },
   groq: { limit: 30, label: 'Groq AI' },
-  vultr: { limit: 100, label: 'Vultr' },
-  digitalocean: { limit: 250, label: 'DigitalOcean' },
 };
 
 export function RateLimitMonitorPanel() {
   const [stats, setStats] = useState<RateLimitStats[]>([]);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
-  // Simulate rate limit tracking (in production, this would come from actual API call tracking)
-  const updateStats = useCallback(() => {
-    const now = Date.now();
-    const newStats: RateLimitStats[] = Object.entries(SERVICE_LIMITS).map(([service, config]) => {
-      // Get simulated usage from localStorage or start fresh
-      const storedKey = `rateLimit_${service}`;
-      const stored = localStorage.getItem(storedKey);
-      let requestsThisMinute = 0;
+  // Fetch actual API request logs from database
+  const updateStats = useCallback(async () => {
+    const now = new Date();
+    const oneMinuteAgo = new Date(now.getTime() - 60000);
+    
+    try {
+      // Query api_request_logs from the last minute, grouped by exchange
+      const { data: logs } = await supabase
+        .from('api_request_logs')
+        .select('exchange_name')
+        .gte('request_time', oneMinuteAgo.toISOString());
       
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Reset if more than 1 minute old
-        if (now - parsed.timestamp < 60000) {
-          requestsThisMinute = parsed.count;
+      // Count requests per service
+      const counts: Record<string, number> = {};
+      if (logs) {
+        for (const log of logs) {
+          const service = log.exchange_name.toLowerCase();
+          counts[service] = (counts[service] || 0) + 1;
         }
       }
+      
+      // Build stats for all monitored services
+      const newStats: RateLimitStats[] = Object.entries(SERVICE_LIMITS).map(([service, config]) => {
+        const requestsThisMinute = counts[service] || 0;
+        const usagePercent = (requestsThisMinute / config.limit) * 100;
+        
+        let status: 'ok' | 'warning' | 'critical' = 'ok';
+        if (usagePercent >= 90) status = 'critical';
+        else if (usagePercent >= 70) status = 'warning';
 
-      const usagePercent = (requestsThisMinute / config.limit) * 100;
-      let status: 'ok' | 'warning' | 'critical' = 'ok';
-      if (usagePercent >= 90) status = 'critical';
-      else if (usagePercent >= 70) status = 'warning';
+        return {
+          service,
+          label: config.label,
+          requestsThisMinute,
+          limit: config.limit,
+          usagePercent: Math.min(100, usagePercent),
+          timeUntilResetMs: 60000 - (now.getTime() % 60000),
+          status,
+        };
+      });
 
-      return {
-        service,
-        label: config.label,
-        requestsThisMinute,
-        limit: config.limit,
-        usagePercent: Math.min(100, usagePercent),
-        timeUntilResetMs: stored ? Math.max(0, 60000 - (now - JSON.parse(stored).timestamp)) : 60000,
-        status,
-      };
-    });
-
-    setStats(newStats);
-    setLastUpdate(new Date());
+      setStats(newStats);
+      setLastUpdate(now);
+    } catch (err) {
+      console.error('Failed to fetch rate limit stats:', err);
+    }
   }, []);
 
   useEffect(() => {
     updateStats();
-    const interval = setInterval(updateStats, 1000);
+    const interval = setInterval(updateStats, 5000); // Update every 5 seconds
     return () => clearInterval(interval);
   }, [updateStats]);
 

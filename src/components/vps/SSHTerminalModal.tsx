@@ -92,11 +92,10 @@ export function SSHTerminalModal({ instance, onClose }: SSHTerminalModalProps) {
 
         if (!mounted) return;
 
-        // For now, simulate terminal since we can't do real SSH from browser
-        // In production, you'd connect to a WebSocket proxy
+        // Connect to SSH command edge function for real command execution
         term.writeln('\x1b[32m✓ Connected to ' + instance.ipAddress + '\x1b[0m');
         term.writeln('');
-        term.writeln('\x1b[90mType commands below. Use "exit" to disconnect.\x1b[0m');
+        term.writeln('\x1b[90mType commands below. Commands are executed via SSH.\x1b[0m');
         term.writeln('');
         term.write('\x1b[36mroot@' + (instance.nickname || instance.provider) + '\x1b[0m:\x1b[34m~\x1b[0m$ ');
 
@@ -104,8 +103,42 @@ export function SSHTerminalModal({ instance, onClose }: SSHTerminalModalProps) {
         setIsConnecting(false);
 
         let currentLine = '';
+        let isExecuting = false;
 
-        term.onData((data) => {
+        const executeCommand = async (cmd: string) => {
+          if (isExecuting) return;
+          isExecuting = true;
+          
+          try {
+            // Call ssh-command edge function
+            const { data: result, error: cmdError } = await supabase.functions.invoke('ssh-command', {
+              body: {
+                ipAddress: instance.ipAddress,
+                command: cmd,
+                username: 'root',
+                timeout: 30000,
+              },
+            });
+
+            if (cmdError) {
+              term.writeln('\x1b[31mError: ' + cmdError.message + '\x1b[0m');
+            } else if (result?.output) {
+              // Display the command output
+              const lines = result.output.split('\n');
+              lines.forEach((line: string) => term.writeln(line));
+            } else if (result?.error) {
+              term.writeln('\x1b[31m' + result.error + '\x1b[0m');
+            }
+          } catch (err) {
+            term.writeln('\x1b[31mFailed to execute command\x1b[0m');
+          }
+          
+          isExecuting = false;
+        };
+
+        term.onData(async (data) => {
+          if (isExecuting) return;
+          
           if (data === '\r') {
             // Enter key
             term.writeln('');
@@ -116,9 +149,15 @@ export function SSHTerminalModal({ instance, onClose }: SSHTerminalModalProps) {
               return;
             }
 
+            if (currentLine.trim() === 'clear') {
+              term.clear();
+              currentLine = '';
+              term.write('\x1b[36mroot@' + (instance.nickname || instance.provider) + '\x1b[0m:\x1b[34m~\x1b[0m$ ');
+              return;
+            }
+
             if (currentLine.trim()) {
-              // Simulate command execution
-              handleCommand(term, currentLine.trim());
+              await executeCommand(currentLine.trim());
             }
             
             currentLine = '';
@@ -153,28 +192,7 @@ export function SSHTerminalModal({ instance, onClose }: SSHTerminalModalProps) {
       }
     };
 
-    const handleCommand = (term: any, cmd: string) => {
-      const commands: Record<string, string> = {
-        'ls': 'bot.js  config.json  logs  node_modules  package.json',
-        'pwd': '/root/hft-bot',
-        'whoami': 'root',
-        'uptime': ' ' + new Date().toTimeString().slice(0, 8) + ' up ' + Math.floor(instance.uptimeSeconds / 86400) + ' days',
-        'pm2 list': '┌─────┬──────────┬─────────────┬─────────┬─────────┬──────────┐\n│ id  │ name     │ namespace   │ version │ mode    │ pid      │\n├─────┼──────────┼─────────────┼─────────┼─────────┼──────────┤\n│ 0   │ hft-bot  │ default     │ 1.0.0   │ fork    │ ' + (instance.botPid || '1234') + '     │\n└─────┴──────────┴─────────────┴─────────┴─────────┴──────────┘',
-        'pm2 logs': '[HFT-Bot] Trade executed: BTC/USDT LONG @ $67,234.50\n[HFT-Bot] Position size: 0.05 BTC\n[HFT-Bot] Monitoring market conditions...',
-        'free -h': '              total        used        free      shared  buff/cache   available\nMem:          1.9Gi       512Mi       1.0Gi       2.0Mi       512Mi       1.3Gi\nSwap:         1.0Gi          0B       1.0Gi',
-        'df -h': 'Filesystem      Size  Used Avail Use% Mounted on\n/dev/vda1        40G   12G   26G  32% /',
-      };
-
-      if (cmd in commands) {
-        term.writeln(commands[cmd]);
-      } else if (cmd.startsWith('echo ')) {
-        term.writeln(cmd.slice(5));
-      } else if (cmd === 'clear') {
-        term.clear();
-      } else {
-        term.writeln('\x1b[31mbash: ' + cmd + ': command not found\x1b[0m');
-      }
-    };
+        // Removed simulated command handler - now using real SSH execution
 
     initTerminal();
 

@@ -558,6 +558,100 @@ ${analysis}
         );
       }
 
+      case 'kill-switch-with-code': {
+        // Kill switch with code validation from dashboard
+        const { killCode } = params;
+        console.log('[telegram-bot] Processing kill switch with code validation');
+        
+        // Get stored kill code from system_secrets
+        const { data: secretData } = await supabase
+          .from('system_secrets')
+          .select('secret_value')
+          .eq('secret_name', 'KILL_SWITCH_CODE')
+          .single();
+        
+        // Default code is 123456 if not configured
+        const storedCode = secretData?.secret_value || '123456';
+        
+        if (killCode !== storedCode) {
+          console.log('[telegram-bot] Invalid kill code provided');
+          return new Response(
+            JSON.stringify({ success: false, error: 'Invalid kill code' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Get Telegram config
+        const { data: config } = await supabase
+          .from('telegram_config')
+          .select('bot_token, chat_id')
+          .single();
+
+        // Update vps_config to emergency_stopped
+        await supabase
+          .from('vps_config')
+          .update({ 
+            status: 'emergency_stopped',
+            emergency_stopped_at: new Date().toISOString()
+          })
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+
+        // Disable trading and enable kill switch
+        await supabase
+          .from('trading_config')
+          .update({ 
+            trading_enabled: false,
+            global_kill_switch_enabled: true,
+            bot_status: 'stopped'
+          })
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+
+        // Stop bot on VPS if possible
+        const { data: deployment } = await supabase
+          .from('hft_deployments')
+          .select('id, server_id')
+          .eq('status', 'active')
+          .limit(1)
+          .single();
+
+        if (deployment) {
+          try {
+            await supabase.functions.invoke('bot-control', {
+              body: { action: 'stop', deploymentId: deployment.id || deployment.server_id }
+            });
+          } catch (e) {
+            console.error('[telegram-bot] Failed to stop bot on VPS:', e);
+          }
+        }
+
+        // Log to audit
+        await supabase.from('audit_logs').insert({
+          action: 'kill_switch_activated',
+          entity_type: 'system',
+          entity_id: 'dashboard_with_code',
+          new_value: { source: 'dashboard_killswitch_validated', timestamp: new Date().toISOString() }
+        });
+
+        // Send Telegram notification if configured
+        if (config?.bot_token && config?.chat_id) {
+          await fetch(`${TELEGRAM_API}${config.bot_token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: config.chat_id,
+              text: '🚨 <b>EMERGENCY KILL-SWITCH ACTIVATED</b>\n\n⛔ All trading halted from dashboard with code verification.\n🔒 Global kill switch enabled.\n🛑 Bot stopped on VPS.',
+              parse_mode: 'HTML'
+            })
+          });
+        }
+
+        console.log('[telegram-bot] Kill switch with code activated');
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       case 'trade-notification': {
         // Send trade notification
         const { trade } = params;
