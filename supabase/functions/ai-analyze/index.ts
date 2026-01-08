@@ -255,7 +255,10 @@ serve(async (req) => {
         let exchangeCount = 0;
         
         // Analyze each symbol with 100ms delay (faster for 5s updates)
-        for (const sym of top10) {
+        // Only analyze top 3 pairs per exchange to stay under rate limits
+        const pairsToAnalyze = top10.slice(0, 3);
+        
+        for (const sym of pairsToAnalyze) {
           try {
             // Fetch price with caching
             const priceData = await fetchPriceData(sym, exName);
@@ -264,15 +267,14 @@ serve(async (req) => {
             const { price, change } = priceData;
             const cleanSymbol = sym.replace('USDT', '');
             
-            // NO SKIP LOGIC - Always update for real-time 5s updates
-            // Call Groq API for HFT analysis with profit timeframe prediction
+            // Call Groq API for HFT analysis
             const gr = await fetch(GROQ_API_URL, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: cfg?.model || 'llama-3.3-70b-versatile',
+                model: 'llama-3.1-8b-instant', // Use faster, cheaper model for rate limits
                 messages: [
-                  { role: 'system', content: 'You are an HFT scalping AI. Reply JSON only. Vary confidence 50-95 based on signal strength. Assign profit_timeframe_minutes based on volatility: use 1m for high volatility (>0.5% moves), 3m for medium volatility, 5m for lower volatility.' },
+                  { role: 'system', content: 'You are an HFT scalping AI. Reply JSON only. Vary confidence 50-95 based on signal strength.' },
                   { role: 'user', content: `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. JSON only:
 {"sentiment":"BULLISH"|"BEARISH"|"NEUTRAL","confidence":50-95,"insight":"max 8 words","support":number,"resistance":number,"profit_timeframe_minutes":1|3|5,"recommended_side":"long"|"short","expected_move_percent":0.1-1.0}` }
                 ],
@@ -285,10 +287,10 @@ serve(async (req) => {
               console.error(`[ai-analyze] Groq API error for ${sym}: status=${gr.status}, body=${errText.slice(0, 150)}`);
               totalErrors++;
               
-              // If rate limited (429), wait longer before continuing
+              // If rate limited (429), stop processing this exchange
               if (gr.status === 429) {
-                console.warn(`[ai-analyze] Rate limited, waiting 2s...`);
-                await new Promise(r => setTimeout(r, 2000));
+                console.warn(`[ai-analyze] Rate limited on ${exName}, moving to next exchange`);
+                break;
               }
               continue;
             }
@@ -302,24 +304,16 @@ serve(async (req) => {
             
             const a = JSON.parse(m[0]);
             
-            // Validate and normalize profit_timeframe_minutes
+            // Validate and normalize values
             let profitTimeframe = parseInt(a.profit_timeframe_minutes) || 5;
-            if (![1, 3, 5].includes(profitTimeframe)) {
-              profitTimeframe = 5;
-            }
-            
-            // Validate recommended_side
+            if (![1, 3, 5].includes(profitTimeframe)) profitTimeframe = 5;
             const recommendedSide = a.recommended_side === 'short' ? 'short' : 'long';
-            
-            // Validate expected_move_percent
             let expectedMove = parseFloat(a.expected_move_percent) || 0.25;
             expectedMove = Math.max(0.1, Math.min(2.0, expectedMove));
-            
-            // Validate confidence - vary between 50-95 (STRICT RULE)
             let confidence = parseInt(a.confidence) || 70;
             confidence = Math.max(50, Math.min(95, confidence));
             
-            // UPSERT instead of INSERT for continuous updates (STRICT RULE)
+            // UPSERT for continuous updates
             const { error: upsertError } = await supabase.from('ai_market_updates').upsert({
               symbol: cleanSymbol,
               exchange_name: exName,
@@ -333,7 +327,7 @@ serve(async (req) => {
               profit_timeframe_minutes: profitTimeframe,
               recommended_side: recommendedSide,
               expected_move_percent: expectedMove,
-              created_at: new Date().toISOString() // Force timestamp update
+              created_at: new Date().toISOString()
             }, { 
               onConflict: 'symbol,exchange_name',
               ignoreDuplicates: false 
@@ -346,8 +340,8 @@ serve(async (req) => {
               totalAnalyzed++;
             }
             
-            // Rate limit: 100ms between API calls for faster 5s updates
-            await new Promise(r => setTimeout(r, 100));
+            // Rate limit: 1500ms between API calls to stay under Groq free tier limits
+            await new Promise(r => setTimeout(r, 1500));
             
           } catch (e) {
             console.error(`[ai-analyze] Error analyzing ${sym}:`, e);
