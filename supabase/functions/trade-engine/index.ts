@@ -47,20 +47,68 @@ async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?:
     }
   } else if (exchangeKey === 'okx' && exchange.api_key && exchange.api_secret && exchange.api_passphrase) {
     const timestamp = new Date().toISOString();
-    const signature = await hmacSignB64(exchange.api_secret, timestamp + 'GET/api/v5/account/balance');
-    const resp = await fetch('https://www.okx.com/api/v5/account/balance', {
-      headers: {
-        'OK-ACCESS-KEY': exchange.api_key,
-        'OK-ACCESS-SIGN': signature,
-        'OK-ACCESS-TIMESTAMP': timestamp,
-        'OK-ACCESS-PASSPHRASE': exchange.api_passphrase,
-        'Content-Type': 'application/json'
+    
+    // 1. Fetch TRADING account balance
+    const tradingPath = '/api/v5/account/balance';
+    const tradingSign = await hmacSignB64(exchange.api_secret, timestamp + 'GET' + tradingPath);
+    try {
+      const tradingResp = await fetch(`https://www.okx.com${tradingPath}`, {
+        headers: {
+          'OK-ACCESS-KEY': exchange.api_key,
+          'OK-ACCESS-SIGN': tradingSign,
+          'OK-ACCESS-TIMESTAMP': timestamp,
+          'OK-ACCESS-PASSPHRASE': exchange.api_passphrase,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (tradingResp.ok) {
+        const tradingData = await tradingResp.json();
+        console.log('[trade-engine] OKX Trading account response:', JSON.stringify(tradingData));
+        if (tradingData.code === '0' && tradingData.data?.[0]) {
+          const details = tradingData.data[0].details || [];
+          const usdtDetail = details.find((d: { ccy: string }) => d.ccy === 'USDT');
+          if (usdtDetail) {
+            const tradingBalance = parseFloat(usdtDetail.availBal || '0') + parseFloat(usdtDetail.frozenBal || '0');
+            balance += tradingBalance;
+            console.log(`[trade-engine] OKX Trading USDT: ${tradingBalance}`);
+          }
+        }
       }
-    });
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.code === '0' && data.data?.[0]) balance = parseFloat(data.data[0].totalEq || '0');
+    } catch (err) {
+      console.error('[trade-engine] OKX Trading account fetch error:', err);
     }
+    
+    // 2. Fetch FUNDING account balance (where deposits usually go!)
+    const fundingTimestamp = new Date().toISOString();
+    const fundingPath = '/api/v5/asset/balances';
+    const fundingSign = await hmacSignB64(exchange.api_secret, fundingTimestamp + 'GET' + fundingPath);
+    try {
+      const fundingResp = await fetch(`https://www.okx.com${fundingPath}`, {
+        headers: {
+          'OK-ACCESS-KEY': exchange.api_key,
+          'OK-ACCESS-SIGN': fundingSign,
+          'OK-ACCESS-TIMESTAMP': fundingTimestamp,
+          'OK-ACCESS-PASSPHRASE': exchange.api_passphrase,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (fundingResp.ok) {
+        const fundingData = await fundingResp.json();
+        console.log('[trade-engine] OKX Funding account response:', JSON.stringify(fundingData));
+        if (fundingData.code === '0' && fundingData.data) {
+          const usdtFunding = fundingData.data.find((d: { ccy: string }) => d.ccy === 'USDT');
+          if (usdtFunding) {
+            const fundingBalance = parseFloat(usdtFunding.availBal || '0') + parseFloat(usdtFunding.frozenBal || '0');
+            balance += fundingBalance;
+            console.log(`[trade-engine] OKX Funding USDT: ${fundingBalance}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[trade-engine] OKX Funding account fetch error:', err);
+    }
+    
+    console.log(`[trade-engine] OKX Total USDT balance: ${balance}`);
   } else if (exchangeKey === 'bybit' && exchange.api_key && exchange.api_secret) {
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
