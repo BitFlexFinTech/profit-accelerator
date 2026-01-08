@@ -109,7 +109,7 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
             publicIp: existingData.publicIp,
           });
 
-          // Upsert vps_config with the existing instance - use proper structure
+          // Upsert vps_config - THROW on error to ensure persistence
           const { error: configError } = await supabase.from('vps_config').upsert({
             provider: 'vultr',
             region: existingData.region || 'tokyo',
@@ -120,11 +120,11 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
           
           if (configError) {
             console.error('[VultrWizard] vps_config upsert error:', configError);
-          } else {
-            console.log('[VultrWizard] vps_config updated successfully');
+            throw new Error(`Failed to save VPS config: ${configError.message}`);
           }
+          console.log('[VultrWizard] vps_config saved successfully');
 
-          // Also insert into vps_instances
+          // Upsert vps_instances - THROW on error
           const { error: instanceError } = await supabase.from('vps_instances').upsert({
             provider: 'vultr',
             provider_instance_id: existingData.instanceId,
@@ -138,7 +138,9 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
 
           if (instanceError) {
             console.error('[VultrWizard] vps_instances upsert error:', instanceError);
+            throw new Error(`Failed to save VPS instance: ${instanceError.message}`);
           }
+          console.log('[VultrWizard] vps_instances saved successfully');
           
           // Update failover_config for Vultr
           await supabase.from('failover_config').upsert({
@@ -148,6 +150,8 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
             last_health_check: new Date().toISOString(),
             region: existingData.region || 'tokyo'
           }, { onConflict: 'provider' });
+          
+          toast.success('VPS configuration saved to database!');
 
           setIsValidating(false);
 
@@ -184,14 +188,18 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
         publicIp: deployData.publicIp,
       });
 
-      // Register VPS in database
-      await supabase.from('vps_config').upsert({
+      // Register VPS in database - THROW on error
+      const { error: newConfigError } = await supabase.from('vps_config').upsert({
         provider: 'vultr',
         region: 'tokyo',
         status: 'running',
         outbound_ip: deployData.publicIp,
         updated_at: new Date().toISOString()
       }, { onConflict: 'provider' });
+      
+      if (newConfigError) {
+        throw new Error(`Failed to save VPS config: ${newConfigError.message}`);
+      }
 
       // Send Telegram notification
       await supabase.functions.invoke('telegram-bot', {
