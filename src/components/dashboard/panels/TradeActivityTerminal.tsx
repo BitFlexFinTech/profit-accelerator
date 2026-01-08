@@ -68,10 +68,31 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
     }
   }, [expanded, compact]);
 
-  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
+  // Initial fetch and SSOT update trigger
   useEffect(() => {
     fetchTrades();
   }, [fetchTrades, lastUpdate]);
+
+  // Direct realtime subscription for instant trade updates (bypasses debounce)
+  useEffect(() => {
+    const channel = supabase
+      .channel('trade-terminal-realtime-' + Date.now())
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'trading_journal'
+      }, (payload) => {
+        console.log('[TradeActivityTerminal] New trade received:', payload.new);
+        setTrades(prev => [payload.new as Trade, ...prev].slice(0, expanded ? 50 : 15));
+      })
+      .subscribe((status) => {
+        console.log('[TradeActivityTerminal] Subscription status:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [expanded]);
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '--';

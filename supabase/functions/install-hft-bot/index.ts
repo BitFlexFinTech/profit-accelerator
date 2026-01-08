@@ -1134,6 +1134,34 @@ async function recordTradeToSupabase(trade, status) {
   });
 }
 
+// Increment paper trade counter when trade closes successfully
+async function incrementPaperTradeProgress() {
+  return new Promise((resolve) => {
+    const urlParts = new URL(CONFIG.SUPABASE_URL);
+    const options = {
+      hostname: urlParts.hostname,
+      path: '/rest/v1/rpc/increment_paper_trade',
+      method: 'POST',
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      console.log('[🐟 PIRANHA] 📝 Paper trade counter incremented, status:', res.statusCode);
+      resolve(res.statusCode === 200 || res.statusCode === 204);
+    });
+    req.on('error', (e) => {
+      console.log('[🐟 PIRANHA] Paper trade increment error:', e.message);
+      resolve(false);
+    });
+    req.write('{}');
+    req.end();
+  });
+}
+
 // Open position based on AI signal
 async function openPosition(signal, credentials) {
   const exchange = (signal.exchange_name || 'binance').toLowerCase();
@@ -1326,6 +1354,10 @@ async function runPiranha() {
           
           // Sync closed trade to Supabase
           await recordTradeToSupabase(completedTrade, 'closed');
+          
+          // Increment paper trade progress counter (always paper mode for safety)
+          await incrementPaperTradeProgress();
+          console.log('[🐟 PIRANHA] 📝 Paper trade progress synced to dashboard');
           
           // Update totals
           state.totalTrades++;
