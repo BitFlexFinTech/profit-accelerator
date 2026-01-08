@@ -557,7 +557,7 @@ export function SettingsTab() {
                   <div className="text-xs">
                     <span className="text-muted-foreground">Latency: </span>
                     <span className={`font-mono ${providerStatus.latency ? (providerStatus.latency < 100 ? 'text-success' : providerStatus.latency < 150 ? 'text-warning' : 'text-destructive') : 'text-muted-foreground'}`}>
-                      {providerStatus.latency ? `${providerStatus.latency}ms` : '—'}
+                      {providerStatus.latency ? `${Math.round(providerStatus.latency)}ms` : '—'}
                     </span>
                   </div>
                   <div className="text-xs font-mono">
@@ -568,6 +568,28 @@ export function SettingsTab() {
                     )}
                   </div>
                 </div>
+                {/* Refresh button for connected providers */}
+                {isConnected && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="w-full mt-2 text-xs h-7"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      toast.info(`Refreshing ${provider.name} latency...`);
+                      try {
+                        await supabase.functions.invoke('check-vps-health');
+                        await refreshCloudData();
+                        toast.success(`${provider.name} latency updated`);
+                      } catch (err) {
+                        toast.error('Failed to refresh latency');
+                      }
+                    }}
+                  >
+                    <Loader2 className="w-3 h-3 mr-1" />
+                    Refresh Latency
+                  </Button>
+                )}
               </button>
             );
           })}

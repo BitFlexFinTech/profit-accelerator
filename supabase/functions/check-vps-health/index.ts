@@ -102,20 +102,60 @@ Deno.serve(async (req) => {
 
         // Insert metrics if we have a provider
         if (provider || requestIp) {
+          // Normalize CPU: if array (load averages), convert to percentage; if number, use directly
+          let cpuPercent = 0;
+          if (typeof healthData.cpu_percent === 'number') {
+            cpuPercent = healthData.cpu_percent;
+          } else if (Array.isArray(healthData.cpu)) {
+            cpuPercent = (healthData.cpu[0] ?? 0) * 100;
+          } else if (typeof healthData.cpu === 'number') {
+            cpuPercent = healthData.cpu;
+          }
+
+          // Normalize RAM
+          let ramPercent = 0;
+          if (typeof healthData.ram_percent === 'number') {
+            ramPercent = healthData.ram_percent;
+          } else if (typeof healthData.memory_percent === 'number') {
+            ramPercent = healthData.memory_percent;
+          } else if (typeof healthData.memory?.percent === 'number') {
+            ramPercent = healthData.memory.percent;
+          } else if (typeof healthData.memory === 'number') {
+            ramPercent = healthData.memory;
+          }
+
+          // Normalize disk
+          let diskPercent = 0;
+          if (typeof healthData.disk_percent === 'number') {
+            diskPercent = healthData.disk_percent;
+          } else if (typeof healthData.disk === 'number') {
+            diskPercent = healthData.disk;
+          }
+
+          // Normalize uptime
+          let uptimeSeconds = 0;
+          if (typeof healthData.uptime_seconds === 'number') {
+            uptimeSeconds = healthData.uptime_seconds;
+          } else if (typeof healthData.uptime === 'number') {
+            uptimeSeconds = healthData.uptime;
+          }
+
           const { error: metricsError } = await supabase.from('vps_metrics').insert({
             provider: provider || 'vultr',
-            cpu_percent: healthData.cpu_percent ?? healthData.cpu ?? 0,
-            ram_percent: healthData.ram_percent ?? healthData.memory_percent ?? 0,
-            disk_percent: healthData.disk_percent ?? 0,
+            cpu_percent: cpuPercent,
+            ram_percent: ramPercent,
+            disk_percent: diskPercent,
             latency_ms: latencyMs,
             network_in_mbps: 0,
             network_out_mbps: 0,
-            uptime_seconds: healthData.uptime_seconds ?? healthData.uptime ?? 0,
+            uptime_seconds: uptimeSeconds,
             recorded_at: new Date().toISOString(),
           });
 
           if (metricsError) {
             console.error('[check-vps-health] Failed to insert metrics:', metricsError);
+          } else {
+            console.log(`[check-vps-health] Inserted metrics: latency=${latencyMs}ms, cpu=${cpuPercent}%, ram=${ramPercent}%`);
           }
         }
 
