@@ -126,9 +126,11 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
         
         const { data: sshResult, error: sshError } = await supabase.functions.invoke('ssh-command', {
           body: {
-            host: deployData.publicIp,
+            ipAddress: deployData.publicIp,
+            privateKey: deployData.sshPrivateKey,
             command: installCommand,
-            provider: 'vultr'
+            username: 'root',
+            timeout: 120000
           }
         });
 
