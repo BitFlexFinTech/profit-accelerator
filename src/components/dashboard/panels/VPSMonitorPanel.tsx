@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Server, RefreshCw, Cpu, HardDrive, Activity, Wifi, Clock, Terminal } from 'lucide-react';
+import { Server, RefreshCw, Cpu, HardDrive, Activity, Wifi, Clock, Terminal, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useVPSMetrics } from '@/hooks/useVPSMetrics';
+import { useVPSInstances } from '@/hooks/useVPSInstances';
 import { supabase } from '@/integrations/supabase/client';
-import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { RegisterExistingVPS } from '@/components/vps/RegisterExistingVPS';
 
 interface VPSConfig {
   id: string;
@@ -18,9 +19,11 @@ interface VPSConfig {
 
 export function VPSMonitorPanel() {
   const { metrics, isLoading, refetch } = useVPSMetrics();
+  const { instances, refetch: refetchInstances } = useVPSInstances();
   const [vpsConfig, setVpsConfig] = useState<VPSConfig | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [metricsHistory, setMetricsHistory] = useState<any[]>([]);
+  const [showRegisterDialog, setShowRegisterDialog] = useState(false);
 
   useEffect(() => {
     fetchVPSConfig();
@@ -28,6 +31,26 @@ export function VPSMonitorPanel() {
   }, []);
 
   const fetchVPSConfig = async () => {
+    // First check vps_instances for registered servers
+    const { data: instanceData } = await supabase
+      .from('vps_instances')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (instanceData) {
+      setVpsConfig({
+        id: instanceData.id,
+        provider: instanceData.provider,
+        region: instanceData.region || 'unknown',
+        status: instanceData.status || 'unknown',
+        outbound_ip: instanceData.ip_address,
+      });
+      return;
+    }
+
+    // Fallback to vps_config
     const { data } = await supabase
       .from('vps_config')
       .select('*')
@@ -60,7 +83,7 @@ export function VPSMonitorPanel() {
     setIsRefreshing(true);
     try {
       const { data, error } = await supabase.functions.invoke('check-vps-health', {
-        body: { provider: 'contabo' }
+        body: { provider: vpsConfig?.provider || 'vultr' }
       });
       
       if (error) throw error;
@@ -75,13 +98,12 @@ export function VPSMonitorPanel() {
     }
   };
 
-  const currentMetric = metrics.find(m => m.provider === 'contabo') || metrics[0];
-
-  const getProgressColor = (value: number, warning: number, critical: number) => {
-    if (value >= critical) return 'bg-destructive';
-    if (value >= warning) return 'bg-warning';
-    return 'bg-success';
+  const handleRegisterSuccess = () => {
+    fetchVPSConfig();
+    refetchInstances();
   };
+
+  const currentMetric = metrics.find(m => m.provider === vpsConfig?.provider) || metrics[0];
 
   const formatUptime = (seconds: number | null) => {
     if (!seconds) return 'N/A';
@@ -91,20 +113,35 @@ export function VPSMonitorPanel() {
     return `${days}d ${hours}h ${mins}m`;
   };
 
-  if (!vpsConfig) {
+  if (!vpsConfig && instances.length === 0) {
     return (
-      <div className="glass-card p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center">
-            <Server className="w-5 h-5 text-muted-foreground" />
+      <>
+        <div className="glass-card p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center">
+              <Server className="w-5 h-5 text-muted-foreground" />
+            </div>
+            <div>
+              <h3 className="font-semibold">VPS Monitor</h3>
+              <p className="text-sm text-muted-foreground">No VPS configured</p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold">VPS Monitor</h3>
-            <p className="text-sm text-muted-foreground">No VPS configured</p>
-          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Register an existing VPS or deploy a new one to start monitoring.
+          </p>
+          <Button onClick={() => setShowRegisterDialog(true)} className="w-full">
+            <Plus className="w-4 h-4 mr-2" />
+            Register Existing VPS
+          </Button>
         </div>
-        <p className="text-sm text-muted-foreground">Configure a Contabo VPS in Settings to view metrics.</p>
-      </div>
+        <RegisterExistingVPS
+          open={showRegisterDialog}
+          onOpenChange={setShowRegisterDialog}
+          onSuccess={handleRegisterSuccess}
+          defaultIp="107.191.61.107"
+          defaultProvider="vultr"
+        />
+      </>
     );
   }
 

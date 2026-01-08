@@ -277,6 +277,45 @@ export function useVPSInstances() {
     [instances]
   );
 
+  const registerExistingVPS = useCallback(
+    async (data: {
+      ipAddress: string;
+      provider: Provider;
+      region?: string;
+      nickname?: string;
+      sshPrivateKey?: string;
+      monthlyCost?: number;
+    }): Promise<VPSInstance | null> => {
+      try {
+        const { data: instance, error: insertError } = await supabase
+          .from('vps_instances')
+          .insert({
+            ip_address: data.ipAddress,
+            provider: data.provider,
+            region: data.region || 'unknown',
+            nickname: data.nickname || `${data.provider}-server`,
+            ssh_private_key: data.sshPrivateKey,
+            status: 'running',
+            bot_status: 'stopped',
+            instance_size: 'unknown',
+            monthly_cost: data.monthlyCost || 0,
+          })
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+
+        toast.success('VPS registered successfully');
+        return transformInstance(instance);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to register VPS';
+        toast.error(message);
+        return null;
+      }
+    },
+    []
+  );
+
   return {
     instances,
     loading,
@@ -289,5 +328,6 @@ export function useVPSInstances() {
     deleteInstance,
     restartBot,
     rebootServer,
+    registerExistingVPS,
   };
 }
