@@ -73,7 +73,7 @@ export function DashboardLayout() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       {/* Top Navigation Bar */}
       <header className="glass-card rounded-none border-x-0 border-t-0 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-4">

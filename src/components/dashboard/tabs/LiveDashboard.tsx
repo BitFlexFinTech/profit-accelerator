@@ -47,7 +47,7 @@ export function LiveDashboard() {
         {/* RIGHT Column - News (LONG) + Infrastructure (SMALL) */}
         <div className="flex flex-col gap-1 min-h-0 h-full">
           {/* News Panel - EXPANDED (takes most space) */}
-          <div className="flex-1 min-h-[400px]">
+          <div className="flex-1 min-h-0">
             <NewsPanel />
           </div>
           
