@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
+import { cn } from '@/lib/utils';
 
 interface AIUpdate {
   id: string;
@@ -21,9 +22,11 @@ interface AIUpdate {
 
 interface AIMarketUpdatesPanelProps {
   fullHeight?: boolean;
+  compact?: boolean;
+  className?: string;
 }
 
-export function AIMarketUpdatesPanel({ fullHeight = false }: AIMarketUpdatesPanelProps) {
+export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, className }: AIMarketUpdatesPanelProps) {
   const [updates, setUpdates] = useState<AIUpdate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
@@ -69,7 +72,6 @@ export function AIMarketUpdatesPanel({ fullHeight = false }: AIMarketUpdatesPane
     }
   };
 
-  // Countdown timer for next scan
   useEffect(() => {
     const countdownInterval = setInterval(() => {
       setNextScanIn(prev => (prev > 0 ? prev - 1 : 60));
@@ -177,7 +179,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false }: AIMarketUpdatesPane
   const okxUpdates = updates.filter(u => u.exchange_name?.toLowerCase() === 'okx');
 
   return (
-    <div className={`glass-card p-3 flex flex-col min-h-0 ${fullHeight ? 'h-full' : ''}`}>
+    <div className={cn("glass-card p-3 flex flex-col min-h-0", fullHeight && "h-full", className)}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <div className="flex items-center gap-2">
