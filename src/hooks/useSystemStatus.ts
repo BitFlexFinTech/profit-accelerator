@@ -9,22 +9,24 @@ interface SystemStatus {
   isLoading: boolean;
 }
 
-export function useSystemStatus() {
-  const [status, setStatus] = useState<SystemStatus>({
-    ai: { isActive: false, model: null },
-    exchanges: { connected: 0, total: 11, balanceUsdt: 0 },
-    vps: { status: 'inactive', region: 'ap-northeast-1', ip: null, provider: null },
-    isFullyOperational: false,
-    isLoading: true,
-  });
+const initialStatus: SystemStatus = {
+  ai: { isActive: false, model: null },
+  exchanges: { connected: 0, total: 11, balanceUsdt: 0 },
+  vps: { status: 'inactive', region: 'ap-northeast-1', ip: null, provider: null },
+  isFullyOperational: false,
+  isLoading: true,
+};
 
-  // Prevent concurrent fetches and debounce rapid updates
+export function useSystemStatus() {
+  const [status, setStatus] = useState<SystemStatus>(initialStatus);
+
+  // Use refs to avoid closure/dependency issues
   const fetchingRef = useRef(false);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   const fetchStatus = useCallback(async () => {
-    // Prevent concurrent fetches
-    if (fetchingRef.current) return;
+    if (fetchingRef.current || !mountedRef.current) return;
     fetchingRef.current = true;
 
     try {
@@ -33,6 +35,8 @@ export function useSystemStatus() {
         supabase.from('exchange_connections').select('is_connected, balance_usdt'),
         supabase.from('vps_config').select('status, region, outbound_ip, provider').maybeSingle(),
       ]);
+
+      if (!mountedRef.current) return;
 
       const connectedExchanges = exchangeResult.data?.filter(e => e.is_connected) || [];
       const totalBalance = connectedExchanges.reduce((sum, e) => sum + (Number(e.balance_usdt) || 0), 0);
@@ -61,67 +65,83 @@ export function useSystemStatus() {
       });
     } catch (err) {
       console.error('[useSystemStatus] Error fetching:', err);
-      setStatus(prev => ({ ...prev, isLoading: false }));
+      if (mountedRef.current) {
+        setStatus(prev => ({ ...prev, isLoading: false }));
+      }
     } finally {
       fetchingRef.current = false;
     }
   }, []);
 
-  // Debounced fetch to prevent rapid re-renders from realtime events
-  const debouncedFetch = useCallback(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      fetchStatus();
-    }, 300);
-  }, [fetchStatus]);
-
   const checkVpsHealth = useCallback(async () => {
+    if (!mountedRef.current) return;
+    
     try {
-      console.log('[useSystemStatus] Triggering VPS health check...');
-      const { data, error } = await supabase.functions.invoke('check-vps-health');
+      const { error } = await supabase.functions.invoke('check-vps-health');
       if (error) {
         console.error('[useSystemStatus] Health check error:', error);
-      } else {
-        console.log('[useSystemStatus] Health check result:', data);
       }
-      // Refetch status after health check updates the DB
-      await fetchStatus();
     } catch (err) {
       console.error('[useSystemStatus] Health check failed:', err);
-      // Still fetch status even if health check fails
+    }
+    
+    // Always refetch after health check
+    if (mountedRef.current) {
       await fetchStatus();
     }
   }, [fetchStatus]);
 
   useEffect(() => {
+    mountedRef.current = true;
+
+    // Debounced fetch handler for realtime events
+    const handleRealtimeChange = () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      debounceTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) {
+          fetchStatus();
+        }
+      }, 300);
+    };
+
     // Initial fetch
     fetchStatus();
     
-    // Run health check on mount
-    checkVpsHealth();
+    // Run health check on mount (delayed to prevent race)
+    const healthCheckTimeout = setTimeout(() => {
+      if (mountedRef.current) {
+        checkVpsHealth();
+      }
+    }, 1000);
 
     // Auto-refresh health every 30 seconds
-    const healthInterval = setInterval(checkVpsHealth, 30000);
+    const healthInterval = setInterval(() => {
+      if (mountedRef.current) {
+        checkVpsHealth();
+      }
+    }, 30000);
 
-    // Subscribe to realtime changes on all critical tables (debounced)
+    // Subscribe to realtime changes
     const channel = supabase
       .channel('system-status-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_config' }, debouncedFetch)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, debouncedFetch)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, debouncedFetch)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_metrics' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_config' }, handleRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, handleRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, handleRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_metrics' }, handleRealtimeChange)
       .subscribe();
 
     return () => {
+      mountedRef.current = false;
+      clearTimeout(healthCheckTimeout);
       clearInterval(healthInterval);
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
       supabase.removeChannel(channel);
     };
-  }, [fetchStatus, checkVpsHealth, debouncedFetch]);
+  }, [fetchStatus, checkVpsHealth]);
 
   return { ...status, refetch: fetchStatus, checkHealth: checkVpsHealth };
 }
