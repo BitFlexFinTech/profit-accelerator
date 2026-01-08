@@ -46,16 +46,161 @@ apt-get upgrade -y -qq
 
 # Install base dependencies (NO docker.io or docker-compose from Ubuntu)
 log_info "Installing base dependencies..."
-apt-get install -y -qq curl wget htop net-tools jq ufw fail2ban ca-certificates gnupg lsb-release
+apt-get install -y -qq curl wget htop net-tools jq ufw fail2ban ca-certificates gnupg lsb-release iptables
+
+# ============================================================================
+# SELF-HEALING DOCKER INSTALLATION
+# ============================================================================
+
+# Function: Check if Docker daemon is healthy
+docker_is_healthy() {
+  docker info >/dev/null 2>&1
+}
+
+# Function: Print Docker diagnostics
+print_docker_diagnostics() {
+  log_warn "Docker diagnostics:"
+  echo "--- systemctl status docker ---"
+  systemctl status docker --no-pager -l 2>&1 || true
+  echo ""
+  echo "--- journalctl -u docker (last 50 lines) ---"
+  journalctl -u docker --no-pager -n 50 2>&1 || true
+  echo ""
+  echo "--- docker info ---"
+  docker info 2>&1 || true
+  echo ""
+}
+
+# Function: Apply kernel modules and sysctl fixes
+apply_kernel_fixes() {
+  log_info "Applying kernel module and sysctl fixes..."
+  modprobe overlay 2>/dev/null || true
+  modprobe br_netfilter 2>/dev/null || true
+  
+  # Ensure sysctl settings persist
+  cat > /etc/sysctl.d/99-docker.conf << 'SYSCTL_EOF'
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+SYSCTL_EOF
+  
+  sysctl --system >/dev/null 2>&1 || true
+  sysctl -w net.bridge.bridge-nf-call-iptables=1 2>/dev/null || true
+  sysctl -w net.bridge.bridge-nf-call-ip6tables=1 2>/dev/null || true
+  sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
+}
+
+# Function: Fix iptables for Docker compatibility
+fix_iptables() {
+  log_info "Fixing iptables configuration..."
+  # Ensure iptables uses nft backend (Ubuntu 24.04+)
+  update-alternatives --set iptables /usr/sbin/iptables-nft 2>/dev/null || true
+  update-alternatives --set ip6tables /usr/sbin/ip6tables-nft 2>/dev/null || true
+  
+  # Flush any conflicting rules that might block Docker
+  iptables -F DOCKER 2>/dev/null || true
+  iptables -t nat -F DOCKER 2>/dev/null || true
+}
+
+# Function: Reset Docker state completely
+reset_docker_state() {
+  log_info "Resetting Docker state..."
+  systemctl stop docker.socket 2>/dev/null || true
+  systemctl stop docker 2>/dev/null || true
+  systemctl stop containerd 2>/dev/null || true
+  
+  rm -rf /var/lib/docker 2>/dev/null || true
+  rm -rf /var/lib/containerd 2>/dev/null || true
+  rm -rf /var/run/docker.sock 2>/dev/null || true
+  rm -rf /var/run/docker 2>/dev/null || true
+  
+  # Backup and remove daemon.json if it exists
+  if [ -f /etc/docker/daemon.json ]; then
+    mv /etc/docker/daemon.json /etc/docker/daemon.json.bak.\$(date +%s) 2>/dev/null || true
+  fi
+}
+
+# Function: Attempt to start Docker daemon
+start_docker_daemon() {
+  log_info "Starting Docker daemon..."
+  systemctl daemon-reload
+  systemctl enable docker.socket 2>/dev/null || true
+  systemctl enable containerd 2>/dev/null || true
+  systemctl enable docker
+  
+  systemctl start containerd 2>/dev/null || true
+  sleep 2
+  systemctl start docker
+  sleep 3
+}
+
+# Function: Try to start Docker with remediation
+start_docker_with_remediation() {
+  local attempt=1
+  local max_attempts=4
+  
+  while [ \$attempt -le \$max_attempts ]; do
+    log_info "Docker start attempt \$attempt/\$max_attempts..."
+    
+    # Try to start Docker
+    start_docker_daemon 2>/dev/null || true
+    
+    # Check if healthy
+    if docker_is_healthy; then
+      log_info "✅ Docker daemon is healthy!"
+      return 0
+    fi
+    
+    log_warn "Docker not healthy, applying remediation \$attempt..."
+    
+    case \$attempt in
+      1)
+        # First: Apply kernel fixes
+        apply_kernel_fixes
+        ;;
+      2)
+        # Second: Fix iptables
+        fix_iptables
+        apply_kernel_fixes
+        ;;
+      3)
+        # Third: Reset Docker state completely
+        reset_docker_state
+        apply_kernel_fixes
+        fix_iptables
+        ;;
+      4)
+        # Fourth: Full nuclear option
+        log_warn "Attempting full Docker reinstall..."
+        apt-get remove -y --purge docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true
+        reset_docker_state
+        apt-get update -qq
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        apply_kernel_fixes
+        fix_iptables
+        ;;
+    esac
+    
+    attempt=\$((attempt + 1))
+    sleep 2
+  done
+  
+  return 1
+}
 
 # Remove any legacy Docker installations to prevent conflicts
 log_info "Removing legacy Docker packages..."
+systemctl stop docker.socket 2>/dev/null || true
 systemctl stop docker 2>/dev/null || true
+systemctl stop containerd 2>/dev/null || true
 apt-get remove -y docker docker.io docker-compose docker-compose-v2 containerd runc 2>/dev/null || true
 rm -rf /var/lib/docker /var/lib/containerd 2>/dev/null || true
 rm -f /etc/apt/sources.list.d/docker.list 2>/dev/null || true
 rm -f /etc/apt/keyrings/docker.gpg 2>/dev/null || true
 apt-get autoremove -y -qq 2>/dev/null || true
+
+# Apply kernel fixes BEFORE installing Docker
+apply_kernel_fixes
 
 # Install Docker from OFFICIAL Docker repository (includes Compose V2)
 log_info "Installing Docker from official Docker repository..."
@@ -83,10 +228,36 @@ docker compose version || {
 COMPOSE="docker compose"
 log_info "Using: \$COMPOSE"
 
-# Enable Docker
-log_info "Configuring Docker..."
-systemctl enable docker
-systemctl start docker
+# ============================================================================
+# START DOCKER WITH SELF-HEALING REMEDIATION
+# ============================================================================
+log_info "Starting Docker with self-healing remediation..."
+
+if ! start_docker_with_remediation; then
+  log_error "❌ Docker daemon failed to start after all remediation attempts!"
+  echo ""
+  print_docker_diagnostics
+  echo ""
+  log_error "Please check the diagnostics above and report the issue."
+  log_error "Common causes: incompatible kernel, missing virtualization, or VPS restrictions."
+  exit 1
+fi
+
+# HARD GATE: Verify Docker is truly working before proceeding
+log_info "Final Docker health verification..."
+if ! docker_is_healthy; then
+  log_error "❌ Docker daemon is not running! Cannot proceed."
+  print_docker_diagnostics
+  exit 1
+fi
+
+# Verify we can actually run containers
+log_info "Testing Docker container execution..."
+if ! docker run --rm hello-world >/dev/null 2>&1; then
+  log_warn "Docker hello-world test failed, but daemon is running. Proceeding..."
+fi
+
+log_info "✅ Docker is fully operational!"
 
 # Create HFT directory structure
 log_info "Creating directory structure..."
