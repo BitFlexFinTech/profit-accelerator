@@ -41,15 +41,15 @@ export function DigitalOceanWizard({ open, onOpenChange }: DigitalOceanWizardPro
       return;
     }
 
+    // DigitalOcean tokens are 64+ characters
+    if (apiToken.trim().length < 64) {
+      toast.error('Invalid API token format - DigitalOcean tokens are 64+ characters');
+      return;
+    }
+
     setIsValidating(true);
 
     try {
-      // The edge function uses the token from secrets, but we validate format here
-      if (apiToken.length < 64) {
-        toast.error('Invalid API token format');
-        setIsValidating(false);
-        return;
-      }
 
       toast.success('Token validated! Starting deployment...');
       setIsValidating(false);

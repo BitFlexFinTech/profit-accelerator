@@ -43,6 +43,18 @@ export function AWSWizard({ open, onOpenChange }: AWSWizardProps) {
       return;
     }
 
+    // AWS Access Key ID format validation (starts with AKIA, 20 chars)
+    if (!accessKeyId.trim().match(/^AKIA[A-Z0-9]{16}$/)) {
+      toast.error('Invalid Access Key ID format - should start with AKIA and be 20 characters');
+      return;
+    }
+
+    // AWS Secret Access Key is typically 40 characters
+    if (secretAccessKey.trim().length < 30) {
+      toast.error('Invalid Secret Access Key format - should be 40 characters');
+      return;
+    }
+
     setIsValidating(true);
 
     try {

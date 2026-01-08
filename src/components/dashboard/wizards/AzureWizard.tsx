@@ -47,6 +47,25 @@ export function AzureWizard({ open, onOpenChange }: AzureWizardProps) {
       return;
     }
 
+    // Azure GUID format validation
+    const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!guidRegex.test(subscriptionId.trim())) {
+      toast.error('Invalid Subscription ID format - should be a valid GUID');
+      return;
+    }
+    if (!guidRegex.test(tenantId.trim())) {
+      toast.error('Invalid Tenant ID format - should be a valid GUID');
+      return;
+    }
+    if (!guidRegex.test(clientId.trim())) {
+      toast.error('Invalid Client ID format - should be a valid GUID');
+      return;
+    }
+    if (clientSecret.trim().length < 10) {
+      toast.error('Invalid Client Secret format');
+      return;
+    }
+
     setIsValidating(true);
 
     try {
