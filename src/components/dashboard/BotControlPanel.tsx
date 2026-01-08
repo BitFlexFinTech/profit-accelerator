@@ -100,10 +100,11 @@ export function BotControlPanel() {
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
       // Try to get deployment from hft_deployments first
+      // CRITICAL FIX: Query for both 'active' AND 'running' status
       const { data: deployment } = await supabase
         .from('hft_deployments')
         .select('id, server_id, ip_address, provider')
-        .eq('status', 'active')
+        .in('status', ['active', 'running'])
         .limit(1)
         .single();
 
@@ -173,10 +174,11 @@ export function BotControlPanel() {
     setIsStopping(true);
     try {
       // Try to get deployment from hft_deployments first
+      // CRITICAL FIX: Query for both 'active' AND 'running' status
       const { data: deployment } = await supabase
         .from('hft_deployments')
         .select('id, server_id, ip_address, provider')
-        .eq('status', 'active')
+        .in('status', ['active', 'running'])
         .limit(1)
         .single();
 

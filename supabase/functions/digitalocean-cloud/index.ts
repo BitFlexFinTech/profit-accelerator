@@ -267,6 +267,115 @@ serve(async (req) => {
       );
     }
 
+    // Create SSH Key (required for VPS access)
+    if (action === 'create-ssh-key') {
+      const { name, publicKey } = await req.json().catch(() => ({}));
+      console.log('[digitalocean-cloud] Creating SSH key:', name);
+      
+      const result = await doRequest('/account/keys', token, {
+        method: 'POST',
+        body: JSON.stringify({ name, public_key: publicKey }),
+      });
+
+      if (!result.ok) {
+        // Key might already exist, try to find it
+        const existingKeys = await doRequest('/account/keys', token);
+        const existingKey = existingKeys.data.ssh_keys?.find((k: any) => k.name === name);
+        if (existingKey) {
+          return new Response(
+            JSON.stringify({ success: true, keyId: existingKey.id, fingerprint: existingKey.fingerprint }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: false, error: result.data.message || 'Failed to create SSH key' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          keyId: result.data.ssh_key?.id, 
+          fingerprint: result.data.ssh_key?.fingerprint 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Create instance (alias for deploy - matches deploy-bot expectations)
+    if (action === 'create-instance') {
+      const { region: instanceRegion = 'sgp1', plan = 's-1vcpu-1gb', label, userData, sshKeyName } = await req.json().catch(() => ({}));
+      console.log('[digitalocean-cloud] Creating instance via create-instance action in', instanceRegion || region);
+      
+      const installScript = getInstallScript(instanceRegion || region);
+      
+      const dropletPayload: Record<string, unknown> = {
+        name: label || `hft-bot-${instanceRegion || region}`,
+        region: instanceRegion || region,
+        size: plan,
+        image: 'ubuntu-24-04-x64',
+        user_data: userData || installScript,
+        tags: ['hft-bot', 'trading', 'auto-deployed'],
+        monitoring: true,
+      };
+
+      const result = await doRequest('/droplets', token, {
+        method: 'POST',
+        body: JSON.stringify(dropletPayload),
+      });
+
+      if (!result.ok) {
+        return new Response(
+          JSON.stringify({ success: false, error: result.data.message || 'Failed to create instance' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          instanceId: result.data.droplet.id,
+          ipAddress: null, // Will be populated after boot
+          status: 'creating',
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get instance status (matches deploy-bot expectations)
+    if (action === 'get-instance') {
+      const { instanceId: getInstanceId } = await req.json().catch(() => ({}));
+      if (!getInstanceId) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'instanceId required' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+
+      const result = await doRequest(`/droplets/${getInstanceId}`, token);
+      
+      if (!result.ok) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Instance not found' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
+        );
+      }
+
+      const droplet = result.data.droplet;
+      const publicIp = droplet.networks?.v4?.find((n: any) => n.type === 'public')?.ip_address;
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          instanceId: droplet.id,
+          status: droplet.status === 'active' ? 'running' : droplet.status,
+          ipAddress: publicIp || null,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Deploy new Droplet
     if (action === 'deploy') {
       console.log('[digitalocean-cloud] Creating Droplet in', region);
