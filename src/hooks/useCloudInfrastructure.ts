@@ -160,10 +160,23 @@ export function useCloudInfrastructure() {
         .select('*')
         .order('run_at', { ascending: false });
 
+      // Build a map of latest latency from vps_metrics per provider
+      const latencyFromMetrics: Record<string, number> = {};
+      if (allMetrics) {
+        for (const metric of allMetrics) {
+          if (!latencyFromMetrics[metric.provider] && metric.latency_ms) {
+            latencyFromMetrics[metric.provider] = metric.latency_ms;
+          }
+        }
+      }
+
       // Build providers list from failover configs
       const providers: CloudProvider[] = (failoverConfigs || []).map(fc => {
         const vps = vpsConfigs?.find(v => v.provider === fc.provider);
         const pricing = PROVIDER_PRICING[fc.provider] || { monthly: 0, free: false, region: 'unknown' };
+        
+        // Use latency from vps_metrics first, then fallback to failover_config
+        const actualLatency = latencyFromMetrics[fc.provider] || fc.latency_ms || 0;
         
         return {
           id: fc.id,
@@ -171,7 +184,7 @@ export function useCloudInfrastructure() {
           status: vps?.status || 'not_configured',
           region: fc.region || pricing.region || 'unknown',
           outbound_ip: vps?.outbound_ip || null,
-          latency_ms: fc.latency_ms || 0,
+          latency_ms: actualLatency,
           is_primary: fc.is_primary || false,
           is_enabled: fc.is_enabled ?? true,
           consecutive_failures: fc.consecutive_failures || 0,

@@ -23,6 +23,7 @@ import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
 import { RecentTradesPanel } from '../panels/RecentTradesPanel';
 import { PnLPanel } from '../panels/PnLPanel';
 import { TradeExecutionLatencyPanel } from '../panels/TradeExecutionLatencyPanel';
+import { PortfolioBreakdownPanel } from '../panels/PortfolioBreakdownPanel';
 
 interface PortfolioMetrics {
   sharpeRatio: number | null;
@@ -206,6 +207,9 @@ export function PortfolioAnalytics() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <PnLPanel />
       </div>
+
+      {/* Portfolio Breakdown */}
+      <PortfolioBreakdownPanel />
 
       {/* Trade Execution Latency - Moved from LiveDashboard */}
       <TradeExecutionLatencyPanel />
