@@ -161,10 +161,31 @@ serve(async (req) => {
     let command = '';
     let newBotStatus = '';
 
+    // Build .env.exchanges content for Docker
+    let envFileContent = '';
+    if (action === 'start' || action === 'restart') {
+      const { data: exchanges } = await supabase
+        .from('exchange_connections')
+        .select('exchange_name, api_key, api_secret, api_passphrase')
+        .eq('is_connected', true);
+      
+      if (exchanges?.length) {
+        const envLines: string[] = ['STRATEGY_ENABLED=true', 'TRADE_MODE=SPOT'];
+        for (const ex of exchanges) {
+          const name = ex.exchange_name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+          if (ex.api_key) envLines.push(`${name}_API_KEY=${ex.api_key}`);
+          if (ex.api_secret) envLines.push(`${name}_API_SECRET=${ex.api_secret}`);
+          if (ex.api_passphrase) envLines.push(`${name}_PASSPHRASE=${ex.api_passphrase}`);
+        }
+        envFileContent = envLines.join('\\n');
+        console.log(`[bot-control] Prepared .env.exchanges for ${exchanges.length} exchanges`);
+      }
+    }
+
     switch (action) {
       case 'start':
-        // Create start signal file, set STRATEGY_ENABLED, inject credentials, restart container
-        command = `mkdir -p /opt/hft-bot/app/data && touch /opt/hft-bot/app/data/START_SIGNAL && cd /opt/hft-bot && ${exchangeEnvVars}export STRATEGY_ENABLED=true && docker compose down 2>/dev/null; docker compose up -d --remove-orphans`;
+        // Write .env.exchanges file, then start Docker with it
+        command = `mkdir -p /opt/hft-bot/app/data && touch /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
         newBotStatus = 'running';
         break;
       case 'stop':
@@ -173,8 +194,8 @@ serve(async (req) => {
         newBotStatus = 'stopped';
         break;
       case 'restart':
-        // Restart with credentials
-        command = `cd /opt/hft-bot && ${exchangeEnvVars}export STRATEGY_ENABLED=true && docker compose down 2>/dev/null; docker compose up -d --remove-orphans`;
+        // Restart with credentials from .env.exchanges
+        command = `echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
         newBotStatus = 'running';
         break;
       case 'status':

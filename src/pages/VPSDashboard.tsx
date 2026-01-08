@@ -11,13 +11,15 @@ import {
   DollarSign,
   Activity,
   Bell,
-  LayoutGrid
+  LayoutGrid,
+  ArrowRightLeft
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useVPSInstances } from '@/hooks/useVPSInstances';
 import { ServerManagementCard } from '@/components/vps/ServerManagementCard';
 import { LogViewerModal } from '@/components/vps/LogViewerModal';
 import { SSHTerminalModal } from '@/components/vps/SSHTerminalModal';
+import { VPSSwitcher } from '@/components/vps/VPSSwitcher';
 import { CostTrackingDashboard } from '@/components/dashboard/panels/CostTrackingDashboard';
 import { VPSAlertConfig } from '@/components/dashboard/panels/VPSAlertConfig';
 import { VPSInstance } from '@/types/cloudCredentials';
@@ -158,12 +160,16 @@ export default function VPSDashboard() {
           </Card>
         </div>
 
-        {/* Tabs for Instances, Costs, Alerts */}
+        {/* Tabs for Instances, Failover, Costs, Alerts */}
         <Tabs defaultValue="instances" className="w-full">
           <TabsList className="mb-4">
             <TabsTrigger value="instances" className="gap-2">
               <LayoutGrid className="h-4 w-4" />
               Instances
+            </TabsTrigger>
+            <TabsTrigger value="failover" className="gap-2">
+              <ArrowRightLeft className="h-4 w-4" />
+              Failover
             </TabsTrigger>
             <TabsTrigger value="costs" className="gap-2">
               <DollarSign className="h-4 w-4" />
@@ -202,6 +208,19 @@ export default function VPSDashboard() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="failover">
+            <div className="space-y-4">
+              <VPSSwitcher onSwitch={() => refetch()} />
+              <Card className="p-4 bg-card/50 border-border/50">
+                <h4 className="font-medium mb-2">Zero-Downtime Switching</h4>
+                <p className="text-sm text-muted-foreground">
+                  Switch between VPS instances without interrupting active trades. 
+                  The migration process waits for open positions to close before transferring.
+                </p>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="costs">
