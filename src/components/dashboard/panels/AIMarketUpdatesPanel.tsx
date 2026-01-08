@@ -128,7 +128,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
           .select('*')
           .order('confidence', { ascending: false })
           .order('created_at', { ascending: false })
-          .limit(50);
+          .limit(100);
 
         if (error) throw error;
         setUpdates((data as AIUpdate[]) || []);
@@ -165,7 +165,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
               if (b.confidence !== a.confidence) return b.confidence - a.confidence;
               return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
             })
-            .slice(0, 50);
+            .slice(0, 100);
         });
       })
       .subscribe();
