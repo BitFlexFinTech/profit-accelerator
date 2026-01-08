@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { BotControlPanel } from '../BotControlPanel';
 import { CompactMetricsBar } from '../panels/CompactMetricsBar';
 import { EquityChartPanel } from '../panels/EquityChartPanel';
@@ -11,32 +11,24 @@ import { RateLimitMonitorPanel } from '../panels/RateLimitMonitorPanel';
 import { MarketWatchPanel } from '../panels/MarketWatchPanel';
 import { QuickActionsPanel } from '../panels/QuickActionsPanel';
 import { RiskDashboardPanel } from '../panels/RiskDashboardPanel';
+import { ExchangeConnectionsCard } from '../panels/ExchangeConnectionsCard';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
-import { supabase } from '@/integrations/supabase/client';
+import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
 
 export function LiveDashboard() {
   useTradeNotifications();
   const { sync } = useExchangeWebSocket();
-
-  const syncBalances = useCallback(async () => {
-    try {
-      await supabase.functions.invoke('trade-engine', {
-        body: { action: 'sync-balances' }
-      });
-    } catch (err) {
-      console.error('[LiveDashboard] Balance sync error:', err);
-    }
-  }, []);
+  const { startPolling, stopPolling } = useLiveBalancePolling(30); // Poll every 30 seconds
 
   useEffect(() => {
     sync();
-    syncBalances();
+    startPolling(); // Start CCXT-based comprehensive balance polling
     
-    // Auto-sync every 10 seconds for faster updates
-    const interval = setInterval(syncBalances, 10000);
-    return () => clearInterval(interval);
-  }, [sync, syncBalances]);
+    return () => {
+      stopPolling();
+    };
+  }, [sync, startPolling, stopPolling]);
 
   return (
     <div className="h-[calc(100vh-140px)] flex flex-col gap-3 overflow-hidden animate-fade-in">
@@ -83,6 +75,11 @@ export function LiveDashboard() {
           {/* Rate Limit Monitor - Real-time API usage */}
           <div className="flex-shrink-0">
             <RateLimitMonitorPanel />
+          </div>
+
+          {/* Exchange Connections Card */}
+          <div className="flex-shrink-0">
+            <ExchangeConnectionsCard />
           </div>
 
           {/* Cloud Status - Compact row */}
