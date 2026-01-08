@@ -11,7 +11,6 @@ interface RateLimitStats {
   requestsThisMinute: number;
   limit: number;
   usagePercent: number;
-  timeUntilResetMs: number;
   status: 'ok' | 'warning' | 'critical';
 }
 
@@ -20,26 +19,26 @@ const SERVICE_LIMITS: Record<string, { limit: number; label: string }> = {
   okx: { limit: 3000, label: 'OKX' },
   kucoin: { limit: 2000, label: 'KuCoin' },
   bybit: { limit: 2500, label: 'Bybit' },
-  groq: { limit: 30, label: 'Groq AI' },
+  groq: { limit: 30, label: 'Groq' },
 };
 
-export function RateLimitMonitorPanel() {
-  const [stats, setStats] = useState<RateLimitStats[]>([]);
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+interface RateLimitMonitorPanelProps {
+  compact?: boolean;
+}
 
-  // Fetch actual API request logs from database
+export function RateLimitMonitorPanel({ compact = false }: RateLimitMonitorPanelProps) {
+  const [stats, setStats] = useState<RateLimitStats[]>([]);
+
   const updateStats = useCallback(async () => {
     const now = new Date();
     const oneMinuteAgo = new Date(now.getTime() - 60000);
     
     try {
-      // Query api_request_logs from the last minute, grouped by exchange
       const { data: logs } = await supabase
         .from('api_request_logs')
         .select('exchange_name')
         .gte('request_time', oneMinuteAgo.toISOString());
       
-      // Count requests per service
       const counts: Record<string, number> = {};
       if (logs) {
         for (const log of logs) {
@@ -48,7 +47,6 @@ export function RateLimitMonitorPanel() {
         }
       }
       
-      // Build stats for all monitored services
       const newStats: RateLimitStats[] = Object.entries(SERVICE_LIMITS).map(([service, config]) => {
         const requestsThisMinute = counts[service] || 0;
         const usagePercent = (requestsThisMinute / config.limit) * 100;
@@ -63,13 +61,11 @@ export function RateLimitMonitorPanel() {
           requestsThisMinute,
           limit: config.limit,
           usagePercent: Math.min(100, usagePercent),
-          timeUntilResetMs: 60000 - (now.getTime() % 60000),
           status,
         };
       });
 
       setStats(newStats);
-      setLastUpdate(now);
     } catch (err) {
       console.error('Failed to fetch rate limit stats:', err);
     }
@@ -77,7 +73,7 @@ export function RateLimitMonitorPanel() {
 
   useEffect(() => {
     updateStats();
-    const interval = setInterval(updateStats, 5000); // Update every 5 seconds
+    const interval = setInterval(updateStats, 5000);
     return () => clearInterval(interval);
   }, [updateStats]);
 
@@ -91,79 +87,54 @@ export function RateLimitMonitorPanel() {
 
   const getStatusIcon = (status: 'ok' | 'warning' | 'critical') => {
     switch (status) {
-      case 'critical': return <AlertTriangle className="w-3 h-3" />;
-      case 'warning': return <AlertTriangle className="w-3 h-3" />;
-      default: return <CheckCircle className="w-3 h-3" />;
+      case 'critical': return <AlertTriangle className="w-2.5 h-2.5" />;
+      case 'warning': return <AlertTriangle className="w-2.5 h-2.5" />;
+      default: return <CheckCircle className="w-2.5 h-2.5" />;
     }
   };
 
-  const getProgressColor = (usagePercent: number) => {
-    if (usagePercent >= 90) return 'bg-destructive';
-    if (usagePercent >= 70) return 'bg-warning';
-    return 'bg-success';
-  };
-
   return (
-    <div className="glass-card p-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4 text-primary" />
-          <span className="font-medium text-sm">API Rate Limits</span>
+    <div className={`glass-card ${compact ? 'p-2' : 'p-3'} h-full flex flex-col`}>
+      <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          <Activity className={`${compact ? 'w-3 h-3' : 'w-4 h-4'} text-primary`} />
+          <span className={`font-medium ${compact ? 'text-xs' : 'text-sm'}`}>API Limits</span>
         </div>
-        <Badge variant="outline" className="text-xs">
-          <Zap className="w-3 h-3 mr-1" />
+        <Badge variant="outline" className={compact ? "text-[8px] h-4 px-1" : "text-xs"}>
+          <Zap className="w-2 h-2 mr-0.5" />
           Live
         </Badge>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <div className={`grid ${compact ? 'grid-cols-5 gap-1' : 'grid-cols-5 gap-2'} flex-1`}>
         {stats.map((stat) => (
           <div 
             key={stat.service} 
             className={cn(
-              "p-2 rounded-lg bg-secondary/30 border",
-              stat.status === 'critical' && 'border-destructive/50 animate-pulse',
+              `${compact ? 'p-1' : 'p-2'} rounded-lg bg-secondary/30 border`,
+              stat.status === 'critical' && 'border-destructive/50',
               stat.status === 'warning' && 'border-warning/50',
               stat.status === 'ok' && 'border-border/30'
             )}
           >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium truncate">{stat.label}</span>
-              <span className={cn("flex items-center gap-0.5", getStatusColor(stat.status))}>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className={`font-medium truncate ${compact ? 'text-[9px]' : 'text-xs'}`}>
+                {compact ? stat.label.slice(0, 3) : stat.label}
+              </span>
+              <span className={cn("flex items-center", getStatusColor(stat.status))}>
                 {getStatusIcon(stat.status)}
               </span>
             </div>
             <Progress 
               value={stat.usagePercent} 
-              className="h-1.5 mb-1"
+              className={compact ? "h-1" : "h-1.5"}
             />
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-              <span>{stat.requestsThisMinute}/{stat.limit}</span>
-              <span>{Math.round(stat.usagePercent)}%</span>
+            <div className={`text-center ${compact ? 'text-[8px]' : 'text-[10px]'} text-muted-foreground mt-0.5`}>
+              {Math.round(stat.usagePercent)}%
             </div>
           </div>
         ))}
       </div>
     </div>
   );
-}
-
-// Utility function to record an API call (to be used throughout the app)
-export function recordApiCall(service: 'binance' | 'okx' | 'groq' | 'vultr' | 'digitalocean') {
-  const now = Date.now();
-  const storedKey = `rateLimit_${service}`;
-  const stored = localStorage.getItem(storedKey);
-  
-  let count = 1;
-  let timestamp = now;
-  
-  if (stored) {
-    const parsed = JSON.parse(stored);
-    if (now - parsed.timestamp < 60000) {
-      count = parsed.count + 1;
-      timestamp = parsed.timestamp;
-    }
-  }
-  
-  localStorage.setItem(storedKey, JSON.stringify({ count, timestamp }));
 }

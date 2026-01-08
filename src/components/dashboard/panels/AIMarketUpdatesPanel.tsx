@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Minus, RefreshCw, Zap, Globe, Server } from 'lucide-react';
+import { Brain, TrendingUp, TrendingDown, Minus, RefreshCw, Server } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { useAppStore } from '@/store/useAppStore';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 
 interface AIUpdate {
@@ -21,7 +19,11 @@ interface AIUpdate {
   created_at: string;
 }
 
-export function AIMarketUpdatesPanel() {
+interface AIMarketUpdatesPanelProps {
+  fullHeight?: boolean;
+}
+
+export function AIMarketUpdatesPanel({ fullHeight = false }: AIMarketUpdatesPanelProps) {
   const [updates, setUpdates] = useState<AIUpdate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
@@ -30,15 +32,8 @@ export function AIMarketUpdatesPanel() {
   const [nextScanIn, setNextScanIn] = useState(60);
   const hasAutoScanned = useRef(false);
   
-  const exchangePulse = useAppStore(state => state.exchangePulse);
   const { vps } = useSystemStatus();
-
-  // VPS connection status
   const isVpsConnected = vps.status === 'running' || vps.status === 'idle';
-
-  // Get Tokyo HFT latency from exchange pulse (exchangePulse is a Record)
-  const binanceLatency = exchangePulse['binance']?.latencyMs || 0;
-  const okxLatency = exchangePulse['okx']?.latencyMs || 0;
 
   const triggerAutoScan = async () => {
     try {
@@ -120,7 +115,6 @@ export function AIMarketUpdatesPanel() {
       })
       .subscribe();
 
-    // Scan every 60 seconds for real-time analysis
     const scanInterval = setInterval(() => {
       hasAutoScanned.current = false;
       setNextScanIn(60);
@@ -144,7 +138,7 @@ export function AIMarketUpdatesPanel() {
       if (error) throw error;
 
       if (data?.success) {
-        toast.success(`AI analyzed ${data.analyzed || 0} assets from ${data.exchange || 'connected exchanges'}`);
+        toast.success(`AI analyzed ${data.analyzed || 0} assets`);
         setLastScanTime(new Date());
       } else {
         toast.error(data?.error || 'AI scan failed');
@@ -160,11 +154,11 @@ export function AIMarketUpdatesPanel() {
   const getSentimentIcon = (sentiment: string) => {
     switch (sentiment) {
       case 'BULLISH':
-        return <TrendingUp className="w-4 h-4 text-success" />;
+        return <TrendingUp className="w-3 h-3 text-success" />;
       case 'BEARISH':
-        return <TrendingDown className="w-4 h-4 text-destructive" />;
+        return <TrendingDown className="w-3 h-3 text-destructive" />;
       default:
-        return <Minus className="w-4 h-4 text-muted-foreground" />;
+        return <Minus className="w-3 h-3 text-muted-foreground" />;
     }
   };
 
@@ -179,128 +173,103 @@ export function AIMarketUpdatesPanel() {
     }
   };
 
-  // Group updates by exchange
   const binanceUpdates = updates.filter(u => u.exchange_name?.toLowerCase() === 'binance');
   const okxUpdates = updates.filter(u => u.exchange_name?.toLowerCase() === 'okx');
 
   return (
-    <div className="glass-card p-4 flex flex-col min-h-0 h-full">
-      {/* Header - Enhanced */}
-      <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-purple-500/20">
-            <Brain className="w-5 h-5 text-purple-400 animate-pulse" />
+    <div className={`glass-card p-3 flex flex-col min-h-0 ${fullHeight ? 'h-full' : ''}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-purple-500/20">
+            <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
           </div>
           <div>
-            <h3 className="font-semibold text-base">AI Market Analysis</h3>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <h3 className="font-semibold text-sm">AI Market Analysis</h3>
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                24/7 Active
+                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                24/7
               </span>
-              <span>•</span>
-              <span>Next scan: {nextScanIn}s</span>
+              <span>Next: {nextScanIn}s</span>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {/* VPS Connection Status */}
-          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${isVpsConnected ? 'bg-success/10' : 'bg-secondary/50'}`}>
-            <Server className={`w-3.5 h-3.5 ${isVpsConnected ? 'text-success' : 'text-muted-foreground'}`} />
-            <span className={`text-xs font-medium ${isVpsConnected ? 'text-success' : 'text-muted-foreground'}`}>
-              {isVpsConnected ? 'VPS Online' : 'VPS Offline'}
-            </span>
+        <div className="flex items-center gap-1.5">
+          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] ${isVpsConnected ? 'bg-success/10 text-success' : 'bg-secondary/50 text-muted-foreground'}`}>
+            <Server className="w-3 h-3" />
+            {isVpsConnected ? 'VPS' : 'Off'}
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={triggerManualScan}
             disabled={isScanning}
-            className="gap-2"
+            className="h-6 px-2 text-xs gap-1"
           >
-            <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
-            Scan Now
+            <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />
+            Scan
           </Button>
-        </div>
-      </div>
-
-      {/* Tokyo HFT Latency Indicators */}
-      <div className="flex gap-2 mb-3 flex-shrink-0">
-        <div className="flex-1 p-2 rounded-lg bg-secondary/30 flex items-center gap-2">
-          <Globe className="w-4 h-4 text-yellow-500" />
-          <span className="text-xs font-medium">Binance</span>
-          <span className={`ml-auto text-xs px-2 py-0.5 rounded border ${binanceLatency < 500 ? 'text-success border-success/30' : 'text-warning border-warning/30'}`}>
-            <Zap className="w-3 h-3 mr-1 inline" />
-            {binanceLatency}ms
-          </span>
-        </div>
-        <div className="flex-1 p-2 rounded-lg bg-secondary/30 flex items-center gap-2">
-          <Globe className="w-4 h-4 text-blue-500" />
-          <span className="text-xs font-medium">OKX</span>
-          <span className={`ml-auto text-xs px-2 py-0.5 rounded border ${okxLatency < 500 ? 'text-success border-success/30' : 'text-warning border-warning/30'}`}>
-            <Zap className="w-3 h-3 mr-1 inline" />
-            {okxLatency}ms
-          </span>
         </div>
       </div>
 
       {/* Error Display */}
       {scanError && (
-        <div className="text-xs text-destructive bg-destructive/10 p-2 rounded mb-2 flex-shrink-0">
+        <div className="text-[10px] text-destructive bg-destructive/10 p-1.5 rounded mb-2 flex-shrink-0">
           {scanError}
         </div>
       )}
 
       {/* Main Content - Scrollable */}
-      <div className="flex-1 overflow-y-auto min-h-0 space-y-2">
+      <div className="flex-1 overflow-y-auto min-h-0 space-y-1.5">
         {isLoading ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
-            <Brain className="w-8 h-8 animate-pulse mr-2" />
-            Loading AI insights...
+            <Brain className="w-6 h-6 animate-pulse mr-2" />
+            Loading...
           </div>
         ) : updates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
-            <Brain className="w-12 h-12 opacity-30" />
-            <p className="text-sm">No AI insights yet</p>
-            <p className="text-xs">Connect an exchange and enable Groq AI in Settings</p>
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
+            <Brain className="w-10 h-10 opacity-30" />
+            <p className="text-xs">No AI insights yet</p>
+            <p className="text-[10px]">Connect exchange + enable Groq AI</p>
           </div>
         ) : (
           updates.map((update) => (
             <div 
               key={update.id} 
-              className="p-3 rounded-lg bg-secondary/20 hover:bg-secondary/30 transition-colors border border-border/30"
+              className="p-2 rounded-lg bg-secondary/20 hover:bg-secondary/30 transition-colors border border-border/30"
             >
-              <div className="flex items-center gap-2 flex-wrap mb-2">
-                <span className="text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                <span className="text-[10px] text-muted-foreground">
                   {format(new Date(update.created_at), 'HH:mm:ss')}
                 </span>
-                <span className="text-[10px] px-1.5 py-0 rounded border border-border">
+                <span className="text-[9px] px-1 py-0 rounded border border-border">
                   {update.exchange_name?.toUpperCase()}
                 </span>
-                <span className="font-bold text-sm">{update.symbol}</span>
-                <span className="text-sm font-medium">
+                <span className="font-bold text-xs">{update.symbol}</span>
+                <span className="text-xs">
                   ${update.current_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '—'}
                 </span>
                 {update.price_change_24h !== null && (
-                  <span className={`text-sm font-medium ${update.price_change_24h >= 0 ? 'text-success' : 'text-destructive'}`}>
+                  <span className={`text-xs ${update.price_change_24h >= 0 ? 'text-success' : 'text-destructive'}`}>
                     {update.price_change_24h >= 0 ? '+' : ''}{update.price_change_24h.toFixed(2)}%
                   </span>
                 )}
-                <div className={`ml-auto px-2 py-1 rounded flex items-center gap-1.5 ${getSentimentClass(update.sentiment)}`}>
+                <div className={`ml-auto px-1.5 py-0.5 rounded flex items-center gap-1 ${getSentimentClass(update.sentiment)}`}>
                   {getSentimentIcon(update.sentiment)}
-                  <span className="text-xs font-medium">{update.sentiment}</span>
+                  <span className="text-[10px] font-medium">{update.sentiment}</span>
                 </div>
               </div>
               
               {/* Confidence Bar */}
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs text-muted-foreground">Confidence:</span>
-                <Progress value={update.confidence} className="h-1.5 flex-1" />
-                <span className="text-xs font-medium">{update.confidence}%</span>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] text-muted-foreground">Conf:</span>
+                <Progress value={update.confidence} className="h-1 flex-1" />
+                <span className="text-[10px] font-medium">{update.confidence}%</span>
               </div>
 
-              {/* Insight - Show more text */}
-              <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+              {/* Insight */}
+              <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">
                 {update.insight}
               </p>
             </div>
@@ -309,11 +278,11 @@ export function AIMarketUpdatesPanel() {
       </div>
 
       {/* Footer Stats */}
-      <div className="mt-2 pt-2 border-t border-border/30 flex items-center justify-between text-xs text-muted-foreground flex-shrink-0">
+      <div className="mt-1.5 pt-1.5 border-t border-border/30 flex items-center justify-between text-[10px] text-muted-foreground flex-shrink-0">
         <span>{updates.length} insights</span>
         <span>Binance: {binanceUpdates.length} | OKX: {okxUpdates.length}</span>
         {lastScanTime && (
-          <span>Last scan: {format(lastScanTime, 'HH:mm:ss')}</span>
+          <span>Last: {format(lastScanTime, 'HH:mm')}</span>
         )}
       </div>
     </div>
