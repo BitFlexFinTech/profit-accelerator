@@ -121,8 +121,10 @@ export function OrderHistory() {
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         ) : orders.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">
-            No orders found
+          <div className="text-center py-8 text-muted-foreground">
+            <History className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            <p className="text-sm">No orders yet</p>
+            <p className="text-xs mt-1">Place your first trade to see it here</p>
           </div>
         ) : (
           <div className="max-h-[300px] overflow-auto">

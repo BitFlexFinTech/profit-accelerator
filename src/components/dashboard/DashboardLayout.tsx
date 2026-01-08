@@ -7,7 +7,6 @@ import {
   FlaskConical, 
   Trophy, 
   Settings,
-  Bell,
   Power,
   Menu,
   X,
@@ -25,6 +24,7 @@ import { SettingsTab } from './tabs/SettingsTab';
 import { TradingTab } from './tabs/TradingTab';
 import { KillSwitchDialog } from './KillSwitchDialog';
 import { SystemHealthBar } from './SystemHealthBar';
+import { NotificationDropdown } from './NotificationDropdown';
 import { initializeAppStore } from '@/store/useAppStore';
 
 const tabs = [
@@ -137,10 +137,7 @@ export function DashboardLayout() {
 
         {/* Right Actions */}
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full" />
-          </Button>
+          <NotificationDropdown />
           <Button
             variant="ghost"
             size="icon"

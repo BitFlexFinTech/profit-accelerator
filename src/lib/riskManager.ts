@@ -200,6 +200,23 @@ export class RiskManager {
     return data ? parseFloat(data.total_balance?.toString() || '0') : null;
   }
 
+  private async getMaxOpenPosition(): Promise<number> {
+    const { data: positions } = await supabase
+      .from('positions')
+      .select('size, entry_price')
+      .not('size', 'is', null);
+
+    if (!positions || positions.length === 0) return 0;
+
+    // Find the largest position by value (size * entry_price)
+    const maxPosition = positions.reduce((max, pos) => {
+      const value = Math.abs(pos.size * pos.entry_price);
+      return value > max ? value : max;
+    }, 0);
+
+    return maxPosition;
+  }
+
   async getRiskMetrics(): Promise<{
     dailyLoss: number;
     drawdown: number;
@@ -207,12 +224,15 @@ export class RiskManager {
     limits: RiskLimits;
     dailyLossPercent: number;
     drawdownPercent: number;
+    maxOpenPosition: number;
+    maxPositionPercent: number;
   }> {
-    const [dailyLoss, drawdown, currentBalance, limits] = await Promise.all([
+    const [dailyLoss, drawdown, currentBalance, limits, maxOpenPosition] = await Promise.all([
       this.getDailyLoss(),
       this.getDrawdown(),
       this.getCurrentBalance(),
-      this.getRiskLimits()
+      this.getRiskLimits(),
+      this.getMaxOpenPosition()
     ]);
 
     return {
@@ -221,7 +241,9 @@ export class RiskManager {
       currentBalance,
       limits,
       dailyLossPercent: limits.maxDailyLoss > 0 ? (dailyLoss / limits.maxDailyLoss) * 100 : 0,
-      drawdownPercent: limits.maxDrawdown > 0 ? (drawdown / limits.maxDrawdown) * 100 : 0
+      drawdownPercent: limits.maxDrawdown > 0 ? (drawdown / limits.maxDrawdown) * 100 : 0,
+      maxOpenPosition,
+      maxPositionPercent: limits.maxPositionSize > 0 ? (maxOpenPosition / limits.maxPositionSize) * 100 : 0
     };
   }
 }

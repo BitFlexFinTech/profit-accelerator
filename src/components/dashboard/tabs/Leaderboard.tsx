@@ -1,110 +1,233 @@
-import { Trophy, Medal, Star, Flame } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Trophy, Flame, Star, Medal, Calendar, Loader2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { supabase } from '@/integrations/supabase/client';
+import { format } from 'date-fns';
 
-const achievements = [
-  { icon: Trophy, title: 'First Profit', description: 'Complete your first profitable trade', unlocked: true },
-  { icon: Flame, title: 'Hot Streak', description: '10 winning trades in a row', unlocked: true },
-  { icon: Star, title: 'Daily Goal', description: 'Hit $100 profit in a single day', unlocked: true },
-  { icon: Medal, title: 'Marathon Trader', description: '1000 total trades executed', unlocked: false },
-];
+interface Achievement {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  unlocked: boolean | null;
+  unlocked_at: string | null;
+}
 
-const bestDays = [
-  { date: '2024-12-28', pnl: 847.23, trades: 34, winRate: 82 },
-  { date: '2024-12-15', pnl: 623.11, trades: 28, winRate: 75 },
-  { date: '2024-12-03', pnl: 512.45, trades: 22, winRate: 77 },
-  { date: '2024-11-29', pnl: 489.00, trades: 31, winRate: 71 },
-  { date: '2024-11-18', pnl: 445.67, trades: 19, winRate: 84 },
-];
+interface BestDay {
+  trade_date: string;
+  total_pnl: number;
+  trade_count: number;
+  win_rate: number;
+}
+
+const ICON_MAP: Record<string, React.ElementType> = {
+  Trophy,
+  Flame,
+  Star,
+  Medal
+};
 
 export function Leaderboard() {
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [bestDays, setBestDays] = useState<BestDay[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch achievements
+        const { data: achievementsData } = await supabase
+          .from('achievements')
+          .select('*')
+          .order('unlocked', { ascending: false })
+          .order('created_at', { ascending: true });
+
+        if (achievementsData) {
+          setAchievements(achievementsData);
+        }
+
+        // Fetch best trading days from trading_journal
+        const { data: journalData } = await supabase
+          .from('trading_journal')
+          .select('created_at, pnl')
+          .not('pnl', 'is', null);
+
+        if (journalData && journalData.length > 0) {
+          // Group by date and calculate daily stats
+          const dailyStats = journalData.reduce((acc, trade) => {
+            const date = format(new Date(trade.created_at || new Date()), 'yyyy-MM-dd');
+            if (!acc[date]) {
+              acc[date] = { trades: [], totalPnl: 0, wins: 0 };
+            }
+            const pnl = parseFloat(trade.pnl?.toString() || '0');
+            acc[date].trades.push(pnl);
+            acc[date].totalPnl += pnl;
+            if (pnl > 0) acc[date].wins++;
+            return acc;
+          }, {} as Record<string, { trades: number[], totalPnl: number, wins: number }>);
+
+          // Convert to array and sort by PnL
+          const sortedDays = Object.entries(dailyStats)
+            .map(([date, stats]) => ({
+              trade_date: date,
+              total_pnl: stats.totalPnl,
+              trade_count: stats.trades.length,
+              win_rate: stats.trades.length > 0 ? (stats.wins / stats.trades.length) * 100 : 0
+            }))
+            .sort((a, b) => b.total_pnl - a.total_pnl)
+            .slice(0, 5);
+
+          setBestDays(sortedDays);
+        }
+      } catch (error) {
+        console.error('Failed to fetch leaderboard data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const getIcon = (iconName: string | null) => {
+    const IconComponent = iconName ? ICON_MAP[iconName] || Trophy : Trophy;
+    return IconComponent;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Leaderboard & Achievements</h2>
       </div>
 
-      {/* Achievements */}
-      <div className="glass-card p-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Trophy className="w-5 h-5 text-warning" />
-          Achievements
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {achievements.map((achievement) => (
-            <div
-              key={achievement.title}
-              className={`p-4 rounded-lg border transition-all ${
-                achievement.unlocked
-                  ? 'bg-warning/10 border-warning/30'
-                  : 'bg-secondary/30 border-border opacity-50'
-              }`}
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  achievement.unlocked ? 'bg-warning/20' : 'bg-secondary'
-                }`}>
-                  <achievement.icon className={`w-5 h-5 ${
-                    achievement.unlocked ? 'text-warning' : 'text-muted-foreground'
-                  }`} />
-                </div>
-                <div>
-                  <p className="font-medium">{achievement.title}</p>
-                  {achievement.unlocked && (
-                    <span className="text-xs text-warning">Unlocked!</span>
-                  )}
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground">{achievement.description}</p>
+      {/* Achievements Section */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Trophy className="w-5 h-5 text-yellow-500" />
+            Achievements
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {achievements.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Trophy className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <p className="text-sm">No achievements yet</p>
+              <p className="text-xs mt-1">Complete trading milestones to unlock achievements</p>
             </div>
-          ))}
-        </div>
-      </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {achievements.map((achievement) => {
+                const IconComponent = getIcon(achievement.icon);
+                return (
+                  <div
+                    key={achievement.id}
+                    className={`p-4 rounded-lg border transition-all ${
+                      achievement.unlocked
+                        ? 'bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-yellow-500/30'
+                        : 'bg-muted/30 border-border opacity-50 grayscale'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                        achievement.unlocked ? 'bg-yellow-500/20' : 'bg-secondary'
+                      }`}>
+                        <IconComponent 
+                          className={`w-5 h-5 ${
+                            achievement.unlocked ? 'text-yellow-500' : 'text-muted-foreground'
+                          }`} 
+                        />
+                      </div>
+                      <div>
+                        <p className="font-medium">{achievement.name}</p>
+                        {achievement.unlocked && (
+                          <span className="text-xs text-yellow-500">Unlocked!</span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {achievement.description}
+                    </p>
+                    {achievement.unlocked && achievement.unlocked_at && (
+                      <p className="text-xs text-yellow-600 mt-2">
+                        {format(new Date(achievement.unlocked_at), 'MMM d, yyyy')}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Best Trading Days */}
-      <div className="glass-card p-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Star className="w-5 h-5 text-accent" />
-          Best Trading Days
-        </h3>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-sm text-muted-foreground border-b border-border">
-                <th className="pb-3 font-medium">Rank</th>
-                <th className="pb-3 font-medium">Date</th>
-                <th className="pb-3 font-medium">P&L</th>
-                <th className="pb-3 font-medium">Trades</th>
-                <th className="pb-3 font-medium">Win Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bestDays.map((day, index) => (
-                <tr key={day.date} className="border-b border-border/50">
-                  <td className="py-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
-                      index === 0 ? 'bg-warning/20 text-warning' :
-                      index === 1 ? 'bg-muted text-foreground' :
-                      index === 2 ? 'bg-orange-500/20 text-orange-400' :
-                      'bg-secondary text-muted-foreground'
-                    }`}>
-                      {index + 1}
-                    </div>
-                  </td>
-                  <td className="py-3 font-medium">{day.date}</td>
-                  <td className="py-3 text-success font-bold">+${day.pnl.toFixed(2)}</td>
-                  <td className="py-3">{day.trades}</td>
-                  <td className="py-3">
-                    <span className="px-2 py-1 rounded bg-success/20 text-success text-sm">
-                      {day.winRate}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-primary" />
+            Best Trading Days
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {bestDays.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Calendar className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <p className="text-sm">No trading history yet</p>
+              <p className="text-xs mt-1">Complete trades to see your best performing days</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Rank</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">P&L</TableHead>
+                  <TableHead className="text-right">Trades</TableHead>
+                  <TableHead className="text-right">Win Rate</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bestDays.map((day, index) => (
+                  <TableRow key={day.trade_date}>
+                    <TableCell>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                        index === 0 ? 'bg-yellow-500/20 text-yellow-500' :
+                        index === 1 ? 'bg-muted text-foreground' :
+                        index === 2 ? 'bg-orange-500/20 text-orange-400' :
+                        'bg-secondary text-muted-foreground'
+                      }`}>
+                        {index + 1}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {format(new Date(day.trade_date), 'MMM d, yyyy')}
+                    </TableCell>
+                    <TableCell className={`text-right font-bold ${day.total_pnl >= 0 ? 'text-success' : 'text-destructive'}`}>
+                      {day.total_pnl >= 0 ? '+' : ''}${day.total_pnl.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right">{day.trade_count}</TableCell>
+                    <TableCell className="text-right">
+                      <span className="px-2 py-1 rounded bg-success/20 text-success text-sm">
+                        {day.win_rate.toFixed(1)}%
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
