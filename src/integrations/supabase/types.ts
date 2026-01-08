@@ -1477,6 +1477,39 @@ export type Database = {
         }
         Relationships: []
       }
+      simulation_progress: {
+        Row: {
+          created_at: string | null
+          id: string
+          last_paper_trade_at: string | null
+          live_mode_unlocked: boolean | null
+          paper_mode_unlocked: boolean | null
+          simulation_completed: boolean | null
+          successful_paper_trades: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          last_paper_trade_at?: string | null
+          live_mode_unlocked?: boolean | null
+          paper_mode_unlocked?: boolean | null
+          simulation_completed?: boolean | null
+          successful_paper_trades?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          last_paper_trade_at?: string | null
+          live_mode_unlocked?: boolean | null
+          paper_mode_unlocked?: boolean | null
+          simulation_completed?: boolean | null
+          successful_paper_trades?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       strategy_config: {
         Row: {
           allowed_exchanges: string[] | null

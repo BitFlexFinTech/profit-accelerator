@@ -3,11 +3,13 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Progress } from '@/components/ui/progress';
 import { 
-  Play, Square, RefreshCw, Bell, Zap, Pause, Activity, AlertTriangle, RotateCcw
+  Play, Square, RefreshCw, Bell, Zap, Pause, Activity, AlertTriangle, RotateCcw, FlaskConical
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { TradeSimulationModal } from '@/components/dashboard/TradeSimulationModal';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 
 type BotStatus = 'running' | 'stopped' | 'idle' | 'error';
+type StartupStage = 'connecting' | 'fetching' | 'opening' | 'active';
 
 export function UnifiedControlBar() {
   // Default to 'stopped' - NEVER assume bot is running
@@ -27,6 +30,14 @@ export function UnifiedControlBar() {
   const [isPaperMode, setIsPaperMode] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
+  
+  // Startup progress bar state
+  const [isStartingUp, setIsStartingUp] = useState(false);
+  const [startupStage, setStartupStage] = useState<StartupStage>('connecting');
+  const [startupProgress, setStartupProgress] = useState(0);
+  
+  // Simulation modal
+  const [showSimulation, setShowSimulation] = useState(false);
   const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
 
@@ -50,10 +61,11 @@ export function UnifiedControlBar() {
       }
 
       // Get active deployment for bot control
+      // CRITICAL FIX: Query for both 'active' AND 'running' status
       const { data: deployment } = await supabase
         .from('hft_deployments')
         .select('id, server_id')
-        .eq('status', 'active')
+        .in('status', ['active', 'running'])
         .limit(1)
         .single();
       
@@ -72,6 +84,65 @@ export function UnifiedControlBar() {
     return () => clearInterval(interval);
   }, [fetchBotStatus]);
 
+  // Handle startup progress animation
+  const startBotWithProgress = async () => {
+    setIsStartingUp(true);
+    setStartupProgress(0);
+    setStartupStage('connecting');
+    
+    try {
+      // Stage 1: Connecting
+      setStartupProgress(10);
+      const { error } = await supabase.functions.invoke('bot-control', {
+        body: { action: 'start', deploymentId }
+      });
+      if (error) throw error;
+      
+      setStartupProgress(30);
+      setStartupStage('fetching');
+      
+      // Update DB status
+      const { data: config } = await supabase.from('trading_config').select('id').limit(1).single();
+      if (config) {
+        await supabase.from('trading_config').update({ bot_status: 'running' }).eq('id', config.id);
+      }
+      
+      setStartupProgress(60);
+      setStartupStage('opening');
+      
+      // Subscribe to first trade
+      const channel = supabase.channel('first-trade-watch')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trading_journal' }, () => {
+          setStartupProgress(100);
+          setStartupStage('active');
+          setIsStartingUp(false);
+          toast.success('First trade executed!');
+          supabase.removeChannel(channel);
+        })
+        .subscribe();
+      
+      // Timeout after 60 seconds
+      setTimeout(() => {
+        if (isStartingUp) {
+          setStartupProgress(100);
+          setStartupStage('active');
+          setIsStartingUp(false);
+          supabase.removeChannel(channel);
+        }
+      }, 60000);
+      
+      setBotStatus('running');
+      toast.success('Bot started - waiting for first trade...');
+    } catch (err) {
+      console.error('Failed to start bot:', err);
+      toast.error('Failed to start bot');
+      setIsStartingUp(false);
+    } finally {
+      setIsLoading(false);
+      setShowStartConfirm(false);
+    }
+  };
+
   const handleStartBot = async () => {
     // Confirm before starting in live mode
     if (!isPaperMode && !showStartConfirm) {
@@ -80,27 +151,7 @@ export function UnifiedControlBar() {
     }
     
     setIsLoading(true);
-    try {
-      const { error } = await supabase.functions.invoke('bot-control', {
-        body: { action: 'start', deploymentId }
-      });
-      if (error) throw error;
-      
-      // Update DB status
-      const { data: config } = await supabase.from('trading_config').select('id').limit(1).single();
-      if (config) {
-        await supabase.from('trading_config').update({ bot_status: 'running' }).eq('id', config.id);
-      }
-      
-      setBotStatus('running');
-      toast.success('Bot started successfully');
-    } catch (err) {
-      console.error('Failed to start bot:', err);
-      toast.error('Failed to start bot');
-    } finally {
-      setIsLoading(false);
-      setShowStartConfirm(false);
-    }
+    await startBotWithProgress();
   };
 
   const handleStopBot = async () => {
@@ -301,11 +352,22 @@ export function UnifiedControlBar() {
 
             <div className="h-4 w-px bg-border/50" />
 
+            {/* Simulate Button */}
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={() => setShowSimulation(true)}
+              className="h-7 text-xs px-2 border-primary/50 text-primary hover:bg-primary/10"
+            >
+              <FlaskConical className="w-3 h-3 mr-1" />
+              Simulate
+            </Button>
+
             <Button 
               size="sm" 
               variant={botStatus === 'running' ? 'outline' : 'default'}
               onClick={botStatus === 'running' ? handleStopBot : handleStartBot}
-              disabled={isLoading}
+              disabled={isLoading || isStartingUp}
               className={`h-7 text-xs px-2 ${botStatus !== 'running' ? 'bg-success hover:bg-success/90' : ''}`}
             >
               {botStatus === 'running' ? (
@@ -321,9 +383,25 @@ export function UnifiedControlBar() {
               )}
             </Button>
 
-            <Activity className="w-4 h-4 text-success ml-2" />
+            <Activity className={`w-4 h-4 ml-2 ${botStatus === 'running' ? 'text-success' : 'text-muted-foreground'}`} />
           </div>
         </div>
+
+        {/* Startup Progress Bar */}
+        {isStartingUp && (
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                {startupStage === 'connecting' && '🔗 Connecting to VPS...'}
+                {startupStage === 'fetching' && '🤖 Fetching AI signals...'}
+                {startupStage === 'opening' && '📈 Opening first position...'}
+                {startupStage === 'active' && '✅ Trading active!'}
+              </span>
+              <span className="text-muted-foreground">{startupProgress}%</span>
+            </div>
+            <Progress value={startupProgress} className="h-1.5" />
+          </div>
+        )}
       </Card>
 
       {/* Live Mode Confirmation */}
@@ -373,6 +451,9 @@ export function UnifiedControlBar() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Trade Simulation Modal */}
+      <TradeSimulationModal open={showSimulation} onOpenChange={setShowSimulation} />
     </>
   );
 }
