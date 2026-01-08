@@ -11,6 +11,7 @@ import { MarketWatchPanel } from '../panels/MarketWatchPanel';
 import { QuickActionsPanel } from '../panels/QuickActionsPanel';
 import { RiskDashboardPanel } from '../panels/RiskDashboardPanel';
 import { ExchangeConnectionsCard } from '../panels/ExchangeConnectionsCard';
+import { ExchangePulsePanel } from '../panels/ExchangePulsePanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
@@ -53,6 +54,9 @@ export function LiveDashboard() {
           </div>
           <div className="flex-shrink-0">
             <QuickActionsPanel />
+          </div>
+          <div className="flex-shrink-0">
+            <ExchangePulsePanel />
           </div>
         </div>
 

@@ -804,6 +804,33 @@ export type Database = {
         }
         Relationships: []
       }
+      exchange_latency_history: {
+        Row: {
+          exchange_name: string
+          id: string
+          latency_ms: number
+          recorded_at: string | null
+          region: string | null
+          source: string
+        }
+        Insert: {
+          exchange_name: string
+          id?: string
+          latency_ms: number
+          recorded_at?: string | null
+          region?: string | null
+          source?: string
+        }
+        Update: {
+          exchange_name?: string
+          id?: string
+          latency_ms?: number
+          recorded_at?: string | null
+          region?: string | null
+          source?: string
+        }
+        Relationships: []
+      }
       exchange_pulse: {
         Row: {
           api_endpoint: string | null
