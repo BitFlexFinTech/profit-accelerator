@@ -6,7 +6,10 @@ const corsHeaders = {
 };
 
 const INSTALL_SCRIPT = `#!/bin/bash
-set -e
+set -euo pipefail
+
+# Fail fast with clear diagnostics (no silent exits)
+trap 'code=$?; echo ""; echo -e "\\033[0;31m[ERROR]\\033[0m Installer failed at line $LINENO: $BASH_COMMAND"; echo -e "\\033[0;31m[ERROR]\\033[0m Exit code: $code"; echo ""; exit $code' ERR
 
 # Get server IP dynamically
 SERVER_IP=$(hostname -I | awk '{print $1}')
