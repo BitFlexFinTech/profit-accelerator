@@ -1,79 +1,40 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Activity, Wifi } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { supabase } from '@/integrations/supabase/client';
-
-interface PortfolioSnapshot {
-  daily_pnl: number | null;
-  weekly_pnl: number | null;
-  total_balance: number;
-}
+import { useAppStore } from '@/store/useAppStore';
 
 export function PnLPanel() {
   const { totalBalance, exchanges, isLive, isLoading: exchangeLoading } = useExchangeWebSocket();
-  const [pnlData, setPnlData] = useState<PortfolioSnapshot | null>(null);
+  const dailyPnl = useAppStore((s) => s.dailyPnl);
+  const weeklyPnl = useAppStore((s) => s.weeklyPnl);
+  const lastUpdate = useAppStore((s) => s.lastUpdate);
+  const isStoreLoading = useAppStore((s) => s.isLoading);
   const [activeTrades, setActiveTrades] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
   const connectedCount = exchanges.length;
 
-  useEffect(() => {
-    const fetchPnLData = async () => {
-      try {
-        // Fetch latest portfolio snapshot for PnL data
-        const { data: snapshot } = await supabase
-          .from('portfolio_snapshots')
-          .select('daily_pnl, weekly_pnl, total_balance')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (snapshot) {
-          setPnlData(snapshot as PortfolioSnapshot);
-        }
-
-        // Fetch active trades count
-        const { data: trades } = await supabase
-          .from('trading_journal')
-          .select('status')
-          .eq('status', 'open');
-
-        setActiveTrades(trades?.length || 0);
-      } catch (err) {
-        console.error('[PnLPanel] Error:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchPnLData();
-
-    // Subscribe to realtime updates
-    const channel = supabase
-      .channel('pnl-updates')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'portfolio_snapshots'
-      }, () => fetchPnLData())
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'trading_journal'
-      }, () => fetchPnLData())
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+  // Fetch active trades count - uses SSOT lastUpdate trigger
+  const fetchActiveTrades = useCallback(async () => {
+    try {
+      const { data: trades } = await supabase
+        .from('trading_journal')
+        .select('status')
+        .eq('status', 'open');
+      setActiveTrades(trades?.length || 0);
+    } catch (err) {
+      console.error('[PnLPanel] Error:', err);
+    }
   }, []);
 
-  const dailyPnl = pnlData?.daily_pnl || 0;
-  const weeklyPnl = pnlData?.weekly_pnl || 0;
+  useEffect(() => {
+    fetchActiveTrades();
+  }, [fetchActiveTrades, lastUpdate]);
+
   const dailyPercent = totalBalance > 0 ? (dailyPnl / totalBalance) * 100 : 0;
   const weeklyPercent = totalBalance > 0 ? (weeklyPnl / totalBalance) * 100 : 0;
 
-  const isDataLoading = isLoading || exchangeLoading;
+  const isDataLoading = isStoreLoading || exchangeLoading;
 
   return (
     <>
@@ -172,7 +133,7 @@ export function PnLPanel() {
           <span className="text-sm text-muted-foreground">Active Trades</span>
           <Activity className="w-4 h-4 text-accent" />
         </div>
-        {isLoading ? (
+        {isStoreLoading ? (
           <>
             <Skeleton className="h-8 w-12 mb-1" />
             <Skeleton className="h-4 w-20" />

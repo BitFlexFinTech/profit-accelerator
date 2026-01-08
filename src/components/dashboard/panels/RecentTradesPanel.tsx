@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAppStore } from '@/store/useAppStore';
 
 interface Trade {
   id: string;
@@ -14,8 +15,9 @@ interface Trade {
 export function RecentTradesPanel() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
+  const lastUpdate = useAppStore((s) => s.lastUpdate);
 
-  const fetchTrades = async () => {
+  const fetchTrades = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('trading_journal')
@@ -30,27 +32,12 @@ export function RecentTradesPanel() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
+  // Subscribe to SSOT store updates instead of own channel
   useEffect(() => {
     fetchTrades();
-
-    // Real-time subscription
-    const channel = supabase
-      .channel('recent-trades-panel')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'trading_journal'
-      }, () => {
-        fetchTrades();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  }, [fetchTrades, lastUpdate]);
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '--';
