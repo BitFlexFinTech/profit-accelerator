@@ -28,7 +28,11 @@ async function hmacSignB64(secret: string, message: string): Promise<string> {
 }
 
 // Helper: Fetch balance from exchange - returns error if auth fails
-async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?: string; api_secret?: string; api_passphrase?: string }): Promise<{ balance: number; pingMs: number; error?: string }> {
+// supabaseClient is optional - if provided, enables VPS proxy for IP-restricted exchanges
+async function fetchExchangeBalance(
+  exchange: { exchange_name: string; api_key?: string; api_secret?: string; api_passphrase?: string },
+  supabaseClient?: any
+): Promise<{ balance: number; pingMs: number; error?: string }> {
   const exchangeKey = exchange.exchange_name.toLowerCase();
   const startTime = Date.now();
   let balance = 0;
@@ -52,97 +56,168 @@ async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?:
       console.error(`[trade-engine] ${lastError}`);
     }
   } else if (exchangeKey === 'okx' && exchange.api_key && exchange.api_secret && exchange.api_passphrase) {
-    let tradingSuccess = false;
-    let fundingSuccess = false;
+    // OKX requires IP whitelist - check for VPS proxy first
+    let vpsProxyAvailable = false;
+    let vpsOutboundIp = '';
     
-    // 1. Fetch TRADING account balance
-    const timestamp = new Date().toISOString();
-    const tradingPath = '/api/v5/account/balance';
-    const tradingSign = await hmacSignB64(exchange.api_secret, timestamp + 'GET' + tradingPath);
-    try {
-      const tradingResp = await fetch(`https://www.okx.com${tradingPath}`, {
-        headers: {
-          'OK-ACCESS-KEY': exchange.api_key,
-          'OK-ACCESS-SIGN': tradingSign,
-          'OK-ACCESS-TIMESTAMP': timestamp,
-          'OK-ACCESS-PASSPHRASE': exchange.api_passphrase,
-          'Content-Type': 'application/json'
-        }
-      });
+    if (supabaseClient) {
+      const { data: vpsConfig } = await supabaseClient
+        .from('vps_config')
+        .select('outbound_ip, status')
+        .eq('status', 'running')
+        .not('outbound_ip', 'is', null)
+        .limit(1);
       
-      if (tradingResp.ok) {
-        const tradingData = await tradingResp.json();
-        console.log(`[trade-engine] OKX Trading response code: ${tradingData.code}, msg: ${tradingData.msg || 'none'}`);
-        if (tradingData.code === '0') {
-          tradingSuccess = true;
-          const details = tradingData.data?.[0]?.details || [];
-          const usdtDetail = details.find((d: { ccy: string }) => d.ccy === 'USDT');
-          if (usdtDetail) {
-            const tradingBalance = parseFloat(usdtDetail.availBal || '0') + parseFloat(usdtDetail.frozenBal || '0');
-            balance += tradingBalance;
-            console.log(`[trade-engine] OKX Trading USDT: ${tradingBalance}`);
-          }
-        } else {
-          lastError = `OKX Trading API error: ${tradingData.code} - ${tradingData.msg || 'Unknown error'}`;
-          console.error(`[trade-engine] ${lastError}`);
-        }
-      } else {
-        const errText = await tradingResp.text().catch(() => 'Unknown');
-        lastError = `OKX Trading HTTP ${tradingResp.status}: ${errText.substring(0, 200)}`;
-        console.error(`[trade-engine] ${lastError}`);
+      if (vpsConfig?.length && vpsConfig[0].outbound_ip) {
+        vpsProxyAvailable = true;
+        vpsOutboundIp = vpsConfig[0].outbound_ip;
+        console.log(`[trade-engine] VPS proxy available at ${vpsOutboundIp}`);
       }
-    } catch (err) {
-      lastError = `OKX Trading fetch error: ${err instanceof Error ? err.message : 'Unknown'}`;
-      console.error(`[trade-engine] ${lastError}`);
     }
     
-    // 2. Fetch FUNDING account balance (where deposits usually go!)
-    const fundingTimestamp = new Date().toISOString();
-    const fundingPath = '/api/v5/asset/balances';
-    const fundingSign = await hmacSignB64(exchange.api_secret, fundingTimestamp + 'GET' + fundingPath);
-    try {
-      const fundingResp = await fetch(`https://www.okx.com${fundingPath}`, {
-        headers: {
-          'OK-ACCESS-KEY': exchange.api_key,
-          'OK-ACCESS-SIGN': fundingSign,
-          'OK-ACCESS-TIMESTAMP': fundingTimestamp,
-          'OK-ACCESS-PASSPHRASE': exchange.api_passphrase,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (fundingResp.ok) {
-        const fundingData = await fundingResp.json();
-        console.log(`[trade-engine] OKX Funding response code: ${fundingData.code}, msg: ${fundingData.msg || 'none'}`);
-        if (fundingData.code === '0') {
-          fundingSuccess = true;
-          const usdtFunding = fundingData.data?.find((d: { ccy: string }) => d.ccy === 'USDT');
-          if (usdtFunding) {
-            const fundingBalance = parseFloat(usdtFunding.availBal || '0') + parseFloat(usdtFunding.frozenBal || '0');
-            balance += fundingBalance;
-            console.log(`[trade-engine] OKX Funding USDT: ${fundingBalance}`);
+    // Route through VPS proxy if available (required for IP-whitelisted API keys)
+    if (vpsProxyAvailable) {
+      try {
+        const proxyUrl = `http://${vpsOutboundIp}:8080/balance`;
+        console.log(`[trade-engine] Using VPS proxy for OKX: ${proxyUrl}`);
+        
+        const proxyResponse = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            exchange: 'okx',
+            apiKey: exchange.api_key,
+            apiSecret: exchange.api_secret,
+            passphrase: exchange.api_passphrase,
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+        
+        if (proxyResponse.ok) {
+          const proxyData = await proxyResponse.json();
+          if (proxyData.success) {
+            balance = proxyData.balance || 0;
+            authSuccess = true;
+            console.log(`[trade-engine] OKX via VPS proxy: $${balance}`);
+          } else {
+            lastError = `VPS proxy OKX error: ${proxyData.error || 'Unknown'}`;
+            console.error(`[trade-engine] ${lastError}`);
           }
         } else {
-          lastError = `OKX Funding API error: ${fundingData.code} - ${fundingData.msg || 'Unknown error'}`;
+          const errText = await proxyResponse.text().catch(() => 'Unknown');
+          lastError = `VPS proxy HTTP ${proxyResponse.status}: ${errText.substring(0, 200)}`;
           console.error(`[trade-engine] ${lastError}`);
         }
-      } else {
-        const errText = await fundingResp.text().catch(() => 'Unknown');
-        lastError = `OKX Funding HTTP ${fundingResp.status}: ${errText.substring(0, 200)}`;
+      } catch (proxyErr) {
+        lastError = `VPS proxy connection failed: ${proxyErr instanceof Error ? proxyErr.message : 'Unknown'}`;
         console.error(`[trade-engine] ${lastError}`);
       }
-    } catch (err) {
-      lastError = `OKX Funding fetch error: ${err instanceof Error ? err.message : 'Unknown'}`;
-      console.error(`[trade-engine] ${lastError}`);
-    }
-    
-    // OKX auth is successful if at least one endpoint worked
-    authSuccess = tradingSuccess || fundingSuccess;
-    console.log(`[trade-engine] OKX auth success: ${authSuccess}, Total USDT: ${balance}`);
-    
-    // If both failed, provide actionable error
-    if (!authSuccess) {
-      lastError = 'OKX authentication failed. Check: 1) API key permissions (Read for Trading + Funding), 2) Passphrase is correct, 3) IP whitelist includes this server';
+    } else {
+      // No VPS available - try direct API calls but they will likely fail for IP-restricted keys
+      console.log(`[trade-engine] No VPS proxy available, attempting direct OKX API calls`);
+      
+      let tradingSuccess = false;
+      let fundingSuccess = false;
+      
+      // 1. Fetch TRADING account balance
+      const timestamp = new Date().toISOString();
+      const tradingPath = '/api/v5/account/balance';
+      const tradingSign = await hmacSignB64(exchange.api_secret, timestamp + 'GET' + tradingPath);
+      try {
+        const tradingResp = await fetch(`https://www.okx.com${tradingPath}`, {
+          headers: {
+            'OK-ACCESS-KEY': exchange.api_key,
+            'OK-ACCESS-SIGN': tradingSign,
+            'OK-ACCESS-TIMESTAMP': timestamp,
+            'OK-ACCESS-PASSPHRASE': exchange.api_passphrase,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (tradingResp.ok) {
+          const tradingData = await tradingResp.json();
+          console.log(`[trade-engine] OKX Trading response code: ${tradingData.code}, msg: ${tradingData.msg || 'none'}`);
+          if (tradingData.code === '0') {
+            tradingSuccess = true;
+            const details = tradingData.data?.[0]?.details || [];
+            const usdtDetail = details.find((d: { ccy: string }) => d.ccy === 'USDT');
+            if (usdtDetail) {
+              const tradingBalance = parseFloat(usdtDetail.availBal || '0') + parseFloat(usdtDetail.frozenBal || '0');
+              balance += tradingBalance;
+              console.log(`[trade-engine] OKX Trading USDT: ${tradingBalance}`);
+            }
+          } else {
+            // Check for IP restriction error (code 50111)
+            if (tradingData.code === '50111') {
+              lastError = `OKX IP restriction error: Your API key requires IP whitelisting. Deploy a VPS and whitelist its IP on OKX.`;
+            } else {
+              lastError = `OKX Trading API error: ${tradingData.code} - ${tradingData.msg || 'Unknown error'}`;
+            }
+            console.error(`[trade-engine] ${lastError}`);
+          }
+        } else {
+          const errText = await tradingResp.text().catch(() => 'Unknown');
+          lastError = `OKX Trading HTTP ${tradingResp.status}: ${errText.substring(0, 200)}`;
+          console.error(`[trade-engine] ${lastError}`);
+        }
+      } catch (err) {
+        lastError = `OKX Trading fetch error: ${err instanceof Error ? err.message : 'Unknown'}`;
+        console.error(`[trade-engine] ${lastError}`);
+      }
+      
+      // 2. Fetch FUNDING account balance (where deposits usually go!)
+      const fundingTimestamp = new Date().toISOString();
+      const fundingPath = '/api/v5/asset/balances';
+      const fundingSign = await hmacSignB64(exchange.api_secret, fundingTimestamp + 'GET' + fundingPath);
+      try {
+        const fundingResp = await fetch(`https://www.okx.com${fundingPath}`, {
+          headers: {
+            'OK-ACCESS-KEY': exchange.api_key,
+            'OK-ACCESS-SIGN': fundingSign,
+            'OK-ACCESS-TIMESTAMP': fundingTimestamp,
+            'OK-ACCESS-PASSPHRASE': exchange.api_passphrase,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (fundingResp.ok) {
+          const fundingData = await fundingResp.json();
+          console.log(`[trade-engine] OKX Funding response code: ${fundingData.code}, msg: ${fundingData.msg || 'none'}`);
+          if (fundingData.code === '0') {
+            fundingSuccess = true;
+            const usdtFunding = fundingData.data?.find((d: { ccy: string }) => d.ccy === 'USDT');
+            if (usdtFunding) {
+              const fundingBalance = parseFloat(usdtFunding.availBal || '0') + parseFloat(usdtFunding.frozenBal || '0');
+              balance += fundingBalance;
+              console.log(`[trade-engine] OKX Funding USDT: ${fundingBalance}`);
+            }
+          } else {
+            // Check for IP restriction error (code 50111)
+            if (fundingData.code === '50111') {
+              lastError = `OKX IP restriction error: Your API key requires IP whitelisting. Deploy a VPS and whitelist its IP on OKX.`;
+            } else {
+              lastError = `OKX Funding API error: ${fundingData.code} - ${fundingData.msg || 'Unknown error'}`;
+            }
+            console.error(`[trade-engine] ${lastError}`);
+          }
+        } else {
+          const errText = await fundingResp.text().catch(() => 'Unknown');
+          lastError = `OKX Funding HTTP ${fundingResp.status}: ${errText.substring(0, 200)}`;
+          console.error(`[trade-engine] ${lastError}`);
+        }
+      } catch (err) {
+        lastError = `OKX Funding fetch error: ${err instanceof Error ? err.message : 'Unknown'}`;
+        console.error(`[trade-engine] ${lastError}`);
+      }
+      
+      // OKX auth is successful if at least one endpoint worked
+      authSuccess = tradingSuccess || fundingSuccess;
+      console.log(`[trade-engine] OKX auth success: ${authSuccess}, Total USDT: ${balance}`);
+      
+      // If both failed, provide actionable error
+      if (!authSuccess) {
+        lastError = lastError || 'OKX authentication failed. Check: 1) API key permissions (Read for Trading + Funding), 2) Passphrase is correct, 3) IP whitelist includes this server. TIP: Deploy a VPS and whitelist its IP on OKX.';
+      }
     }
   } else if (exchangeKey === 'bybit' && exchange.api_key && exchange.api_secret) {
     const timestamp = Date.now().toString();
@@ -223,7 +298,8 @@ serve(async (req) => {
         }
 
         try {
-          const result = await fetchExchangeBalance({ exchange_name: exchangeName, api_key: apiKey, api_secret: apiSecret, api_passphrase: apiPassphrase });
+          // Pass supabase client to enable VPS proxy for IP-restricted exchanges like OKX
+          const result = await fetchExchangeBalance({ exchange_name: exchangeName, api_key: apiKey, api_secret: apiSecret, api_passphrase: apiPassphrase }, supabase);
           
           // Fail-closed: if there's an error, return failure with clear message
           if (result.error) {
@@ -316,7 +392,8 @@ serve(async (req) => {
         const balances: Record<string, number> = {};
         for (const ex of exchanges) {
           try {
-            const { balance, pingMs } = await fetchExchangeBalance(ex);
+            // Pass supabase client to enable VPS proxy for IP-restricted exchanges like OKX
+            const { balance, pingMs } = await fetchExchangeBalance(ex, supabase);
             balances[ex.exchange_name] = balance;
             await supabase.from('exchange_connections').update({
               balance_usdt: balance,
@@ -514,12 +591,13 @@ serve(async (req) => {
         }
         
         try {
+          // Pass supabase client to enable VPS proxy for IP-restricted exchanges like OKX
           const { balance, pingMs } = await fetchExchangeBalance({
             exchange_name: conn.exchange_name,
             api_key: conn.api_key,
             api_secret: conn.api_secret,
             api_passphrase: conn.api_passphrase
-          });
+          }, supabase);
           
           // Update ping data
           await supabase.from('exchange_connections').update({
