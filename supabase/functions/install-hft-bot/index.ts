@@ -1148,12 +1148,11 @@ async function runPiranha() {
       
       saveState();
       
-      // Rate limit: wait before next check
-      // Use the most conservative rate limit
-      await sleep(1000); // Check every second
+      // STRICT RULE: 100ms monitoring interval for fast profit capture
+      await sleep(100);
       
-      // Log status every 60 loops (every minute)
-      if (loopCount % 60 === 0) {
+      // Log status every 600 loops (every minute at 100ms)
+      if (loopCount % 600 === 0) {
         console.log('[🐟 PIRANHA] Status: ' + state.positions.length + ' positions | ' + state.totalTrades + ' trades | $' + state.totalPnL.toFixed(2) + ' P&L');
       }
       

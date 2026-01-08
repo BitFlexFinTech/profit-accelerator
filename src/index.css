@@ -269,4 +269,35 @@
   .animate-scroll-left:hover {
     animation-play-state: paused;
   }
+
+  /* Blinking pulse animation for all status indicators (STRICT RULE) */
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .animate-blink {
+    animation: blink 1s ease-in-out infinite;
+  }
+
+  /* Smooth fade-slide-in for new items */
+  @keyframes fade-slide-in {
+    from { 
+      opacity: 0; 
+      transform: translateY(-8px); 
+    }
+    to { 
+      opacity: 1; 
+      transform: translateY(0); 
+    }
+  }
+
+  .animate-fade-slide-in {
+    animation: fade-slide-in 0.4s ease-out forwards;
+  }
+
+  /* Smooth transition utility */
+  .smooth-transition {
+    transition: all 0.3s ease-in-out;
+  }
 }

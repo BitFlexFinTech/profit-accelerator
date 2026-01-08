@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
+import { cn } from '@/lib/utils';
 
 interface ExchangePulse {
   id: string;
@@ -64,10 +65,18 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
     }
   }, []);
 
-  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
+  // Use SSOT lastUpdate to trigger refetch
   useEffect(() => {
     fetchPulses();
   }, [fetchPulses, lastUpdate]);
+
+  // Auto-refresh latency every 10 seconds (STRICT RULE)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchPulses();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchPulses]);
 
   const refreshPulses = async () => {
     setIsRefreshing(true);
@@ -86,63 +95,84 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
 
   const getLatencyColor = (latency: number, source?: string) => {
     const threshold = source === 'vps' ? 50 : 100;
-    if (latency < threshold) return 'text-green-400';
-    if (latency < threshold * 3) return 'text-yellow-400';
-    return 'text-red-400';
+    if (latency < threshold) return 'text-emerald-400';
+    if (latency < threshold * 3) return 'text-amber-400';
+    return 'text-rose-400';
   };
 
   const getStatusIcon = (status: string) => {
-    if (status === 'healthy') return <CheckCircle2 className="w-2.5 h-2.5 text-green-400" />;
-    if (status === 'jitter') return <AlertTriangle className="w-2.5 h-2.5 text-yellow-400" />;
-    return <XCircle className="w-2.5 h-2.5 text-red-400" />;
+    if (status === 'healthy') return <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400 animate-blink" />;
+    if (status === 'jitter') return <AlertTriangle className="w-2.5 h-2.5 text-amber-400 animate-blink" />;
+    return <XCircle className="w-2.5 h-2.5 text-rose-400 animate-blink" />;
+  };
+
+  const getStatusBg = (status: string) => {
+    if (status === 'healthy') return 'bg-emerald-500/10 border-emerald-500/30';
+    if (status === 'jitter') return 'bg-amber-500/10 border-amber-500/30';
+    return 'bg-rose-500/10 border-rose-500/30';
   };
 
   const healthyCount = pulses.filter(p => p.status === 'healthy').length;
   const isVPS = pulses.some(p => p.source === 'vps');
 
   return (
-    <div ref={ref} className={`glass-card ${compact ? 'p-2' : 'p-4'} h-full flex flex-col`}>
+    <div ref={ref} className={cn("glass-card h-full flex flex-col", compact ? 'p-2' : 'p-4')}>
       <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <Activity className={`${compact ? 'w-3 h-3' : 'w-4 h-4'} text-primary animate-pulse`} />
-          <span className={`font-medium ${compact ? 'text-xs' : 'text-sm'}`}>Exchange Pulse</span>
+          <Activity className={cn(
+            "text-primary animate-blink",
+            compact ? 'w-3 h-3' : 'w-4 h-4'
+          )} />
+          <span className={cn("font-medium", compact ? 'text-xs' : 'text-sm')}>Exchange Pulse</span>
           {isVPS && (
-            <span className="flex items-center gap-0.5 text-[9px] text-green-400 bg-green-500/10 px-1 rounded">
+            <span className="flex items-center gap-0.5 text-[9px] text-emerald-400 bg-emerald-500/10 px-1 rounded animate-blink">
               <Server className="w-2 h-2" />VPS
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-muted-foreground">{healthyCount}/{pulses.length}</span>
+          <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1 rounded">10s</span>
           <Button
             variant="ghost"
             size="sm"
             onClick={refreshPulses}
             disabled={isRefreshing}
-            className={compact ? "h-5 w-5 p-0" : "h-6 w-6 p-0"}
+            className={cn("transition-all duration-300", compact ? "h-5 w-5 p-0" : "h-6 w-6 p-0")}
           >
-            <RefreshCw className={`${compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} ${isRefreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={cn(
+              compact ? 'w-2.5 h-2.5' : 'w-3 h-3',
+              isRefreshing && 'animate-spin'
+            )} />
           </Button>
         </div>
       </div>
 
-      <div className={`grid ${compact ? 'grid-cols-6 gap-1' : 'grid-cols-3 gap-2'} flex-1`}>
-        {pulses.map((pulse) => {
+      <div className={cn(
+        "grid flex-1",
+        compact ? 'grid-cols-6 gap-1' : 'grid-cols-3 gap-2'
+      )}>
+        {pulses.map((pulse, index) => {
           const display = EXCHANGE_DISPLAY[pulse.exchange_name] || { name: pulse.exchange_name.slice(0, 3).toUpperCase() };
           return (
             <div
               key={pulse.id}
-              className={`${compact ? 'p-1' : 'p-2'} rounded text-center ${
-                pulse.status === 'healthy' ? 'bg-green-500/10 border border-green-500/30' :
-                pulse.status === 'jitter' ? 'bg-yellow-500/10 border border-yellow-500/30' :
-                'bg-red-500/10 border border-red-500/30'
-              }`}
+              className={cn(
+                "rounded text-center border transition-all duration-300 animate-fade-slide-in",
+                compact ? 'p-1' : 'p-2',
+                getStatusBg(pulse.status)
+              )}
+              style={{ animationDelay: `${index * 50}ms` }}
             >
               <div className="flex items-center justify-center gap-0.5 mb-0.5">
                 {getStatusIcon(pulse.status)}
               </div>
-              <p className={`font-medium ${compact ? 'text-[9px]' : 'text-xs'}`}>{display.name}</p>
-              <p className={`font-mono ${compact ? 'text-[8px]' : 'text-[10px]'} ${getLatencyColor(pulse.latency_ms, pulse.source)}`}>
+              <p className={cn("font-medium", compact ? 'text-[9px]' : 'text-xs')}>{display.name}</p>
+              <p className={cn(
+                "font-mono transition-colors duration-300",
+                compact ? 'text-[8px]' : 'text-[10px]',
+                getLatencyColor(pulse.latency_ms, pulse.source)
+              )}>
                 {Math.round(pulse.latency_ms)}ms
               </p>
             </div>
