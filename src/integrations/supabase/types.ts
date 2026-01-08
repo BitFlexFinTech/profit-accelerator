@@ -1709,6 +1709,8 @@ export type Database = {
         Row: {
           copy_ratio: number | null
           created_at: string | null
+          delay_ms: number | null
+          executed_at: string | null
           id: string
           is_active: boolean | null
           source_exchange: string
@@ -1719,6 +1721,8 @@ export type Database = {
         Insert: {
           copy_ratio?: number | null
           created_at?: string | null
+          delay_ms?: number | null
+          executed_at?: string | null
           id?: string
           is_active?: boolean | null
           source_exchange: string
@@ -1729,6 +1733,8 @@ export type Database = {
         Update: {
           copy_ratio?: number | null
           created_at?: string | null
+          delay_ms?: number | null
+          executed_at?: string | null
           id?: string
           is_active?: boolean | null
           source_exchange?: string
