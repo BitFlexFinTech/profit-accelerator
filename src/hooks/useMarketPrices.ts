@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PriceData {
@@ -26,13 +26,29 @@ const DEFAULT_PRICES: MarketPrices = {
   SOL: { price: 0, change24h: 0 }
 };
 
-export function useMarketPrices(refreshInterval = 2000): UseMarketPricesReturn {
+// Increased interval from 2s to 15s for performance optimization
+export function useMarketPrices(refreshInterval = 15000): UseMarketPricesReturn {
   const [prices, setPrices] = useState<MarketPrices | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isTabVisible, setIsTabVisible] = useState(true);
+  const fetchingRef = useRef(false);
+
+  // Track tab visibility to pause polling when hidden
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsTabVisible(document.visibilityState === 'visible');
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   const fetchPrices = useCallback(async () => {
+    // Prevent concurrent requests
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
     try {
       const response = await supabase.functions.invoke('trade-engine', {
         body: { action: 'get-prices' }
@@ -50,15 +66,20 @@ export function useMarketPrices(refreshInterval = 2000): UseMarketPricesReturn {
       setError('Failed to connect to price feed');
     } finally {
       setIsLoading(false);
+      fetchingRef.current = false;
     }
   }, []);
 
   useEffect(() => {
+    // Initial fetch
     fetchPrices();
+
+    // Only poll when tab is visible
+    if (!isTabVisible) return;
 
     const interval = setInterval(fetchPrices, refreshInterval);
     return () => clearInterval(interval);
-  }, [fetchPrices, refreshInterval]);
+  }, [fetchPrices, refreshInterval, isTabVisible]);
 
   return {
     prices: prices || DEFAULT_PRICES,
