@@ -6,8 +6,57 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
+// AI Provider Configuration - Multi-provider rotation for rate limit handling
+const AI_PROVIDER_CONFIG: Record<string, { 
+  type: 'openai' | 'gemini'; 
+  endpoint: string; 
+  envKey: string;
+  model: string;
+  fastModel?: string;
+}> = {
+  groq: { 
+    type: 'openai', 
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions', 
+    envKey: 'GROQ_API_KEY',
+    model: 'llama-3.3-70b-versatile',
+    fastModel: 'llama-3.1-8b-instant'
+  },
+  cerebras: { 
+    type: 'openai', 
+    endpoint: 'https://api.cerebras.ai/v1/chat/completions', 
+    envKey: 'CEREBRAS_API_KEY',
+    model: 'llama3.1-70b',
+    fastModel: 'llama3.1-8b'
+  },
+  together: { 
+    type: 'openai', 
+    endpoint: 'https://api.together.xyz/v1/chat/completions', 
+    envKey: 'TOGETHER_API_KEY',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    fastModel: 'meta-llama/Llama-3.2-3B-Instruct-Turbo'
+  },
+  openrouter: { 
+    type: 'openai', 
+    endpoint: 'https://openrouter.ai/api/v1/chat/completions', 
+    envKey: 'OPENROUTER_API_KEY',
+    model: 'meta-llama/llama-3.3-70b-instruct',
+    fastModel: 'meta-llama/llama-3.2-3b-instruct'
+  },
+  mistral: { 
+    type: 'openai', 
+    endpoint: 'https://api.mistral.ai/v1/chat/completions', 
+    envKey: 'MISTRAL_API_KEY',
+    model: 'mistral-large-latest',
+    fastModel: 'mistral-small-latest'
+  },
+  gemini: { 
+    type: 'gemini', 
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent', 
+    envKey: 'GEMINI_API_KEY',
+    model: 'gemini-1.5-flash',
+    fastModel: 'gemini-1.5-flash'
+  }
+};
 
 // Exchange API endpoints for fetching top pairs by volume
 const EXCHANGE_ENDPOINTS: Record<string, { ticker24h: string; parseTop10: (data: any) => string[] }> = {
@@ -101,42 +150,279 @@ async function getTop10Pairs(exchange: string): Promise<string[]> {
   }
 }
 
-// Validate Groq API key format and test connection
-async function validateGroqKey(): Promise<{ valid: boolean; error?: string }> {
-  if (!GROQ_API_KEY) {
-    return { valid: false, error: 'GROQ_API_KEY not set in Supabase secrets' };
-  }
-  
-  // Check for obvious placeholder values
-  if (GROQ_API_KEY.length < 30 || GROQ_API_KEY.includes('test_key') || GROQ_API_KEY.startsWith('sk-test')) {
-    return { valid: false, error: 'GROQ_API_KEY appears to be a placeholder. Get a real key from console.groq.com' };
-  }
-  
-  // Quick validation test with minimal tokens
+// Get next available AI provider based on priority and rate limits
+async function getNextAvailableProvider(supabase: any): Promise<{
+  provider: string;
+  apiKey: string;
+  config: typeof AI_PROVIDER_CONFIG[string];
+} | null> {
   try {
-    const testResp = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${GROQ_API_KEY}`, 
-        'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({ 
-        model: 'llama-3.3-70b-versatile', 
-        messages: [{ role: 'user', content: 'hi' }], 
-        max_tokens: 1 
-      }),
-    });
-    
-    if (!testResp.ok) {
-      const errText = await testResp.text();
-      console.error(`[ai-analyze] GROQ_API_KEY validation failed: status=${testResp.status}, body=${errText.slice(0, 200)}`);
-      return { valid: false, error: `Groq API key invalid: ${testResp.status} - ${errText.slice(0, 100)}` };
-    }
-    
-    return { valid: true };
+    // Reset expired rate limits (providers not used in last minute)
+    await supabase.rpc('reset_ai_provider_usage');
   } catch (e) {
-    console.error('[ai-analyze] Groq key validation error:', e);
-    return { valid: false, error: `Groq connection failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
+    console.log('[ai-analyze] Could not reset provider usage, continuing...');
+  }
+
+  // Query enabled providers sorted by priority, under rate limit
+  const { data: providers } = await supabase
+    .from('ai_providers')
+    .select('provider_name, rate_limit_rpm, current_usage, priority, secret_name')
+    .eq('is_enabled', true)
+    .order('priority', { ascending: true })
+    .order('current_usage', { ascending: true });
+
+  if (!providers?.length) {
+    console.log('[ai-analyze] No enabled providers found in database');
+    // Fallback to env-based provider check
+    for (const [name, config] of Object.entries(AI_PROVIDER_CONFIG)) {
+      const apiKey = Deno.env.get(config.envKey);
+      if (apiKey && apiKey.length > 20 && !apiKey.includes('test_key')) {
+        console.log(`[ai-analyze] Fallback to env provider: ${name}`);
+        return { provider: name, apiKey, config };
+      }
+    }
+    return null;
+  }
+
+  // Find first provider under rate limit with valid API key
+  for (const p of providers) {
+    const usage = p.current_usage || 0;
+    const limit = p.rate_limit_rpm || 30;
+    
+    if (usage >= limit) {
+      console.log(`[ai-analyze] Provider ${p.provider_name} at rate limit (${usage}/${limit})`);
+      continue;
+    }
+
+    const config = AI_PROVIDER_CONFIG[p.provider_name];
+    if (!config) continue;
+
+    const apiKey = Deno.env.get(config.envKey);
+    if (!apiKey || apiKey.length < 20 || apiKey.includes('test_key')) {
+      console.log(`[ai-analyze] Provider ${p.provider_name} has no valid API key`);
+      continue;
+    }
+
+    console.log(`[ai-analyze] Selected provider: ${p.provider_name} (usage: ${usage}/${limit})`);
+    return { provider: p.provider_name, apiKey, config };
+  }
+
+  console.log('[ai-analyze] All providers at rate limit');
+  return null;
+}
+
+// Record provider metrics after API call
+async function recordProviderMetrics(
+  supabase: any,
+  providerName: string,
+  success: boolean,
+  latencyMs: number,
+  errorMessage?: string
+) {
+  try {
+    const updateData: any = {
+      last_used_at: new Date().toISOString(),
+    };
+
+    if (success) {
+      // Use raw SQL update for atomic increment
+      await supabase.rpc('increment_provider_success', { p_name: providerName, latency: latencyMs });
+    } else {
+      await supabase
+        .from('ai_providers')
+        .update({
+          error_count: supabase.sql`error_count + 1`,
+          last_error: errorMessage || 'Unknown error',
+          last_used_at: new Date().toISOString()
+        })
+        .eq('provider_name', providerName);
+    }
+
+    // Always increment usage
+    await supabase
+      .from('ai_providers')
+      .update({ current_usage: supabase.sql`current_usage + 1` })
+      .eq('provider_name', providerName);
+  } catch (e) {
+    console.error(`[ai-analyze] Failed to record metrics for ${providerName}:`, e);
+  }
+}
+
+// Call OpenAI-compatible API (Groq, Cerebras, Together, OpenRouter, Mistral)
+async function callOpenAICompatible(
+  prompt: string,
+  systemPrompt: string,
+  model: string,
+  endpoint: string,
+  apiKey: string,
+  maxTokens: number = 120
+): Promise<{ content: string; latencyMs: number }> {
+  const startTime = Date.now();
+  
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json'
+  };
+  
+  // OpenRouter requires extra headers
+  if (endpoint.includes('openrouter')) {
+    headers['HTTP-Referer'] = 'https://lovable.dev';
+    headers['X-Title'] = 'HFT Trading Bot';
+  }
+
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: maxTokens,
+    }),
+  });
+
+  const latencyMs = Date.now() - startTime;
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`API error ${resp.status}: ${errText.slice(0, 150)}`);
+  }
+
+  const data = await resp.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  
+  return { content, latencyMs };
+}
+
+// Call Gemini API (different format)
+async function callGeminiAPI(
+  prompt: string,
+  systemPrompt: string,
+  apiKey: string
+): Promise<{ content: string; latencyMs: number }> {
+  const startTime = Date.now();
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{ text: `${systemPrompt}\n\n${prompt}` }]
+      }],
+      generationConfig: {
+        maxOutputTokens: 120,
+        temperature: 0.7
+      }
+    }),
+  });
+
+  const latencyMs = Date.now() - startTime;
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Gemini API error ${resp.status}: ${errText.slice(0, 150)}`);
+  }
+
+  const data = await resp.json();
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  
+  return { content, latencyMs };
+}
+
+// Analyze symbol with automatic provider rotation
+async function analyzeWithRotation(
+  supabase: any,
+  prompt: string,
+  systemPrompt: string,
+  useFastModel: boolean = true
+): Promise<{ content: string; provider: string } | null> {
+  const maxRetries = 3;
+  let lastError: string | null = null;
+  const triedProviders = new Set<string>();
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const providerInfo = await getNextAvailableProvider(supabase);
+    
+    if (!providerInfo) {
+      console.log('[ai-analyze] No available providers');
+      return null;
+    }
+
+    // Skip if already tried this provider
+    if (triedProviders.has(providerInfo.provider)) {
+      continue;
+    }
+    triedProviders.add(providerInfo.provider);
+
+    const { provider, apiKey, config } = providerInfo;
+    const model = useFastModel && config.fastModel ? config.fastModel : config.model;
+
+    try {
+      let result: { content: string; latencyMs: number };
+
+      if (config.type === 'gemini') {
+        result = await callGeminiAPI(prompt, systemPrompt, apiKey);
+      } else {
+        result = await callOpenAICompatible(prompt, systemPrompt, model, config.endpoint, apiKey);
+      }
+
+      // Record success
+      await recordProviderMetrics(supabase, provider, true, result.latencyMs);
+      console.log(`[ai-analyze] Success with ${provider} in ${result.latencyMs}ms`);
+      
+      return { content: result.content, provider };
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+      console.error(`[ai-analyze] Provider ${provider} failed: ${errorMsg}`);
+      
+      // Record failure
+      await recordProviderMetrics(supabase, provider, false, 0, errorMsg);
+      lastError = errorMsg;
+
+      // If rate limited (429), mark provider as at limit and try next
+      if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
+        await supabase
+          .from('ai_providers')
+          .update({ current_usage: 9999 }) // Max out usage to skip this provider
+          .eq('provider_name', provider);
+      }
+    }
+  }
+
+  console.error(`[ai-analyze] All providers failed. Last error: ${lastError}`);
+  return null;
+}
+
+// Validate any provider API key
+async function validateProviderKey(provider: string): Promise<{ valid: boolean; error?: string }> {
+  const config = AI_PROVIDER_CONFIG[provider];
+  if (!config) {
+    return { valid: false, error: `Unknown provider: ${provider}` };
+  }
+
+  const apiKey = Deno.env.get(config.envKey);
+  if (!apiKey) {
+    return { valid: false, error: `${config.envKey} not set in Supabase secrets` };
+  }
+  
+  if (apiKey.length < 20 || apiKey.includes('test_key')) {
+    return { valid: false, error: `${config.envKey} appears to be a placeholder` };
+  }
+
+  // Quick validation test
+  try {
+    if (config.type === 'gemini') {
+      const result = await callGeminiAPI('Say hi', 'Be brief', apiKey);
+      return result.content ? { valid: true } : { valid: false, error: 'Empty response' };
+    } else {
+      const result = await callOpenAICompatible('Say hi', 'Be brief', config.model, config.endpoint, apiKey, 5);
+      return result.content ? { valid: true } : { valid: false, error: 'Empty response' };
+    }
+  } catch (e) {
+    return { valid: false, error: e instanceof Error ? e.message : 'Unknown error' };
   }
 }
 
@@ -152,11 +438,74 @@ serve(async (req) => {
     );
 
     const body = await req.json();
-    const { action, symbol, model } = body;
-    console.log(`[ai-analyze] Action: ${action}, hasKey: ${!!GROQ_API_KEY}, keyLength: ${GROQ_API_KEY?.length || 0}`);
+    const { action, symbol, model, provider: targetProvider } = body;
+    console.log(`[ai-analyze] Action: ${action}`);
+
+    // Get all providers with status
+    if (action === 'get-providers') {
+      const { data: providers } = await supabase
+        .from('ai_providers')
+        .select('*')
+        .order('priority', { ascending: true });
+
+      // Check which providers have valid API keys
+      const providersWithStatus = await Promise.all((providers || []).map(async (p: any) => {
+        const config = AI_PROVIDER_CONFIG[p.provider_name];
+        const apiKey = config ? Deno.env.get(config.envKey) : null;
+        const hasValidKey = apiKey && apiKey.length > 20 && !apiKey.includes('test_key');
+        
+        return {
+          ...p,
+          has_valid_key: hasValidKey,
+          at_rate_limit: (p.current_usage || 0) >= (p.rate_limit_rpm || 30)
+        };
+      }));
+
+      return new Response(JSON.stringify({ success: true, providers: providersWithStatus }), 
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Test a specific provider
+    if (action === 'test-provider') {
+      if (!targetProvider) {
+        return new Response(JSON.stringify({ success: false, error: 'Provider name required' }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      
+      const validation = await validateProviderKey(targetProvider);
+      return new Response(JSON.stringify({ success: validation.valid, error: validation.error }), 
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Toggle provider enabled/disabled
+    if (action === 'toggle-provider') {
+      if (!targetProvider) {
+        return new Response(JSON.stringify({ success: false, error: 'Provider name required' }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const { data: current } = await supabase
+        .from('ai_providers')
+        .select('is_enabled')
+        .eq('provider_name', targetProvider)
+        .single();
+
+      const { error } = await supabase
+        .from('ai_providers')
+        .update({ is_enabled: !current?.is_enabled })
+        .eq('provider_name', targetProvider);
+
+      if (error) {
+        return new Response(JSON.stringify({ success: false, error: error.message }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      return new Response(JSON.stringify({ success: true, is_enabled: !current?.is_enabled }), 
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     if (action === 'validate-key') {
-      const validation = await validateGroqKey();
+      const validation = await validateProviderKey(targetProvider || 'groq');
       return new Response(JSON.stringify({ success: validation.valid, error: validation.error }), 
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -172,54 +521,47 @@ serve(async (req) => {
     }
 
     if (action === 'analyze') {
-      // Validate key first
-      const validation = await validateGroqKey();
-      if (!validation.valid) {
-        return new Response(JSON.stringify({ success: false, error: validation.error }), 
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      
       const { data: cfg } = await supabase.from('ai_config').select('model, is_active, id').eq('provider', 'groq').single();
       if (cfg && !cfg.is_active) {
         return new Response(JSON.stringify({ success: false, error: 'AI not active' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+      
       const sym = (symbol || 'BTC').toUpperCase();
       let ctx = `${sym}/USDT data.`;
       try {
         const pr = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}USDT`);
-        if (pr.ok) { const t = await pr.json(); ctx = `${sym} at $${parseFloat(t.lastPrice).toFixed(2)}, ${parseFloat(t.priceChangePercent).toFixed(2)}% 24h`; }
+        if (pr.ok) { 
+          const t = await pr.json(); 
+          ctx = `${sym} at $${parseFloat(t.lastPrice).toFixed(2)}, ${parseFloat(t.priceChangePercent).toFixed(2)}% 24h`; 
+        }
       } catch {}
-      const resp = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: cfg?.model || 'llama-3.3-70b-versatile',
-          messages: [{ role: 'system', content: 'Crypto analyst.' }, { role: 'user', content: `Analyze ${sym}. ${ctx} Give sentiment, levels, outlook.` }],
-          max_tokens: 400,
-        }),
-      });
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.error(`[ai-analyze] Groq API error: status=${resp.status}, body=${errText.slice(0, 200)}`);
-        return new Response(JSON.stringify({ success: false, error: `Groq API error: ${resp.status}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      const result = await analyzeWithRotation(
+        supabase,
+        `Analyze ${sym}. ${ctx} Give sentiment, levels, outlook.`,
+        'Crypto analyst.',
+        false // Use full model for detailed analysis
+      );
+
+      if (!result) {
+        return new Response(JSON.stringify({ success: false, error: 'All AI providers unavailable' }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      const d = await resp.json();
-      if (cfg?.id) await supabase.from('ai_config').update({ last_used_at: new Date().toISOString() }).eq('id', cfg.id);
-      return new Response(JSON.stringify({ success: true, symbol: sym, analysis: d.choices?.[0]?.message?.content || 'No analysis' }), 
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      if (cfg?.id) {
+        await supabase.from('ai_config').update({ last_used_at: new Date().toISOString() }).eq('id', cfg.id);
+      }
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        symbol: sym, 
+        analysis: result.content,
+        provider: result.provider 
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (action === 'market-scan') {
-      console.log('[ai-analyze] market-scan start - real-time 5s updates with GROQ AI');
-      
-      // CRITICAL: Validate Groq key FIRST before attempting any analysis
-      const validation = await validateGroqKey();
-      if (!validation.valid) {
-        console.error(`[ai-analyze] market-scan aborted: ${validation.error}`);
-        return new Response(JSON.stringify({ success: false, error: validation.error }), 
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      console.log('[ai-analyze] Groq API key validated successfully');
+      console.log('[ai-analyze] market-scan start - multi-provider rotation');
       
       // Get ALL connected exchanges
       const { data: exchanges } = await supabase
@@ -236,8 +578,9 @@ serve(async (req) => {
       let totalAnalyzed = 0;
       let totalErrors = 0;
       const exchangeResults: Record<string, number> = {};
+      const providersUsed: Set<string> = new Set();
 
-      // Clean old entries (older than 2 minutes) to keep table fresh
+      // Clean old entries (older than 2 minutes)
       await supabase
         .from('ai_market_updates')
         .delete()
@@ -248,63 +591,44 @@ serve(async (req) => {
         const exName = ex.exchange_name.toLowerCase();
         console.log(`[ai-analyze] Processing exchange: ${exName}`);
         
-        // Get top 10 pairs by volume for this exchange
         const top10 = await getTop10Pairs(exName);
         console.log(`[ai-analyze] Top 10 for ${exName}:`, top10);
         
         let exchangeCount = 0;
-        
-        // Analyze each symbol with 100ms delay (faster for 5s updates)
-        // Only analyze top 3 pairs per exchange to stay under rate limits
         const pairsToAnalyze = top10.slice(0, 3);
         
         for (const sym of pairsToAnalyze) {
           try {
-            // Fetch price with caching
             const priceData = await fetchPriceData(sym, exName);
             if (!priceData) continue;
             
             const { price, change } = priceData;
             const cleanSymbol = sym.replace('USDT', '');
             
-            // Call Groq API for HFT analysis
-            const gr = await fetch(GROQ_API_URL, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: 'llama-3.1-8b-instant', // Use faster, cheaper model for rate limits
-                messages: [
-                  { role: 'system', content: 'You are an HFT scalping AI. Reply JSON only. Vary confidence 50-95 based on signal strength.' },
-                  { role: 'user', content: `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. JSON only:
-{"sentiment":"BULLISH"|"BEARISH"|"NEUTRAL","confidence":50-95,"insight":"max 8 words","support":number,"resistance":number,"profit_timeframe_minutes":1|3|5,"recommended_side":"long"|"short","expected_move_percent":0.1-1.0}` }
-                ],
-                max_tokens: 120,
-              }),
-            });
+            // Use rotation to call AI
+            const result = await analyzeWithRotation(
+              supabase,
+              `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. JSON only:
+{"sentiment":"BULLISH"|"BEARISH"|"NEUTRAL","confidence":50-95,"insight":"max 8 words","support":number,"resistance":number,"profit_timeframe_minutes":1|3|5,"recommended_side":"long"|"short","expected_move_percent":0.1-1.0}`,
+              'You are an HFT scalping AI. Reply JSON only. Vary confidence 50-95 based on signal strength.',
+              true // Use fast model
+            );
             
-            if (!gr.ok) {
-              const errText = await gr.text();
-              console.error(`[ai-analyze] Groq API error for ${sym}: status=${gr.status}, body=${errText.slice(0, 150)}`);
+            if (!result) {
               totalErrors++;
-              
-              // If rate limited (429), stop processing this exchange
-              if (gr.status === 429) {
-                console.warn(`[ai-analyze] Rate limited on ${exName}, moving to next exchange`);
-                break;
-              }
               continue;
             }
             
-            const gd = await gr.json();
-            const txt = gd.choices?.[0]?.message?.content;
-            if (!txt) continue;
+            providersUsed.add(result.provider);
             
-            const m = txt.match(/\{[\s\S]*\}/);
-            if (!m) continue;
+            const m = result.content.match(/\{[\s\S]*\}/);
+            if (!m) {
+              totalErrors++;
+              continue;
+            }
             
             const a = JSON.parse(m[0]);
             
-            // Validate and normalize values
             let profitTimeframe = parseInt(a.profit_timeframe_minutes) || 5;
             if (![1, 3, 5].includes(profitTimeframe)) profitTimeframe = 5;
             const recommendedSide = a.recommended_side === 'short' ? 'short' : 'long';
@@ -313,7 +637,6 @@ serve(async (req) => {
             let confidence = parseInt(a.confidence) || 70;
             confidence = Math.max(50, Math.min(95, confidence));
             
-            // UPSERT for continuous updates
             const { error: upsertError } = await supabase.from('ai_market_updates').upsert({
               symbol: cleanSymbol,
               exchange_name: exName,
@@ -340,8 +663,8 @@ serve(async (req) => {
               totalAnalyzed++;
             }
             
-            // Rate limit: 1500ms between API calls to stay under Groq free tier limits
-            await new Promise(r => setTimeout(r, 1500));
+            // Rate limit delay
+            await new Promise(r => setTimeout(r, 1000));
             
           } catch (e) {
             console.error(`[ai-analyze] Error analyzing ${sym}:`, e);
@@ -356,18 +679,18 @@ serve(async (req) => {
         await supabase.from('ai_config').update({ last_used_at: new Date().toISOString() }).eq('id', cfg.id);
       }
       
-      console.log(`[ai-analyze] market-scan complete: ${totalAnalyzed} analyzed, ${totalErrors} errors`, exchangeResults);
+      console.log(`[ai-analyze] market-scan complete: ${totalAnalyzed} analyzed, ${totalErrors} errors, providers: ${Array.from(providersUsed).join(', ')}`);
       
       return new Response(JSON.stringify({ 
         success: true, 
         analyzed: totalAnalyzed,
         errors: totalErrors,
         exchanges: exchangeResults,
-        message: `Analyzed top 10 pairs for ${Object.keys(exchangeResults).length} exchange(s)`
+        providersUsed: Array.from(providersUsed),
+        message: `Analyzed top pairs for ${Object.keys(exchangeResults).length} exchange(s)`
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Analyze last trades for learning loop
     if (action === 'analyze-last-trade') {
       const { data: trades } = await supabase
         .from('trading_journal')
@@ -381,7 +704,6 @@ serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       
-      // Calculate metrics
       const avgHoldTime = trades.reduce((sum, t) => {
         if (t.created_at && t.closed_at) {
           return sum + (new Date(t.closed_at).getTime() - new Date(t.created_at).getTime()) / 1000;
@@ -393,7 +715,7 @@ serve(async (req) => {
       const winRate = (winningTrades.length / trades.length) * 100;
       const avgProfit = trades.reduce((sum, t) => sum + (t.pnl || 0), 0) / trades.length;
       
-      console.log(`[ai-analyze] Trade analysis: ${trades.length} trades, ${winRate.toFixed(1)}% win rate, avg hold ${avgHoldTime.toFixed(0)}s, avg profit $${avgProfit.toFixed(2)}`);
+      console.log(`[ai-analyze] Trade analysis: ${trades.length} trades, ${winRate.toFixed(1)}% win rate`);
       
       return new Response(JSON.stringify({ 
         success: true, 
@@ -406,9 +728,12 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  } catch (e) {
-    console.error('[ai-analyze] Error:', e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Invalid action' }), 
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  } catch (error) {
+    console.error('[ai-analyze] Error:', error);
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), 
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
