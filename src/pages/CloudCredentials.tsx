@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, CheckCircle2, XCircle, Clock, Trash2, TestTube2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, CheckCircle2, XCircle, Clock, Trash2, TestTube2, RefreshCw, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,6 +29,7 @@ export default function CloudCredentials() {
     isSaving,
     isValidating,
     saveCredential,
+    saveProviderCredentials,
     validateProvider,
     validateAllProviders,
     clearAllCredentials,
@@ -198,6 +199,16 @@ export default function CloudCredentials() {
                               <Badge className={cn(provider.color, provider.textColor, "justify-center")}>
                                 {provider.displayName}
                               </Badge>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => saveProviderCredentials(provider.name)}
+                                disabled={isSaving}
+                              >
+                                <Save className="h-3 w-3 mr-1" />
+                                Save
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
