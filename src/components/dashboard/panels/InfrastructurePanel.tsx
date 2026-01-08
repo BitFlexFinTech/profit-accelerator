@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Activity, Cloud, CheckCircle2, XCircle, AlertTriangle, Zap } from 'lucide-react';
+import { Activity, Cloud, CheckCircle2, XCircle, AlertTriangle, Zap, RefreshCw } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { useCloudConfig } from '@/hooks/useCloudConfig';
 import { useHFTDeployments } from '@/hooks/useHFTDeployments';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconContainer } from '@/components/ui/IconContainer';
 
 interface ExchangePulse {
   id: string;
@@ -26,11 +29,11 @@ export function InfrastructurePanel() {
   const [rateLimits, setRateLimits] = useState<RateLimitStat[]>([]);
   const [sentimentIndex, setSentimentIndex] = useState<number | null>(null);
   const [vpsExchangeLatency, setVpsExchangeLatency] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { configs } = useCloudConfig();
   const { deployments } = useHFTDeployments();
   const [vpsConfig, setVpsConfig] = useState<{ provider: string } | null>(null);
 
-  // Fetch exchange pulse - ONLY show connected exchanges
   const fetchPulses = useCallback(async () => {
     try {
       const { data: connections } = await supabase
@@ -51,7 +54,6 @@ export function InfrastructurePanel() {
         .order('exchange_name');
 
       if (data) {
-        // ONLY keep connected exchanges - filter out all others
         const connectedOnly = data.filter(p => 
           connectedNames.includes(p.exchange_name.toLowerCase())
         ).map(p => ({
@@ -66,7 +68,6 @@ export function InfrastructurePanel() {
     }
   }, []);
 
-  // Fetch rate limits
   const fetchRateLimits = useCallback(async () => {
     const services = ['binance', 'okx', 'bybit'];
     const limits: Record<string, number> = { binance: 1200, okx: 3000, bybit: 2500 };
@@ -95,7 +96,6 @@ export function InfrastructurePanel() {
     }
   }, []);
 
-  // Fetch sentiment
   const fetchSentiment = useCallback(async () => {
     try {
       const { data } = await supabase.functions.invoke('trade-engine', {
@@ -112,7 +112,6 @@ export function InfrastructurePanel() {
     }
   }, []);
 
-  // Fetch VPS→Exchange latency from exchange_pulse where source='vps'
   const fetchVpsLatency = useCallback(async () => {
     try {
       const { data } = await supabase
@@ -129,13 +128,18 @@ export function InfrastructurePanel() {
     }
   }, []);
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([fetchPulses(), fetchRateLimits(), fetchVpsLatency()]);
+    setIsRefreshing(false);
+  };
+
   useEffect(() => {
     fetchPulses();
     fetchRateLimits();
     fetchSentiment();
     fetchVpsLatency();
     
-    // Fetch VPS config
     supabase.from('vps_config').select('provider').order('updated_at', { ascending: false }).limit(1).single()
       .then(({ data }) => { if (data) setVpsConfig(data); });
     
@@ -177,7 +181,7 @@ export function InfrastructurePanel() {
     switch (status) {
       case 'running': return 'bg-emerald-500';
       case 'deploying': return 'bg-amber-500 animate-pulse';
-      case 'error': return 'bg-destructive';
+      case 'error': return 'bg-red-500';
       default: return 'bg-muted-foreground/30';
     }
   };
@@ -192,41 +196,62 @@ export function InfrastructurePanel() {
 
   const getSentimentColor = (index: number | null) => {
     if (index === null) return 'text-muted-foreground';
-    if (index <= 25) return 'text-destructive';
-    if (index <= 45) return 'text-warning';
+    if (index <= 25) return 'text-red-400';
+    if (index <= 45) return 'text-yellow-400';
     if (index <= 55) return 'text-yellow-500';
-    if (index <= 75) return 'text-lime-500';
-    return 'text-success';
+    if (index <= 75) return 'text-lime-400';
+    return 'text-green-400';
   };
 
   return (
-    <div className="glass-card p-3 h-full flex flex-col gap-2">
+    <div className={cn(
+      "card-orange glass-card p-3 h-full flex flex-col gap-2",
+      "hover:shadow-lg hover:shadow-orange-500/10 transition-all duration-300"
+    )}>
       {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <Activity className="w-3.5 h-3.5 text-primary" />
+          <IconContainer color="orange" size="sm" animated>
+            <Activity className="w-2.5 h-2.5" />
+          </IconContainer>
           <span className="text-xs font-semibold">INFRASTRUCTURE</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className={`text-sm font-bold ${getSentimentColor(sentimentIndex)}`}>
-            {sentimentIndex ?? '--'}
-          </span>
-          <div className="w-8 h-1.5 bg-secondary rounded-full overflow-hidden">
-            <div 
-              className="h-full rounded-full"
-              style={{ 
-                width: `${sentimentIndex ?? 0}%`,
-                background: 'linear-gradient(90deg, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94))'
-              }}
-            />
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className={cn("text-sm font-bold", getSentimentColor(sentimentIndex))}>
+              {sentimentIndex ?? '--'}
+            </span>
+            <div className="w-8 h-1.5 bg-secondary rounded-full overflow-hidden">
+              <div 
+                className="h-full rounded-full"
+                style={{ 
+                  width: `${sentimentIndex ?? 0}%`,
+                  background: 'linear-gradient(90deg, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94))'
+                }}
+              />
+            </div>
           </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="h-5 w-5 p-0"
+              >
+                <RefreshCw className={cn("w-2.5 h-2.5", isRefreshing && "animate-spin")} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Test network latency to exchanges</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
-      {/* Row 1: Exchange Pulse - 6 boxes with latency */}
+      {/* Row 1: Exchange Pulse */}
       <div className="flex-shrink-0">
         <div className="flex items-center gap-1 mb-1">
-          <Zap className="w-2.5 h-2.5 text-primary" />
+          <Zap className="w-2.5 h-2.5 text-orange-400" />
           <span className="text-[9px] text-muted-foreground font-medium">Exchange Latency</span>
         </div>
         <div className={`grid gap-1 ${
@@ -237,11 +262,11 @@ export function InfrastructurePanel() {
             <div
               key={pulse.id}
               className={cn(
-                "p-1.5 rounded text-center",
+                "p-1.5 rounded text-center transition-all duration-200",
                 pulse.status === 'healthy' ? 'bg-green-500/10 border border-green-500/30' :
                 pulse.status === 'jitter' ? 'bg-yellow-500/10 border border-yellow-500/30' :
                 'bg-red-500/10 border border-red-500/30',
-                pulse.is_connected && 'ring-1 ring-primary/50'
+                pulse.is_connected && 'ring-1 ring-orange-500/50'
               )}
             >
               <div className="flex items-center justify-center gap-0.5">
@@ -262,11 +287,11 @@ export function InfrastructurePanel() {
         </div>
       </div>
 
-      {/* Row 2: Cloud Mesh - 8 mini icons + VPS latency */}
+      {/* Row 2: Cloud Mesh */}
       <div className="flex-shrink-0">
         <div className="flex items-center justify-between gap-1 mb-0.5">
           <div className="flex items-center gap-1">
-            <Cloud className="w-2 h-2 text-sky-500" />
+            <Cloud className="w-2 h-2 text-orange-400" />
             <span className="text-[8px] text-muted-foreground">Cloud</span>
           </div>
           {vpsExchangeLatency !== null && (
@@ -288,17 +313,17 @@ export function InfrastructurePanel() {
               key={provider}
               className={cn(
                 "p-0.5 rounded text-center transition-all",
-                isActive ? 'bg-emerald-500/20 border border-emerald-500/40' : 'bg-secondary/40 opacity-60'
+                isActive ? 'bg-orange-500/20 border border-orange-500/40' : 'bg-secondary/40 opacity-60'
               )}
             >
               <p className="text-[6px] font-medium truncate">{getProviderLabel(provider)}</p>
-              <div className={`w-1 h-1 rounded-full mx-auto ${getStatusDot(status)}`} />
+              <div className={cn("w-1 h-1 rounded-full mx-auto", getStatusDot(status))} />
             </div>
           ))}
         </div>
       </div>
 
-      {/* Row 3: API Limits - 3 compact bars */}
+      {/* Row 3: API Limits */}
       <div className="flex-1 min-h-0 flex items-center gap-1">
         <span className="text-[7px] text-muted-foreground">API:</span>
         {rateLimits.map((stat) => (
