@@ -182,7 +182,11 @@ serve(async (req) => {
           success: true, 
           message: 'No connected exchanges',
           balances: [],
-          totalEquity: 0 
+          totalEquity: 0,
+          pnl24h: 0,
+          pnlPercent24h: 0,
+          exchangeCount: 0,
+          timestamp: new Date().toISOString()
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );

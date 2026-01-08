@@ -46,10 +46,8 @@ export function useLiveBalancePolling(intervalSeconds: number = 5) {
           });
         });
 
-        // Update PnL data
-        if (data.pnl24h !== undefined) {
-          setPnlData(data.pnl24h, 0);
-        }
+        // NOTE: Do NOT update PnL here - PnL is calculated from trading_journal
+        // in syncFromDatabase(). Updating here causes flashing/overwriting issues.
 
         setLastPoll(new Date(data.timestamp));
       }

@@ -8,6 +8,8 @@ interface PaperOrderRequest {
   type: 'market' | 'limit';
   amount: number;
   price?: number;
+  strategyId?: string;
+  leverage?: number;
 }
 
 interface PaperOrder {
@@ -41,6 +43,7 @@ interface PaperPosition {
 export class PaperTradingManager {
   private static instance: PaperTradingManager;
   private initialBalance = 10000; // Default paper trading balance
+  private initializingExchanges = new Set<string>();
 
   static getInstance(): PaperTradingManager {
     if (!PaperTradingManager.instance) {
@@ -49,14 +52,63 @@ export class PaperTradingManager {
     return PaperTradingManager.instance;
   }
 
+  /**
+   * Initialize paper account with default balance if not already initialized
+   */
+  async initializePaperAccount(exchangeName: string): Promise<void> {
+    // Prevent concurrent initialization for the same exchange
+    if (this.initializingExchanges.has(exchangeName)) {
+      return;
+    }
+
+    this.initializingExchanges.add(exchangeName);
+
+    try {
+      // Check if already initialized
+      const { data: existing } = await supabase
+        .from('paper_balance_history')
+        .select('id')
+        .eq('exchange_name', exchangeName)
+        .limit(1)
+        .maybeSingle();
+
+      if (!existing) {
+        const { error } = await supabase.from('paper_balance_history').insert({
+          exchange_name: exchangeName,
+          total_equity: this.initialBalance,
+          breakdown: { 
+            initial: true, 
+            timestamp: new Date().toISOString(),
+            startingBalance: this.initialBalance
+          }
+        });
+
+        if (error) {
+          console.error(`[PaperTrading] Init error for ${exchangeName}:`, error);
+        } else {
+          console.log(`[PaperTrading] Initialized ${exchangeName} with $${this.initialBalance}`);
+        }
+      }
+    } finally {
+      this.initializingExchanges.delete(exchangeName);
+    }
+  }
+
   async executePaperOrder(request: PaperOrderRequest): Promise<string> {
-    // Get current market price from trade-engine
+    // Ensure paper account is initialized
+    await this.initializePaperAccount(request.exchangeName);
+
+    // Get current market price from trade-engine (REAL-TIME PRICES)
     const { data: priceData } = await supabase.functions.invoke('trade-engine', {
       body: { action: 'get-prices' }
     });
 
     const baseSymbol = request.symbol.replace('USDT', '').replace('/USDT', '');
     const marketPrice = priceData?.prices?.[baseSymbol]?.price || request.price || 0;
+
+    if (!marketPrice) {
+      throw new Error(`Unable to fetch real-time price for ${request.symbol}`);
+    }
 
     // Calculate fill price with simulated slippage
     const fillPrice = this.calculateFillPrice(request, marketPrice);
@@ -67,7 +119,8 @@ export class PaperTradingManager {
 
     // Check paper balance
     const paperBalance = await this.getPaperBalance(request.exchangeName);
-    const orderValue = fillPrice * request.amount;
+    const leverage = request.leverage || 1;
+    const orderValue = (fillPrice * request.amount) / leverage;
 
     if (request.side === 'buy' && paperBalance.available < orderValue) {
       throw new Error(`Insufficient paper balance. Available: $${paperBalance.available.toFixed(2)}, Required: $${orderValue.toFixed(2)}`);
@@ -99,11 +152,17 @@ export class PaperTradingManager {
       request.symbol,
       request.side,
       request.amount,
-      fillPrice
+      fillPrice,
+      leverage
     );
 
     // Update paper position
     await this.updatePaperPosition(request, fillPrice);
+
+    // Update strategy daily progress if linked to a strategy
+    if (request.strategyId) {
+      await this.updateStrategyProgress(request.strategyId, request.side, request.amount, fillPrice);
+    }
 
     return paperOrder.id;
   }
@@ -138,9 +197,19 @@ export class PaperTradingManager {
       .eq('exchange_name', exchangeName)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    const total = latestBalance?.total_equity || this.initialBalance;
+    // Auto-initialize if no balance exists
+    if (!latestBalance) {
+      await this.initializePaperAccount(exchangeName);
+      return {
+        total: this.initialBalance,
+        available: this.initialBalance,
+        inPositions: 0
+      };
+    }
+
+    const total = latestBalance.total_equity || this.initialBalance;
 
     // Calculate value in positions
     const { data: positions } = await supabase
@@ -164,17 +233,19 @@ export class PaperTradingManager {
     symbol: string,
     side: 'buy' | 'sell',
     amount: number,
-    price: number
+    price: number,
+    leverage: number = 1
   ): Promise<void> {
-    const orderValue = amount * price;
+    const orderValue = (amount * price) / leverage;
 
     // Get current balance
     const currentBalance = await this.getPaperBalance(exchangeName);
 
-    // Calculate new equity
+    // Calculate new equity (simulated 0.1% fee)
+    const fee = orderValue * 0.001;
     const newEquity = side === 'buy'
-      ? currentBalance.total - orderValue * 0.001 // Simulated 0.1% fee
-      : currentBalance.total + orderValue * 0.999; // Simulated 0.1% fee
+      ? currentBalance.total - fee
+      : currentBalance.total - fee;
 
     // Insert balance history record
     await supabase.from('paper_balance_history').insert({
@@ -186,7 +257,10 @@ export class PaperTradingManager {
           side,
           amount,
           price,
-          value: orderValue
+          value: orderValue,
+          leverage,
+          fee,
+          timestamp: new Date().toISOString()
         }
       }
     });
@@ -205,7 +279,7 @@ export class PaperTradingManager {
       .eq('exchange_name', request.exchangeName)
       .eq('symbol', request.symbol)
       .eq('side', side)
-      .single();
+      .maybeSingle();
 
     if (existing) {
       // Update existing position
@@ -235,6 +309,35 @@ export class PaperTradingManager {
           entry_price: fillPrice,
           current_price: fillPrice
         });
+    }
+  }
+
+  private async updateStrategyProgress(
+    strategyId: string,
+    side: 'buy' | 'sell',
+    amount: number,
+    price: number
+  ): Promise<void> {
+    try {
+      // Get current strategy
+      const { data: strategy } = await supabase
+        .from('trading_strategies')
+        .select('trades_today, pnl_today, daily_progress')
+        .eq('id', strategyId)
+        .single();
+
+      if (strategy) {
+        // Increment trades count
+        await supabase
+          .from('trading_strategies')
+          .update({
+            trades_today: (strategy.trades_today || 0) + 1,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', strategyId);
+      }
+    } catch (err) {
+      console.error('[PaperTrading] Failed to update strategy progress:', err);
     }
   }
 
@@ -277,13 +380,20 @@ export class PaperTradingManager {
 
     if (error || !position) throw new Error('Paper position not found');
 
-    // Get current price
+    // Get current price (REAL-TIME)
     const { data: priceData } = await supabase.functions.invoke('trade-engine', {
       body: { action: 'get-prices' }
     });
 
     const baseSymbol = position.symbol.replace('USDT', '').replace('/USDT', '');
     const currentPrice = priceData?.prices?.[baseSymbol]?.price || parseFloat(position.current_price?.toString() || '0');
+
+    // Calculate PnL
+    const entryPrice = parseFloat(position.entry_price?.toString() || '0');
+    const size = parseFloat(position.size?.toString() || '0');
+    const pnl = position.side === 'long' 
+      ? (currentPrice - entryPrice) * size
+      : (entryPrice - currentPrice) * size;
 
     // Place closing order
     const closeSide = position.side === 'long' ? 'sell' : 'buy';
@@ -292,11 +402,13 @@ export class PaperTradingManager {
       symbol: position.symbol,
       side: closeSide,
       type: 'market',
-      amount: parseFloat(position.size?.toString() || '0')
+      amount: size
     });
 
     // Delete position
     await supabase.from('paper_positions').delete().eq('id', positionId);
+
+    console.log(`[PaperTrading] Closed position with PnL: $${pnl.toFixed(2)}`);
   }
 
   async resetPaperAccount(exchangeName: string): Promise<void> {
@@ -322,8 +434,18 @@ export class PaperTradingManager {
     await supabase.from('paper_balance_history').insert({
       exchange_name: exchangeName,
       total_equity: this.initialBalance,
-      breakdown: { initial: true }
+      breakdown: { 
+        initial: true,
+        reset: true,
+        timestamp: new Date().toISOString()
+      }
     });
+
+    console.log(`[PaperTrading] Reset ${exchangeName} to $${this.initialBalance}`);
+  }
+
+  getInitialBalance(): number {
+    return this.initialBalance;
   }
 }
 

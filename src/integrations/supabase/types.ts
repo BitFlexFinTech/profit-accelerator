@@ -1891,6 +1891,8 @@ export type Database = {
       trading_strategies: {
         Row: {
           created_at: string | null
+          daily_goal: number | null
+          daily_progress: number | null
           description: string | null
           id: string
           is_active: boolean | null
@@ -1898,6 +1900,8 @@ export type Database = {
           leverage: number | null
           name: string
           pnl_today: number | null
+          position_size: number | null
+          profit_target: number | null
           trades_today: number | null
           trading_mode: string | null
           updated_at: string | null
@@ -1906,6 +1910,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          daily_goal?: number | null
+          daily_progress?: number | null
           description?: string | null
           id?: string
           is_active?: boolean | null
@@ -1913,6 +1919,8 @@ export type Database = {
           leverage?: number | null
           name: string
           pnl_today?: number | null
+          position_size?: number | null
+          profit_target?: number | null
           trades_today?: number | null
           trading_mode?: string | null
           updated_at?: string | null
@@ -1921,6 +1929,8 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          daily_goal?: number | null
+          daily_progress?: number | null
           description?: string | null
           id?: string
           is_active?: boolean | null
@@ -1928,6 +1938,8 @@ export type Database = {
           leverage?: number | null
           name?: string
           pnl_today?: number | null
+          position_size?: number | null
+          profit_target?: number | null
           trades_today?: number | null
           trading_mode?: string | null
           updated_at?: string | null
