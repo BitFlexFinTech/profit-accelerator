@@ -119,32 +119,35 @@ serve(async (req) => {
         // Send a message to the configured chat
         const { message, chatId: paramChatId, botToken: paramBotToken } = params;
         
-        let botToken = paramBotToken;
-        let chatId = paramChatId;
+        // Priority: params > env vars > database
+        let botToken = paramBotToken || Deno.env.get('TELEGRAM_BOT_TOKEN');
+        let chatId = paramChatId || Deno.env.get('TELEGRAM_CHAT_ID');
 
-        // If not provided, get from database
+        // If not in params or env, try database as fallback
         if (!botToken || !chatId) {
           const { data: config } = await supabase
             .from('telegram_config')
             .select('bot_token, chat_id, notifications_enabled')
             .single();
 
-          if (!config?.bot_token || !config?.chat_id) {
-            return new Response(
-              JSON.stringify({ success: false, error: 'Telegram not configured' }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
+          if (config?.bot_token && config?.chat_id) {
+            botToken = botToken || config.bot_token;
+            chatId = chatId || config.chat_id;
 
-          if (!config.notifications_enabled) {
-            return new Response(
-              JSON.stringify({ success: false, error: 'Notifications disabled' }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
+            if (!config.notifications_enabled) {
+              return new Response(
+                JSON.stringify({ success: false, error: 'Notifications disabled' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
           }
+        }
 
-          botToken = config.bot_token;
-          chatId = config.chat_id;
+        if (!botToken || !chatId) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in Supabase secrets.' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
 
         const response = await fetch(`${TELEGRAM_API}${botToken}/sendMessage`, {
@@ -170,19 +173,30 @@ serve(async (req) => {
         // Process incoming Telegram commands
         const { command, chatId: incomingChatId } = params;
         
-        // Verify the chat_id matches our saved config
-        const { data: config } = await supabase
-          .from('telegram_config')
-          .select('bot_token, chat_id')
-          .single();
+        // Priority: env vars > database for credentials
+        let botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
+        let configChatId = Deno.env.get('TELEGRAM_CHAT_ID');
+        
+        // Fallback to database if not in env
+        if (!botToken || !configChatId) {
+          const { data: config } = await supabase
+            .from('telegram_config')
+            .select('bot_token, chat_id')
+            .single();
+          botToken = botToken || config?.bot_token;
+          configChatId = configChatId || config?.chat_id;
+        }
 
-        if (!config || config.chat_id !== incomingChatId) {
+        if (!botToken || configChatId !== incomingChatId) {
           console.log('[telegram-bot] Unauthorized command attempt');
           return new Response(
             JSON.stringify({ success: false, error: 'Unauthorized' }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
+        
+        // Create config object for use in command handlers
+        const config = { bot_token: botToken, chat_id: configChatId };
 
         // Handle /status command
         if (command === '/status') {
