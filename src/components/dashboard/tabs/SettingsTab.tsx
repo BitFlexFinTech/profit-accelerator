@@ -477,8 +477,10 @@ export function SettingsTab() {
             // Check both useCloudInfrastructure and useSystemStatus for connected state
             const isConnected = providerStatus.status === 'running' || 
                                (provider.id === vps.provider && (vps.status === 'running' || vps.status === 'idle'));
-            const isPrimary = providerStatus.isPrimary || 
-                             (provider.id === vps.provider && vps.status === 'running');
+            // Only show PRIMARY badge for the actual running VPS, not failover_config.is_primary
+            const isActiveVps = provider.id === vps.provider && 
+                               (vps.status === 'running' || vps.status === 'idle');
+            const isPrimary = isActiveVps;
 
             return (
               <button
