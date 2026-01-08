@@ -32,15 +32,50 @@ export function KillSwitchDialog({ open, onOpenChange }: KillSwitchDialogProps) 
     setError('');
 
     try {
+      // Use telegram-bot edge function with kill-switch action and code validation
       const { data, error: fnError } = await supabase.functions.invoke('telegram-bot', {
-        body: { action: 'kill-switch' }
+        body: { 
+          action: 'kill-switch-with-code',
+          killCode: code 
+        }
       });
 
-      if (fnError || !data?.success) {
-        setError(data?.error || 'Failed to activate kill switch');
+      if (fnError) {
+        setError(fnError.message || 'Failed to activate kill switch');
         setIsLoading(false);
         return;
       }
+
+      if (!data?.success) {
+        setError(data?.error || 'Invalid kill code');
+        setIsLoading(false);
+        return;
+      }
+
+      // Also update local database state
+      await supabase.from('trading_config')
+        .update({ 
+          trading_enabled: false,
+          global_kill_switch_enabled: true,
+          bot_status: 'stopped',
+          updated_at: new Date().toISOString()
+        })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      await supabase.from('vps_config')
+        .update({ 
+          status: 'emergency_stopped',
+          emergency_stopped_at: new Date().toISOString()
+        })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      // Log to audit
+      await supabase.from('audit_logs').insert({
+        action: 'kill_switch_activated',
+        entity_type: 'system',
+        entity_id: 'dashboard',
+        new_value: { source: 'dashboard_killswitch', timestamp: new Date().toISOString() }
+      });
 
       toast.error('🚨 KILL SWITCH ACTIVATED - All trading stopped', {
         duration: 10000,
@@ -49,6 +84,7 @@ export function KillSwitchDialog({ open, onOpenChange }: KillSwitchDialogProps) 
       onOpenChange(false);
       setCode('');
     } catch (err) {
+      console.error('Kill switch error:', err);
       setError('Failed to activate kill switch');
     } finally {
       setIsLoading(false);

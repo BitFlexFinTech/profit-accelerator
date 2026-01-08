@@ -89,26 +89,40 @@ export function BotControlPanel() {
   const handleStartBot = async () => {
     setIsStarting(true);
     try {
-      const { data: vpsConfig } = await supabase
-        .from('vps_config')
-        .select('outbound_ip, provider')
-        .not('outbound_ip', 'is', null)
+      // Try to get deployment from hft_deployments first
+      const { data: deployment } = await supabase
+        .from('hft_deployments')
+        .select('id, server_id, ip_address, provider')
+        .eq('status', 'active')
         .limit(1)
         .single();
 
-      const serverIp = vpsConfig?.outbound_ip;
-      const provider = vpsConfig?.provider;
+      // Also check vps_instances as backup
+      const { data: vpsInstance } = await supabase
+        .from('vps_instances')
+        .select('id, deployment_id, ip_address, provider')
+        .eq('status', 'running')
+        .limit(1)
+        .single();
 
-      if (serverIp) {
-        const { error: vpsError } = await supabase.functions.invoke('install-hft-bot', {
-          body: { action: 'start-bot', serverIp }
+      const deploymentId = deployment?.id || deployment?.server_id || vpsInstance?.deployment_id || vpsInstance?.id;
+      const provider = deployment?.provider || vpsInstance?.provider;
+
+      if (deploymentId) {
+        // Use the proper bot-control edge function with Docker support
+        const { data, error: vpsError } = await supabase.functions.invoke('bot-control', {
+          body: { action: 'start', deploymentId }
         });
 
         if (vpsError) {
           console.error('[BotControl] VPS signal error:', vpsError);
+          // Continue anyway to update local state
+        } else {
+          console.log('[BotControl] Bot start result:', data);
         }
       }
 
+      // Update trading_config
       await supabase.from('trading_config')
         .update({ 
           bot_status: 'running', 
@@ -117,6 +131,7 @@ export function BotControlPanel() {
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
+      // Update vps_config if we have a provider
       if (provider) {
         await supabase.from('vps_config')
           .update({ status: 'running' })
@@ -140,26 +155,39 @@ export function BotControlPanel() {
   const handleStopBot = async () => {
     setIsStopping(true);
     try {
-      const { data: vpsConfig } = await supabase
-        .from('vps_config')
-        .select('outbound_ip, provider')
-        .not('outbound_ip', 'is', null)
+      // Try to get deployment from hft_deployments first
+      const { data: deployment } = await supabase
+        .from('hft_deployments')
+        .select('id, server_id, ip_address, provider')
+        .eq('status', 'active')
         .limit(1)
         .single();
 
-      const serverIp = vpsConfig?.outbound_ip;
-      const provider = vpsConfig?.provider;
+      // Also check vps_instances as backup
+      const { data: vpsInstance } = await supabase
+        .from('vps_instances')
+        .select('id, deployment_id, ip_address, provider')
+        .eq('status', 'running')
+        .limit(1)
+        .single();
 
-      if (serverIp) {
-        const { error: vpsError } = await supabase.functions.invoke('install-hft-bot', {
-          body: { action: 'stop-bot', serverIp }
+      const deploymentId = deployment?.id || deployment?.server_id || vpsInstance?.deployment_id || vpsInstance?.id;
+      const provider = deployment?.provider || vpsInstance?.provider;
+
+      if (deploymentId) {
+        // Use the proper bot-control edge function with Docker support
+        const { data, error: vpsError } = await supabase.functions.invoke('bot-control', {
+          body: { action: 'stop', deploymentId }
         });
 
         if (vpsError) {
           console.error('[BotControl] VPS signal error:', vpsError);
+        } else {
+          console.log('[BotControl] Bot stop result:', data);
         }
       }
 
+      // Update trading_config
       await supabase.from('trading_config')
         .update({ 
           bot_status: 'stopped', 
@@ -168,6 +196,7 @@ export function BotControlPanel() {
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
+      // Update vps_config if we have a provider
       if (provider) {
         await supabase.from('vps_config')
           .update({ status: 'idle' })

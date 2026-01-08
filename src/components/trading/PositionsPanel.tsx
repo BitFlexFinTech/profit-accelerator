@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { useAppStore } from '@/store/useAppStore';
+import { OrderManager } from '@/lib/orderManager';
 import { toast } from 'sonner';
 
 interface Position {
@@ -62,20 +63,37 @@ export function PositionsPanel() {
   const handleClosePosition = async (position: Position) => {
     setClosingId(position.id);
     try {
-      const table = paperTradingMode ? 'paper_positions' : 'positions';
+      if (paperTradingMode) {
+        // For paper trading, just delete the position and record PnL
+        const pnl = position.unrealized_pnl || 0;
+        
+        await supabase.from('paper_positions').delete().eq('id', position.id);
+        
+        // Log the paper close
+        await supabase.from('transaction_log').insert({
+          action_type: 'paper_position_closed',
+          exchange_name: position.exchange_name,
+          symbol: position.symbol,
+          details: {
+            side: position.side,
+            size: position.size,
+            entryPrice: position.entry_price,
+            exitPrice: position.current_price,
+            pnl
+          },
+          status: 'success'
+        });
+        
+        toast.success(`Paper position closed: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`);
+      } else {
+        // For live trading, use OrderManager to place offsetting order
+        await OrderManager.getInstance().closePosition(position.id);
+        toast.success(`Position closed for ${position.symbol}`);
+      }
       
-      // For paper trading, just delete the position
-      // For live trading, would need to place opposite order
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .eq('id', position.id);
-
-      if (error) throw error;
-      
-      toast.success(`Closed ${position.symbol} position`);
       fetchPositions();
     } catch (error: any) {
+      console.error('Failed to close position:', error);
       toast.error(error.message || 'Failed to close position');
     } finally {
       setClosingId(null);
