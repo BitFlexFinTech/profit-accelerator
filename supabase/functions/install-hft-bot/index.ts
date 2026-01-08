@@ -344,16 +344,15 @@ Requires=docker.service
 Wants=network-online.target
 
 [Service]
-Type=notify
+Type=simple
 WorkingDirectory=/opt/hft-bot
-ExecStartPre=/usr/bin/docker-compose pull
-ExecStart=/usr/bin/docker-compose up
+ExecStartPre=/usr/bin/docker-compose pull --quiet
+ExecStart=/usr/bin/docker-compose up --remove-orphans
 ExecStop=/usr/bin/docker-compose down
 Restart=always
-RestartSec=3
-WatchdogSec=10
-TimeoutStartSec=30
-TimeoutStopSec=30
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=60
 
 # Ensure service restarts on any failure
 RestartForceExitStatus=SIGKILL SIGTERM
