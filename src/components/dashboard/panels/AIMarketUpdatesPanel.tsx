@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Brain, TrendingUp, TrendingDown, Minus, RefreshCw, Zap, Globe } from 'lucide-react';
+import { Brain, TrendingUp, TrendingDown, Minus, RefreshCw, Zap, Globe, Server } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useAppStore } from '@/store/useAppStore';
+import { useSystemStatus } from '@/hooks/useSystemStatus';
 
 interface AIUpdate {
   id: string;
@@ -30,6 +31,10 @@ export function AIMarketUpdatesPanel() {
   const hasAutoScanned = useRef(false);
   
   const exchangePulse = useAppStore(state => state.exchangePulse);
+  const { vps } = useSystemStatus();
+
+  // VPS connection status
+  const isVpsConnected = vps.status === 'running' || vps.status === 'idle';
 
   // Get Tokyo HFT latency from exchange pulse (exchangePulse is a Record)
   const binanceLatency = exchangePulse['binance']?.latencyMs || 0;
@@ -198,16 +203,25 @@ export function AIMarketUpdatesPanel() {
             </div>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={triggerManualScan}
-          disabled={isScanning}
-          className="gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
-          Scan Now
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* VPS Connection Status */}
+          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${isVpsConnected ? 'bg-success/10' : 'bg-secondary/50'}`}>
+            <Server className={`w-3.5 h-3.5 ${isVpsConnected ? 'text-success' : 'text-muted-foreground'}`} />
+            <span className={`text-xs font-medium ${isVpsConnected ? 'text-success' : 'text-muted-foreground'}`}>
+              {isVpsConnected ? 'VPS Online' : 'VPS Offline'}
+            </span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={triggerManualScan}
+            disabled={isScanning}
+            className="gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
+            Scan Now
+          </Button>
+        </div>
       </div>
 
       {/* Tokyo HFT Latency Indicators */}

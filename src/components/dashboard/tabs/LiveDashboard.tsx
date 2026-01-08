@@ -6,7 +6,6 @@ import { TradeActivityTerminal } from '../panels/TradeActivityTerminal';
 import { CloudStatusPanel } from '../panels/CloudStatusPanel';
 import { SentimentPanel } from '../panels/SentimentPanel';
 import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
-import { PortfolioBreakdownPanel } from '../panels/PortfolioBreakdownPanel';
 import { RateLimitMonitorPanel } from '../panels/RateLimitMonitorPanel';
 import { MarketWatchPanel } from '../panels/MarketWatchPanel';
 import { QuickActionsPanel } from '../panels/QuickActionsPanel';
@@ -44,16 +43,13 @@ export function LiveDashboard() {
 
       {/* Main Content Area - 50/50 split for larger AI panel */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-3 min-h-0">
-        {/* Left Column: Equity + Trade Activity + Portfolio + Quick Actions */}
+        {/* Left Column: Equity + Trade Activity + Quick Actions */}
         <div className="flex flex-col gap-3 min-h-0">
           <div className="flex-shrink-0">
             <EquityChartPanel />
           </div>
           <div className="flex-1 min-h-0">
             <TradeActivityTerminal />
-          </div>
-          <div className="flex-shrink-0">
-            <PortfolioBreakdownPanel />
           </div>
           <div className="flex-shrink-0">
             <QuickActionsPanel />
