@@ -34,33 +34,31 @@ export function LiveDashboard() {
       
       {/* Main 3-Column Grid - No Scroll */}
       <div className="flex-1 grid grid-cols-[30%_40%_30%] gap-2 min-h-0">
-        {/* Left Column - Equity + Trade Activity */}
-        <div className="flex flex-col gap-2 min-h-0">
-          <div className="h-[130px] flex-shrink-0">
-            <EquityChartPanel compact />
-          </div>
-          <div className="flex-1 min-h-0">
-            <TradeActivityTerminal expanded />
-          </div>
+        {/* LEFT Column - Trade Activity Terminal (SWAPPED - Full Height) */}
+        <div className="min-h-0">
+          <TradeActivityTerminal expanded />
         </div>
         
-        {/* Center Column - AI Market Analysis (Full Height) */}
+        {/* CENTER Column - AI Market Analysis (SWAPPED - Full Height) */}
         <div className="min-h-0">
           <AIMarketUpdatesPanel fullHeight />
         </div>
         
-        {/* Right Column - Stacked Compact Panels */}
-        <div className="flex flex-col gap-2 min-h-0">
-          <div className="h-[110px] flex-shrink-0">
+        {/* RIGHT Column - Stacked Compact Panels */}
+        <div className="flex flex-col gap-1.5 min-h-0">
+          <div className="h-[120px] flex-shrink-0">
+            <EquityChartPanel compact />
+          </div>
+          <div className="h-[100px] flex-shrink-0">
             <MarketWatchPanel compact limit={2} />
           </div>
-          <div className="h-[90px] flex-shrink-0">
+          <div className="h-[80px] flex-shrink-0">
             <CloudStatusPanel compact />
           </div>
-          <div className="h-[85px] flex-shrink-0">
+          <div className="h-[75px] flex-shrink-0">
             <ExchangePulsePanel compact />
           </div>
-          <div className="h-[75px] flex-shrink-0">
+          <div className="h-[70px] flex-shrink-0">
             <RateLimitMonitorPanel compact />
           </div>
           <div className="flex-1 min-h-0">

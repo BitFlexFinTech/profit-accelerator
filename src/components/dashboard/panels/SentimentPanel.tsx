@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Minus, Activity, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface PriceChange {
   symbol: string;
@@ -12,9 +13,10 @@ interface PriceChange {
 
 interface SentimentPanelProps {
   compact?: boolean;
+  className?: string;
 }
 
-export function SentimentPanel({ compact = false }: SentimentPanelProps) {
+export function SentimentPanel({ compact = false, className }: SentimentPanelProps) {
   const [sentimentIndex, setSentimentIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [priceChanges, setPriceChanges] = useState<PriceChange[]>([]);
@@ -96,35 +98,35 @@ export function SentimentPanel({ compact = false }: SentimentPanelProps) {
 
   const getSentimentColor = (index: number | null) => {
     if (index === null) return 'text-muted-foreground';
-    if (index <= 25) return 'text-red-500';
-    if (index <= 45) return 'text-orange-500';
+    if (index <= 25) return 'text-destructive';
+    if (index <= 45) return 'text-warning';
     if (index <= 55) return 'text-yellow-500';
     if (index <= 75) return 'text-lime-500';
-    return 'text-emerald-500';
+    return 'text-success';
   };
 
   const getTrendIcon = (change: number) => {
-    if (change > 0.5) return <TrendingUp className="w-2.5 h-2.5 text-emerald-500" />;
-    if (change < -0.5) return <TrendingDown className="w-2.5 h-2.5 text-red-500" />;
+    if (change > 0.5) return <TrendingUp className="w-2.5 h-2.5 text-success" />;
+    if (change < -0.5) return <TrendingDown className="w-2.5 h-2.5 text-destructive" />;
     return <Minus className="w-2.5 h-2.5 text-muted-foreground" />;
   };
 
   const getTrendColor = (change: number) => {
-    if (change > 0.5) return 'text-emerald-500';
-    if (change < -0.5) return 'text-red-500';
+    if (change > 0.5) return 'text-success';
+    if (change < -0.5) return 'text-destructive';
     return 'text-muted-foreground';
   };
 
   const displayPrices = compact ? priceChanges.slice(0, 4) : priceChanges;
 
   return (
-    <div className={`glass-card ${compact ? 'p-2' : 'p-3'} h-full flex flex-col`}>
-      <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
+    <div className={cn("glass-card p-2 h-full flex flex-col", className)}>
+      <div className="flex items-center justify-between mb-1 flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <Activity className={`${compact ? 'w-3 h-3' : 'w-4 h-4'} text-violet-400`} />
-          <span className={`font-medium ${compact ? 'text-xs' : 'text-sm'}`}>Sentiment</span>
+          <Activity className="w-3 h-3 text-violet-400" />
+          <span className="font-medium text-xs">Sentiment</span>
           {connectedExchange && (
-            <span className={`px-1 py-0 rounded bg-primary/20 text-primary uppercase ${compact ? 'text-[8px]' : 'text-[10px]'}`}>
+            <span className="px-1 py-0 rounded bg-primary/20 text-primary uppercase text-[8px]">
               {connectedExchange}
             </span>
           )}
@@ -134,9 +136,9 @@ export function SentimentPanel({ compact = false }: SentimentPanelProps) {
           size="sm"
           onClick={handleRefresh}
           disabled={isRefreshing}
-          className={compact ? "h-5 w-5 p-0" : "h-6 w-6 p-0"}
+          className="h-5 w-5 p-0"
         >
-          <RefreshCw className={`${compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} ${isRefreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-2.5 h-2.5 ${isRefreshing ? 'animate-spin' : ''}`} />
         </Button>
       </div>
 
@@ -146,7 +148,7 @@ export function SentimentPanel({ compact = false }: SentimentPanelProps) {
           <div className="h-3 bg-secondary/50 rounded w-16" />
         </div>
       ) : !connectedExchange ? (
-        <div className={`${compact ? 'text-[10px]' : 'text-xs'} text-muted-foreground py-1`}>
+        <div className="text-[10px] text-muted-foreground py-1">
           Connect exchange
         </div>
       ) : (
@@ -154,16 +156,16 @@ export function SentimentPanel({ compact = false }: SentimentPanelProps) {
           {/* Sentiment Index */}
           <div className="mb-1 flex-shrink-0">
             <div className="flex items-baseline gap-1.5">
-              <span className={`${compact ? 'text-lg' : 'text-xl'} font-bold ${getSentimentColor(sentimentIndex)}`}>
+              <span className={`text-lg font-bold ${getSentimentColor(sentimentIndex)}`}>
                 {sentimentIndex ?? '--'}
               </span>
-              <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} ${getSentimentColor(sentimentIndex)}`}>
+              <span className={`text-[9px] ${getSentimentColor(sentimentIndex)}`}>
                 {getSentimentLabel(sentimentIndex)}
               </span>
             </div>
             
             {/* Gauge bar */}
-            <div className={`mt-1 ${compact ? 'h-0.5' : 'h-1'} bg-secondary rounded-full overflow-hidden`}>
+            <div className="mt-0.5 h-0.5 bg-secondary rounded-full overflow-hidden">
               <div 
                 className="h-full transition-all duration-500 rounded-full"
                 style={{ 
@@ -177,10 +179,10 @@ export function SentimentPanel({ compact = false }: SentimentPanelProps) {
           </div>
 
           {/* Price Changes */}
-          <div className={`flex-1 overflow-y-auto ${compact ? 'space-y-0.5' : 'space-y-1'}`}>
+          <div className="flex-1 overflow-y-auto space-y-0.5">
             {displayPrices.length > 0 ? (
               displayPrices.map(({ symbol, change, price }) => (
-                <div key={symbol} className={`flex items-center justify-between ${compact ? 'text-[10px]' : 'text-xs'}`}>
+                <div key={symbol} className="flex items-center justify-between text-[10px]">
                   <div className="flex items-center gap-1">
                     <span className="font-medium">{symbol}</span>
                     <span className="text-muted-foreground">
@@ -196,7 +198,7 @@ export function SentimentPanel({ compact = false }: SentimentPanelProps) {
                 </div>
               ))
             ) : (
-              <p className={`${compact ? 'text-[9px]' : 'text-xs'} text-muted-foreground`}>Loading...</p>
+              <p className="text-[9px] text-muted-foreground">Loading...</p>
             )}
           </div>
         </div>

@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowUpRight, ArrowDownRight, Terminal, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 interface Trade {
   id: string;
@@ -21,9 +22,11 @@ interface Trade {
 
 interface TradeActivityTerminalProps {
   expanded?: boolean;
+  compact?: boolean;
+  className?: string;
 }
 
-export function TradeActivityTerminal({ expanded = false }: TradeActivityTerminalProps) {
+export function TradeActivityTerminal({ expanded = false, compact = false, className }: TradeActivityTerminalProps) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,7 +36,7 @@ export function TradeActivityTerminal({ expanded = false }: TradeActivityTermina
         .from('trading_journal')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(expanded ? 30 : 15);
+        .limit(expanded ? 50 : compact ? 10 : 15);
 
       if (error) throw error;
       setTrades(data || []);
@@ -47,7 +50,6 @@ export function TradeActivityTerminal({ expanded = false }: TradeActivityTermina
   useEffect(() => {
     fetchTrades();
 
-    // Real-time subscription for new trades
     const channel = supabase
       .channel('trade-activity-terminal')
       .on('postgres_changes', {
@@ -62,7 +64,7 @@ export function TradeActivityTerminal({ expanded = false }: TradeActivityTermina
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [expanded]);
+  }, [expanded, compact]);
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '--';
@@ -84,20 +86,20 @@ export function TradeActivityTerminal({ expanded = false }: TradeActivityTermina
   };
 
   return (
-    <Card className="bg-card/50 border-border/50 backdrop-blur-sm h-full flex flex-col">
-      <CardHeader className="pb-2 flex-shrink-0">
+    <Card className={cn("bg-card/50 border-border/50 backdrop-blur-sm h-full flex flex-col", className)}>
+      <CardHeader className="pb-2 flex-shrink-0 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="h-4 w-4 text-primary" />
             <CardTitle className="text-sm font-medium">Live Trade Activity</CardTitle>
           </div>
           <div className="flex items-center gap-1">
-            <Activity className="h-3 w-3 text-green-500 animate-pulse" />
+            <Activity className="h-3 w-3 text-success animate-pulse" />
             <span className="text-xs text-muted-foreground">LIVE</span>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-0 flex-1 min-h-0 overflow-hidden">
+      <CardContent className="pt-0 flex-1 min-h-0 overflow-hidden px-3 pb-2">
         <ScrollArea className="h-full pr-2">
           {loading ? (
             <div className="space-y-2">
@@ -125,11 +127,11 @@ export function TradeActivityTerminal({ expanded = false }: TradeActivityTermina
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground w-12">{formatTime(trade.created_at)}</span>
-                      <div className={`p-0.5 rounded ${isLong ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+                      <div className={`p-0.5 rounded ${isLong ? 'bg-success/20' : 'bg-destructive/20'}`}>
                         {isLong ? (
-                          <ArrowUpRight className="h-3 w-3 text-green-500" />
+                          <ArrowUpRight className="h-3 w-3 text-success" />
                         ) : (
-                          <ArrowDownRight className="h-3 w-3 text-red-500" />
+                          <ArrowDownRight className="h-3 w-3 text-destructive" />
                         )}
                       </div>
                       <span className="font-semibold text-foreground">{trade.symbol}</span>
@@ -143,7 +145,7 @@ export function TradeActivityTerminal({ expanded = false }: TradeActivityTermina
                         @ {formatPrice(trade.entry_price)}
                       </span>
                       {hasPnl ? (
-                        <span className={`font-bold min-w-[60px] text-right ${isProfitable ? 'text-green-500' : 'text-red-500'}`}>
+                        <span className={`font-bold min-w-[60px] text-right ${isProfitable ? 'text-success' : 'text-destructive'}`}>
                           {isProfitable ? '+' : ''}{trade.pnl!.toFixed(2)} USDT
                         </span>
                       ) : (

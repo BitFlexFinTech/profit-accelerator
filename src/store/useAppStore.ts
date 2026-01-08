@@ -281,45 +281,32 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ vpsStatus: statuses });
       }
       
-      // Calculate PnL from balance_history instead of portfolio_snapshots
-      const now = new Date();
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
+      // Calculate PnL from ACTUAL TRADES in trading_journal (not balance fluctuations)
+      // This ensures "Today" shows $0 if no trades have been made
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - 7);
+      weekStart.setHours(0, 0, 0, 0);
 
-      // Get current balance (most recent with value > 0)
-      const { data: currentSnapshot } = await supabase
-        .from('balance_history')
-        .select('total_balance')
-        .gt('total_balance', 0)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      // Get today's closed trades PnL
+      const { data: todayTrades } = await supabase
+        .from('trading_journal')
+        .select('pnl')
+        .eq('status', 'closed')
+        .gte('closed_at', todayStart.toISOString());
 
-      // Get yesterday's balance
-      const { data: yesterdaySnapshot } = await supabase
-        .from('balance_history')
-        .select('total_balance')
-        .gt('total_balance', 0)
-        .lt('created_at', yesterday.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      const dailyPnl = todayTrades?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0;
 
-      // Get week ago balance
-      const { data: weekAgoSnapshot } = await supabase
-        .from('balance_history')
-        .select('total_balance')
-        .gt('total_balance', 0)
-        .lt('created_at', weekAgo.toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      // Get this week's closed trades PnL
+      const { data: weekTrades } = await supabase
+        .from('trading_journal')
+        .select('pnl')
+        .eq('status', 'closed')
+        .gte('closed_at', weekStart.toISOString());
 
-      const currentBalance = currentSnapshot?.total_balance || 0;
-      const dailyPnl = currentBalance - (yesterdaySnapshot?.total_balance || currentBalance);
-      const weeklyPnl = currentBalance - (weekAgoSnapshot?.total_balance || currentBalance);
+      const weeklyPnl = weekTrades?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0;
       
       set({ dailyPnl, weeklyPnl });
       
