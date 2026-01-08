@@ -140,7 +140,14 @@ async function fetchExchangeBalance(
     };
   } catch (error: any) {
     console.error(`[poll-balances] Error fetching ${exchangeName}:`, error.message);
-    return null;
+    
+    // Return error info for caller to handle
+    throw {
+      exchangeName,
+      message: error.message,
+      isIPError: error.message?.includes('-2015') || error.message?.includes('Invalid API-key'),
+      isPassphraseError: error.message?.includes('requires "password"') || error.message?.includes('passphrase')
+    };
   }
 }
 
@@ -193,30 +200,30 @@ serve(async (req) => {
         continue;
       }
 
+      // Decrypt API credentials if encrypted
+      let apiKey = conn.api_key;
+      let apiSecret = conn.api_secret;
+      let passphrase = conn.api_passphrase;
+
+      // Try to decrypt if it looks like encrypted JSON
       try {
-        // Decrypt API credentials if encrypted
-        let apiKey = conn.api_key;
-        let apiSecret = conn.api_secret;
-        let passphrase = conn.api_passphrase;
-
-        // Try to decrypt if it looks like encrypted JSON
-        try {
-          if (apiKey.startsWith('{') && apiKey.includes('iv')) {
-            const { decrypt } = await import('../_shared/encryption.ts');
-            apiKey = await decrypt(apiKey);
-          }
-          if (apiSecret.startsWith('{') && apiSecret.includes('iv')) {
-            const { decrypt } = await import('../_shared/encryption.ts');
-            apiSecret = await decrypt(apiSecret);
-          }
-          if (passphrase && passphrase.startsWith('{') && passphrase.includes('iv')) {
-            const { decrypt } = await import('../_shared/encryption.ts');
-            passphrase = await decrypt(passphrase);
-          }
-        } catch (decryptErr) {
-          console.log(`[poll-balances] Credentials for ${conn.exchange_name} not encrypted, using as-is`);
+        if (apiKey.startsWith('{') && apiKey.includes('iv')) {
+          const { decrypt } = await import('../_shared/encryption.ts');
+          apiKey = await decrypt(apiKey);
         }
+        if (apiSecret.startsWith('{') && apiSecret.includes('iv')) {
+          const { decrypt } = await import('../_shared/encryption.ts');
+          apiSecret = await decrypt(apiSecret);
+        }
+        if (passphrase && passphrase.startsWith('{') && passphrase.includes('iv')) {
+          const { decrypt } = await import('../_shared/encryption.ts');
+          passphrase = await decrypt(passphrase);
+        }
+      } catch (decryptErr) {
+        console.log(`[poll-balances] Credentials for ${conn.exchange_name} not encrypted, using as-is`);
+      }
 
+      try {
         const balance = await fetchExchangeBalance(
           conn.exchange_name,
           apiKey,
@@ -227,7 +234,7 @@ serve(async (req) => {
         if (balance) {
           balances.push(balance);
 
-          // Update exchange_connections with new balance
+          // Update exchange_connections with new balance and clear any previous error
           updatePromises.push(
             (async () => {
               await supabase
@@ -235,13 +242,37 @@ serve(async (req) => {
                 .update({
                   balance_usdt: balance.totalUSDT,
                   balance_updated_at: balance.lastUpdated,
+                  last_error: null,
+                  last_error_at: null,
                 })
                 .eq('id', conn.id);
             })()
           );
         }
       } catch (err: any) {
-        console.error(`[poll-balances] Failed to process ${conn.exchange_name}:`, err.message);
+        // Generate user-friendly error message
+        let userMessage = err.message || 'Unknown error';
+        
+        if (err.isIPError) {
+          userMessage = 'API key rejected - check IP whitelist settings';
+        } else if (err.isPassphraseError) {
+          userMessage = 'Passphrase required - please reconnect with passphrase';
+        }
+        
+        console.error(`[poll-balances] ${conn.exchange_name} error:`, userMessage);
+        
+        // Store error in database
+        updatePromises.push(
+          (async () => {
+            await supabase
+              .from('exchange_connections')
+              .update({
+                last_error: userMessage,
+                last_error_at: new Date().toISOString(),
+              })
+              .eq('id', conn.id);
+          })()
+        );
       }
     }
 
