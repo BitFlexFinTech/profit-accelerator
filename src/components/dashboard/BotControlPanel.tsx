@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Play, Square, AlertTriangle, Loader2, RefreshCw, FlaskConical, Zap } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useAppStore } from '@/store/useAppStore';
+import { ActionButton } from '@/components/ui/ActionButton';
+import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -291,7 +292,8 @@ export function BotControlPanel() {
               <span className={`text-xs font-medium ${!paperTradingMode ? 'text-destructive' : 'text-muted-foreground'}`}>Live</span>
             </div>
 
-            <Button
+            <ActionButton
+              tooltip={BUTTON_TOOLTIPS.syncBalances}
               variant="outline"
               size="sm"
               onClick={handleSyncBalances}
@@ -300,10 +302,11 @@ export function BotControlPanel() {
             >
               <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
               Sync
-            </Button>
+            </ActionButton>
 
             {botStatus === 'running' ? (
-              <Button 
+              <ActionButton 
+                tooltip={BUTTON_TOOLTIPS.stopBot}
                 variant="destructive" 
                 onClick={handleStopBot}
                 disabled={isStopping}
@@ -315,9 +318,10 @@ export function BotControlPanel() {
                   <Square className="w-4 h-4" />
                 )}
                 STOP BOT
-              </Button>
+              </ActionButton>
             ) : (
-              <Button 
+              <ActionButton 
+                tooltip={BUTTON_TOOLTIPS.startBot}
                 onClick={handleStartClick}
                 disabled={isStarting}
                 className="gap-2 bg-destructive hover:bg-destructive/90"
@@ -329,7 +333,7 @@ export function BotControlPanel() {
                 )}
                 <AlertTriangle className="w-4 h-4" />
                 START BOT
-              </Button>
+              </ActionButton>
             )}
           </div>
         </div>

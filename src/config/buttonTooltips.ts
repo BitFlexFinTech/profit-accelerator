@@ -53,6 +53,17 @@ export const BUTTON_TOOLTIPS = {
   // Refresh & Sync
   refreshData: 'Refresh data from the server',
   syncData: 'Synchronize data across all connected services',
+  
+  // Quick Actions
+  startTrading: 'Enable automated trading on all active strategies',
+  pauseAll: 'Pause all trading activity immediately - positions remain open',
+  testAlert: 'Send a test notification to Telegram to verify connectivity',
+  
+  // Amount Presets
+  amount25: 'Set order amount to 25% of available balance',
+  amount50: 'Set order amount to 50% of available balance',
+  amount75: 'Set order amount to 75% of available balance',
+  amount100: 'Set order amount to 100% of available balance (max)',
 } as const;
 
 export type ButtonTooltipKey = keyof typeof BUTTON_TOOLTIPS;
