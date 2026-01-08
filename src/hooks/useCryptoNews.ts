@@ -12,6 +12,7 @@ interface NewsItem {
 const RSS_FEEDS = [
   { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/' },
   { name: 'CryptoSlate', url: 'https://cryptoslate.com/feed/' },
+  { name: 'Cointelegraph', url: 'https://cointelegraph.com/rss' },
 ];
 
 export function useCryptoNews(refreshIntervalMs = 300000) { // 5 minutes default
@@ -40,7 +41,7 @@ export function useCryptoNews(refreshIntervalMs = 300000) { // 5 minutes default
           
           const items = xml.querySelectorAll('item');
           items.forEach((item, idx) => {
-            if (idx >= 3) return; // Limit per source
+            if (idx >= 5) return; // 5 per source = 15 total
             
             const title = item.querySelector('title')?.textContent || '';
             const link = item.querySelector('link')?.textContent || '';
@@ -64,8 +65,8 @@ export function useCryptoNews(refreshIntervalMs = 300000) { // 5 minutes default
       // Sort by date, newest first
       allNews.sort((a, b) => b.pubDate.getTime() - a.pubDate.getTime());
       
-      // Limit to 6 items
-      setNews(allNews.slice(0, 6));
+      // Limit to 12 items for display
+      setNews(allNews.slice(0, 12));
       setLastUpdate(new Date());
       setError(null);
     } catch (err) {

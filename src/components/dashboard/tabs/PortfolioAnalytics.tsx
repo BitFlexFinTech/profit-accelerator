@@ -24,6 +24,7 @@ import { RecentTradesPanel } from '../panels/RecentTradesPanel';
 import { PnLPanel } from '../panels/PnLPanel';
 import { TradeExecutionLatencyPanel } from '../panels/TradeExecutionLatencyPanel';
 import { PortfolioBreakdownPanel } from '../panels/PortfolioBreakdownPanel';
+import { EquityChartPanel } from '../panels/EquityChartPanel';
 
 interface PortfolioMetrics {
   sharpeRatio: number | null;
@@ -142,6 +143,11 @@ export function PortfolioAnalytics() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Portfolio Analytics</h2>
+      </div>
+
+      {/* Total Equity Chart - Moved from Live Dashboard */}
+      <div className="h-[250px]">
+        <EquityChartPanel />
       </div>
 
       {/* Key Metrics */}
