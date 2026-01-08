@@ -21,9 +21,9 @@ export function useSystemStatus() {
   const fetchStatus = useCallback(async () => {
     try {
       const [aiResult, exchangeResult, vpsResult] = await Promise.all([
-        supabase.from('ai_config').select('is_active, model').eq('provider', 'groq').single(),
+        supabase.from('ai_config').select('is_active, model').eq('provider', 'groq').maybeSingle(),
         supabase.from('exchange_connections').select('is_connected, balance_usdt'),
-        supabase.from('vps_config').select('status, region, outbound_ip, provider').single(),
+        supabase.from('vps_config').select('status, region, outbound_ip, provider').maybeSingle(),
       ]);
 
       const connectedExchanges = exchangeResult.data?.filter(e => e.is_connected) || [];
