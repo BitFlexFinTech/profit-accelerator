@@ -1,6 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { decrypt } from '../_shared/encryption.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,22 +21,14 @@ const EXCHANGE_MAP: Record<string, string> = {
   'nexo': 'nexo',
 };
 
-// Simulated ticker prices (in production, fetch from exchange)
-const TICKER_PRICES: Record<string, number> = {
-  'BTC': 96000,
-  'ETH': 3400,
-  'BNB': 700,
-  'SOL': 180,
-  'XRP': 2.3,
-  'ADA': 0.95,
-  'AVAX': 38,
-  'DOT': 7.2,
-  'MATIC': 0.55,
-  'LINK': 23,
+// Fallback ticker prices for assets without market data
+const FALLBACK_PRICES: Record<string, number> = {
   'USDT': 1,
   'USDC': 1,
   'BUSD': 1,
   'USD': 1,
+  'DAI': 1,
+  'TUSD': 1,
 };
 
 interface ExchangeBalance {
@@ -56,23 +47,90 @@ async function fetchExchangeBalance(
   try {
     const exchangeId = EXCHANGE_MAP[exchangeName.toLowerCase()] || exchangeName.toLowerCase();
     
-    console.log(`[poll-balances] Fetching balance for ${exchangeName}...`);
+    console.log(`[poll-balances] Fetching real balance for ${exchangeName} via CCXT...`);
     
-    // For demo/testing, generate simulated balance
-    // In production, use CCXT to connect to actual exchange
-    const simulatedAssets = [
-      { symbol: 'USDT', amount: Math.random() * 5000 + 1000 },
-      { symbol: 'BTC', amount: Math.random() * 0.5 },
-      { symbol: 'ETH', amount: Math.random() * 5 },
-    ];
+    // Dynamic import CCXT
+    const ccxt = await import('https://esm.sh/ccxt@4.5.31');
     
-    const assets = simulatedAssets.map(asset => ({
-      symbol: asset.symbol,
-      amount: asset.amount,
-      valueUSDT: asset.amount * (TICKER_PRICES[asset.symbol] || 1)
-    }));
+    // Check if exchange is supported
+    const ExchangeClass = (ccxt as any)[exchangeId];
+    if (!ExchangeClass) {
+      console.error(`[poll-balances] Exchange ${exchangeId} not supported by CCXT`);
+      return null;
+    }
     
-    const totalUSDT = assets.reduce((sum, a) => sum + a.valueUSDT, 0);
+    // Initialize exchange with credentials
+    const exchangeConfig: Record<string, any> = {
+      apiKey,
+      secret: apiSecret,
+      enableRateLimit: true,
+      timeout: 30000,
+    };
+    
+    // Add passphrase for exchanges that require it (OKX, KuCoin, etc.)
+    if (passphrase) {
+      exchangeConfig.password = passphrase;
+    }
+    
+    // Special handling for specific exchanges
+    if (exchangeId === 'binance') {
+      exchangeConfig.options = { defaultType: 'spot' };
+    } else if (exchangeId === 'bybit') {
+      exchangeConfig.options = { defaultType: 'unified' };
+    }
+    
+    const exchange = new ExchangeClass(exchangeConfig);
+    
+    // Fetch balance
+    const balance = await exchange.fetchBalance();
+    
+    // Fetch tickers for non-stablecoin assets to get USD values
+    const assets: Array<{ symbol: string; amount: number; valueUSDT: number }> = [];
+    let totalUSDT = 0;
+    
+    // Get list of assets with balance > 0
+    const assetSymbols = Object.keys(balance.total || {}).filter(
+      symbol => balance.total[symbol] > 0 && symbol !== 'info'
+    );
+    
+    console.log(`[poll-balances] ${exchangeName} has ${assetSymbols.length} assets with balance`);
+    
+    for (const symbol of assetSymbols) {
+      const amount = balance.total[symbol];
+      let valueUSDT = 0;
+      
+      // For stablecoins, use 1:1 conversion
+      if (FALLBACK_PRICES[symbol]) {
+        valueUSDT = amount * FALLBACK_PRICES[symbol];
+      } else {
+        // Try to fetch ticker price
+        try {
+          const ticker = await exchange.fetchTicker(`${symbol}/USDT`);
+          if (ticker?.last) {
+            valueUSDT = amount * ticker.last;
+          }
+        } catch (tickerErr) {
+          // Try BTC pair as fallback
+          try {
+            const btcTicker = await exchange.fetchTicker(`${symbol}/BTC`);
+            const btcUsdtTicker = await exchange.fetchTicker('BTC/USDT');
+            if (btcTicker?.last && btcUsdtTicker?.last) {
+              valueUSDT = amount * btcTicker.last * btcUsdtTicker.last;
+            }
+          } catch {
+            console.log(`[poll-balances] Could not get price for ${symbol}, skipping`);
+            continue;
+          }
+        }
+      }
+      
+      if (valueUSDT > 0.01) { // Only include assets worth more than 1 cent
+        assets.push({ symbol, amount, valueUSDT });
+        totalUSDT += valueUSDT;
+      }
+    }
+    
+    console.log(`[poll-balances] ${exchangeName} total: $${totalUSDT.toFixed(2)}`);
     
     return {
       exchange: exchangeName,
@@ -80,8 +138,8 @@ async function fetchExchangeBalance(
       assets,
       lastUpdated: new Date().toISOString()
     };
-  } catch (error) {
-    console.error(`[poll-balances] Error fetching ${exchangeName}:`, error);
+  } catch (error: any) {
+    console.error(`[poll-balances] Error fetching ${exchangeName}:`, error.message);
     return null;
   }
 }
@@ -97,7 +155,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    console.log('[poll-balances] Starting balance poll...');
+    console.log('[poll-balances] Starting real balance poll...');
 
     // Get all connected exchanges with API credentials
     const { data: connections, error: connError } = await supabase
@@ -136,20 +194,23 @@ serve(async (req) => {
       }
 
       try {
-        // Decrypt API credentials
+        // Decrypt API credentials if encrypted
         let apiKey = conn.api_key;
         let apiSecret = conn.api_secret;
         let passphrase = conn.api_passphrase;
 
-        // Try to decrypt if encrypted
+        // Try to decrypt if it looks like encrypted JSON
         try {
-          if (apiKey.startsWith('{')) {
+          if (apiKey.startsWith('{') && apiKey.includes('iv')) {
+            const { decrypt } = await import('../_shared/encryption.ts');
             apiKey = await decrypt(apiKey);
           }
-          if (apiSecret.startsWith('{')) {
+          if (apiSecret.startsWith('{') && apiSecret.includes('iv')) {
+            const { decrypt } = await import('../_shared/encryption.ts');
             apiSecret = await decrypt(apiSecret);
           }
-          if (passphrase && passphrase.startsWith('{')) {
+          if (passphrase && passphrase.startsWith('{') && passphrase.includes('iv')) {
+            const { decrypt } = await import('../_shared/encryption.ts');
             passphrase = await decrypt(passphrase);
           }
         } catch (decryptErr) {
@@ -179,8 +240,8 @@ serve(async (req) => {
             })()
           );
         }
-      } catch (err) {
-        console.error(`[poll-balances] Failed to process ${conn.exchange_name}:`, err);
+      } catch (err: any) {
+        console.error(`[poll-balances] Failed to process ${conn.exchange_name}:`, err.message);
       }
     }
 
@@ -190,19 +251,21 @@ serve(async (req) => {
     // Calculate total equity
     const totalEquity = balances.reduce((sum, b) => sum + b.totalUSDT, 0);
 
-    // Insert into balance_history
-    if (balances.length > 0) {
-      const exchangeBreakdown = balances.map(b => ({
-        exchange: b.exchange,
-        balance: b.totalUSDT
-      }));
+    // Always insert into balance_history for chart data
+    const exchangeBreakdown = balances.map(b => ({
+      exchange: b.exchange,
+      balance: b.totalUSDT
+    }));
 
-      await supabase.from('balance_history').insert({
-        total_balance: totalEquity,
-        exchange_breakdown: exchangeBreakdown,
-        snapshot_time: new Date().toISOString()
-      });
+    const { error: insertError } = await supabase.from('balance_history').insert({
+      total_balance: totalEquity,
+      exchange_breakdown: exchangeBreakdown,
+      snapshot_time: new Date().toISOString()
+    });
 
+    if (insertError) {
+      console.error('[poll-balances] Error inserting balance_history:', insertError);
+    } else {
       console.log(`[poll-balances] Recorded snapshot: $${totalEquity.toFixed(2)}`);
     }
 

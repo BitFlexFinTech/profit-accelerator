@@ -12,7 +12,7 @@ interface VultrWizardProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type Step = 'credentials' | 'deploying' | 'installing' | 'success';
+type Step = 'credentials' | 'deploying' | 'auto-installing' | 'installing' | 'success';
 
 export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
   const [step, setStep] = useState<Step>('credentials');
@@ -114,8 +114,37 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
         }
       });
 
-      setStep('installing');
+      // Attempt automatic bot installation via SSH
+      setStep('auto-installing');
       setIsDeploying(false);
+
+      try {
+        // Wait a bit for VPS to be fully booted
+        await new Promise(resolve => setTimeout(resolve, 30000));
+
+        console.log('[VultrWizard] Attempting automatic SSH installation...');
+        
+        const { data: sshResult, error: sshError } = await supabase.functions.invoke('ssh-command', {
+          body: {
+            host: deployData.publicIp,
+            command: installCommand,
+            provider: 'vultr'
+          }
+        });
+
+        if (sshError || !sshResult?.success) {
+          console.log('[VultrWizard] Auto-install failed, falling back to manual');
+          setStep('installing');
+        } else {
+          console.log('[VultrWizard] Auto-install succeeded!');
+          toast.success('HFT bot installed automatically!');
+          setStep('success');
+        }
+      } catch (sshErr) {
+        console.error('[VultrWizard] SSH installation error:', sshErr);
+        // Fall back to manual installation
+        setStep('installing');
+      }
 
     } catch (err: any) {
       console.error('Vultr deployment error:', err);
@@ -241,6 +270,21 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
               </p>
               <p className="text-xs text-muted-foreground mt-2">
                 This may take 2-3 minutes
+              </p>
+            </div>
+          </div>
+        )}
+
+        {step === 'auto-installing' && (
+          <div className="py-12 text-center space-y-4">
+            <Loader2 className="w-12 h-12 mx-auto text-primary animate-spin" />
+            <div>
+              <p className="font-medium">Installing HFT Bot</p>
+              <p className="text-sm text-muted-foreground">
+                Automatically installing via SSH...
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                This may take 1-2 minutes
               </p>
             </div>
           </div>

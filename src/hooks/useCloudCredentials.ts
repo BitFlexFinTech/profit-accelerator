@@ -248,12 +248,48 @@ export function useCloudCredentials() {
     return 'pending';
   }, [credentials]);
 
+  // Save all credentials for a provider at once
+  const saveProviderCredentials = useCallback(async (provider: Provider): Promise<boolean> => {
+    setIsSaving(true);
+    try {
+      const providerCreds = credentials.filter(c => c.provider === provider);
+      
+      for (const cred of providerCreds) {
+        if (cred.value.trim()) {
+          const { error } = await supabase
+            .from('cloud_credentials')
+            .upsert({
+              provider,
+              field_name: cred.fieldName,
+              encrypted_value: cred.value,
+              status: 'pending',
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: 'provider,field_name',
+            });
+
+          if (error) throw error;
+        }
+      }
+
+      toast.success(`${provider.toUpperCase()} credentials saved`);
+      return true;
+    } catch (error) {
+      console.error('Error saving provider credentials:', error);
+      toast.error(`Failed to save ${provider.toUpperCase()} credentials`);
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [credentials]);
+
   return {
     credentials,
     isLoading,
     isSaving,
     isValidating,
     saveCredential,
+    saveProviderCredentials,
     validateProvider,
     validateAllProviders,
     clearAllCredentials,
