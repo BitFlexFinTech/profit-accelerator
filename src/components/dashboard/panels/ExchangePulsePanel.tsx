@@ -49,6 +49,14 @@ export function ExchangePulsePanel({ compact = false }: ExchangePulsePanelProps)
 
   const fetchPulses = async () => {
     try {
+      // First get connected exchanges to prioritize them
+      const { data: connections } = await supabase
+        .from('exchange_connections')
+        .select('exchange_name')
+        .eq('is_connected', true);
+      
+      const connectedNames = connections?.map(c => c.exchange_name.toLowerCase()) || [];
+      
       const { data, error } = await supabase
         .from('exchange_pulse')
         .select('id, exchange_name, status, latency_ms, source')
@@ -56,7 +64,17 @@ export function ExchangePulsePanel({ compact = false }: ExchangePulsePanelProps)
         .limit(6);
 
       if (error) throw error;
-      setPulses((data as ExchangePulse[]) || []);
+      
+      // Sort: connected exchanges (Binance, OKX) first
+      const sorted = [...(data || [])].sort((a, b) => {
+        const aConnected = connectedNames.includes(a.exchange_name.toLowerCase());
+        const bConnected = connectedNames.includes(b.exchange_name.toLowerCase());
+        if (aConnected && !bConnected) return -1;
+        if (!aConnected && bConnected) return 1;
+        return a.exchange_name.localeCompare(b.exchange_name);
+      });
+      
+      setPulses(sorted as ExchangePulse[]);
     } catch (err) {
       console.error('[ExchangePulsePanel] Error:', err);
     }

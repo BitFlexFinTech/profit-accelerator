@@ -333,10 +333,11 @@ const debouncedSync = () => {
 };
 
 // Initialize store and set up realtime subscriptions
+// IMPORTANT: This does NOT auto-start the bot - it only syncs data from the database
 export function initializeAppStore() {
   const store = useAppStore.getState();
   
-  // Initial sync
+  // Initial sync - reads current state from DB, does NOT start anything
   store.syncFromDatabase();
   
   // Subscribe to realtime updates with debouncing - single channel for all tables

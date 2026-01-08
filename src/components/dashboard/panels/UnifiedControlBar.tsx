@@ -22,13 +22,15 @@ import {
 type BotStatus = 'running' | 'stopped' | 'idle' | 'error';
 
 export function UnifiedControlBar() {
-  const [botStatus, setBotStatus] = useState<BotStatus>('idle');
+  // Default to 'stopped' - NEVER assume bot is running
+  const [botStatus, setBotStatus] = useState<BotStatus>('stopped');
   const [isPaperMode, setIsPaperMode] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
   const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
 
+  // Fetch bot status from database - NEVER auto-start
   const fetchBotStatus = useCallback(async () => {
     try {
       const { data } = await supabase
@@ -38,8 +40,13 @@ export function UnifiedControlBar() {
         .single();
       
       if (data) {
-        setBotStatus((data.bot_status as BotStatus) || 'idle');
+        // Always respect the database status - never assume running
+        const dbStatus = (data.bot_status as BotStatus) || 'stopped';
+        setBotStatus(dbStatus);
         setIsPaperMode(data.trading_mode === 'paper');
+      } else {
+        // No config = bot is definitely stopped
+        setBotStatus('stopped');
       }
 
       // Get active deployment for bot control
@@ -54,7 +61,8 @@ export function UnifiedControlBar() {
         setDeploymentId(deployment.id || deployment.server_id);
       }
     } catch {
-      // No config yet
+      // Error or no config = bot is stopped
+      setBotStatus('stopped');
     }
   }, []);
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,35 @@ export function AWSWizard({ open, onOpenChange }: AWSWizardProps) {
   const [copied, setCopied] = useState(false);
 
   const installCommand = `curl -sSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash`;
+
+  // Load credentials from database when wizard opens
+  const loadCredentialsFromDB = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('cloud_credentials')
+        .select('field_name, encrypted_value, status')
+        .eq('provider', 'aws');
+      
+      if (data) {
+        data.forEach(row => {
+          if (row.field_name === 'access_key_id' && row.encrypted_value) {
+            setAccessKeyId(row.encrypted_value);
+          }
+          if (row.field_name === 'secret_access_key' && row.encrypted_value) {
+            setSecretAccessKey(row.encrypted_value);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('[AWSWizard] Error loading credentials:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      loadCredentialsFromDB();
+    }
+  }, [open, loadCredentialsFromDB]);
 
   const handleReset = () => {
     setStep('credentials');

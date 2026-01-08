@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,31 @@ export function AlibabaWizard({ open, onOpenChange }: AlibabaWizardProps) {
   const [copied, setCopied] = useState(false);
 
   const installCommand = `curl -sSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash`;
+
+  // Load credentials from database when wizard opens
+  const loadCredentialsFromDB = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('cloud_credentials')
+        .select('field_name, encrypted_value')
+        .eq('provider', 'alibaba');
+      
+      if (data) {
+        data.forEach(row => {
+          if (row.field_name === 'accesskey_id' && row.encrypted_value) setAccessKeyId(row.encrypted_value);
+          if (row.field_name === 'accesskey_secret' && row.encrypted_value) setAccessKeySecret(row.encrypted_value);
+        });
+      }
+    } catch (err) {
+      console.error('[AlibabaWizard] Error loading credentials:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      loadCredentialsFromDB();
+    }
+  }, [open, loadCredentialsFromDB]);
 
   const handleReset = () => {
     setStep('credentials');
