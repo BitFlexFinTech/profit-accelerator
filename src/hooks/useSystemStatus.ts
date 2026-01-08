@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface SystemStatus {
@@ -18,7 +18,15 @@ export function useSystemStatus() {
     isLoading: true,
   });
 
+  // Prevent concurrent fetches and debounce rapid updates
+  const fetchingRef = useRef(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const fetchStatus = useCallback(async () => {
+    // Prevent concurrent fetches
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
     try {
       const [aiResult, exchangeResult, vpsResult] = await Promise.all([
         supabase.from('ai_config').select('is_active, model').eq('provider', 'groq').maybeSingle(),
@@ -54,8 +62,20 @@ export function useSystemStatus() {
     } catch (err) {
       console.error('[useSystemStatus] Error fetching:', err);
       setStatus(prev => ({ ...prev, isLoading: false }));
+    } finally {
+      fetchingRef.current = false;
     }
   }, []);
+
+  // Debounced fetch to prevent rapid re-renders from realtime events
+  const debouncedFetch = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      fetchStatus();
+    }, 300);
+  }, [fetchStatus]);
 
   const checkVpsHealth = useCallback(async () => {
     try {
@@ -85,20 +105,23 @@ export function useSystemStatus() {
     // Auto-refresh health every 30 seconds
     const healthInterval = setInterval(checkVpsHealth, 30000);
 
-    // Subscribe to realtime changes on all critical tables
+    // Subscribe to realtime changes on all critical tables (debounced)
     const channel = supabase
       .channel('system-status-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_config' }, fetchStatus)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, fetchStatus)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, fetchStatus)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_metrics' }, fetchStatus)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_config' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_metrics' }, debouncedFetch)
       .subscribe();
 
     return () => {
       clearInterval(healthInterval);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
       supabase.removeChannel(channel);
     };
-  }, [fetchStatus, checkVpsHealth]);
+  }, [fetchStatus, checkVpsHealth, debouncedFetch]);
 
   return { ...status, refetch: fetchStatus, checkHealth: checkVpsHealth };
 }
