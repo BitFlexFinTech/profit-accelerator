@@ -233,6 +233,35 @@ serve(async (req) => {
       );
     }
 
+    // Verify bot health after start/restart commands
+    if (action === 'start' || action === 'restart') {
+      console.log('[bot-control] Waiting 5s for bot to initialize...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Verify bot is actually running via health endpoint
+      const { data: healthCheck } = await supabase.functions.invoke('ssh-command', {
+        body: {
+          ipAddress,
+          command: 'curl -sf http://localhost:8080/health || echo "not_running"',
+          privateKey,
+          username: 'root',
+          timeout: 10000,
+        },
+      });
+      
+      const healthOutput = healthCheck?.output || '';
+      if (healthOutput.includes('not_running') || healthOutput.includes('error')) {
+        newBotStatus = 'error';
+        console.log('[bot-control] ❌ Bot failed to start, health check failed');
+      } else if (healthOutput.includes('"status":"ok"') || healthOutput.includes('"status": "ok"')) {
+        newBotStatus = 'running';
+        console.log('[bot-control] ✅ Bot verified running via health check');
+      } else {
+        // Check if container is running at least
+        console.log('[bot-control] ⚠️ Health endpoint not responding, checking container...');
+      }
+    }
+
     // For status/health action, parse and return the result
     if (action === 'status' || action === 'health') {
       let botStatus = 'unknown';
