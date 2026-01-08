@@ -27,11 +27,13 @@ async function hmacSignB64(secret: string, message: string): Promise<string> {
   return btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
 
-// Helper: Fetch balance from exchange
-async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?: string; api_secret?: string; api_passphrase?: string }): Promise<{ balance: number; pingMs: number }> {
+// Helper: Fetch balance from exchange - returns error if auth fails
+async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?: string; api_secret?: string; api_passphrase?: string }): Promise<{ balance: number; pingMs: number; error?: string }> {
   const exchangeKey = exchange.exchange_name.toLowerCase();
   const startTime = Date.now();
   let balance = 0;
+  let authSuccess = false;
+  let lastError = '';
 
   if (exchangeKey === 'binance' && exchange.api_key && exchange.api_secret) {
     const timestamp = Date.now();
@@ -44,11 +46,17 @@ async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?:
       const data = await resp.json();
       const usdt = data.balances?.find((b: { asset: string }) => b.asset === 'USDT');
       balance = parseFloat(usdt?.free || '0') + parseFloat(usdt?.locked || '0');
+      authSuccess = true;
+    } else {
+      lastError = `Binance API error: ${resp.status}`;
+      console.error(`[trade-engine] ${lastError}`);
     }
   } else if (exchangeKey === 'okx' && exchange.api_key && exchange.api_secret && exchange.api_passphrase) {
-    const timestamp = new Date().toISOString();
+    let tradingSuccess = false;
+    let fundingSuccess = false;
     
     // 1. Fetch TRADING account balance
+    const timestamp = new Date().toISOString();
     const tradingPath = '/api/v5/account/balance';
     const tradingSign = await hmacSignB64(exchange.api_secret, timestamp + 'GET' + tradingPath);
     try {
@@ -61,21 +69,31 @@ async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?:
           'Content-Type': 'application/json'
         }
       });
+      
       if (tradingResp.ok) {
         const tradingData = await tradingResp.json();
-        console.log('[trade-engine] OKX Trading account response:', JSON.stringify(tradingData));
-        if (tradingData.code === '0' && tradingData.data?.[0]) {
-          const details = tradingData.data[0].details || [];
+        console.log(`[trade-engine] OKX Trading response code: ${tradingData.code}, msg: ${tradingData.msg || 'none'}`);
+        if (tradingData.code === '0') {
+          tradingSuccess = true;
+          const details = tradingData.data?.[0]?.details || [];
           const usdtDetail = details.find((d: { ccy: string }) => d.ccy === 'USDT');
           if (usdtDetail) {
             const tradingBalance = parseFloat(usdtDetail.availBal || '0') + parseFloat(usdtDetail.frozenBal || '0');
             balance += tradingBalance;
             console.log(`[trade-engine] OKX Trading USDT: ${tradingBalance}`);
           }
+        } else {
+          lastError = `OKX Trading API error: ${tradingData.code} - ${tradingData.msg || 'Unknown error'}`;
+          console.error(`[trade-engine] ${lastError}`);
         }
+      } else {
+        const errText = await tradingResp.text().catch(() => 'Unknown');
+        lastError = `OKX Trading HTTP ${tradingResp.status}: ${errText.substring(0, 200)}`;
+        console.error(`[trade-engine] ${lastError}`);
       }
     } catch (err) {
-      console.error('[trade-engine] OKX Trading account fetch error:', err);
+      lastError = `OKX Trading fetch error: ${err instanceof Error ? err.message : 'Unknown'}`;
+      console.error(`[trade-engine] ${lastError}`);
     }
     
     // 2. Fetch FUNDING account balance (where deposits usually go!)
@@ -92,23 +110,40 @@ async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?:
           'Content-Type': 'application/json'
         }
       });
+      
       if (fundingResp.ok) {
         const fundingData = await fundingResp.json();
-        console.log('[trade-engine] OKX Funding account response:', JSON.stringify(fundingData));
-        if (fundingData.code === '0' && fundingData.data) {
-          const usdtFunding = fundingData.data.find((d: { ccy: string }) => d.ccy === 'USDT');
+        console.log(`[trade-engine] OKX Funding response code: ${fundingData.code}, msg: ${fundingData.msg || 'none'}`);
+        if (fundingData.code === '0') {
+          fundingSuccess = true;
+          const usdtFunding = fundingData.data?.find((d: { ccy: string }) => d.ccy === 'USDT');
           if (usdtFunding) {
             const fundingBalance = parseFloat(usdtFunding.availBal || '0') + parseFloat(usdtFunding.frozenBal || '0');
             balance += fundingBalance;
             console.log(`[trade-engine] OKX Funding USDT: ${fundingBalance}`);
           }
+        } else {
+          lastError = `OKX Funding API error: ${fundingData.code} - ${fundingData.msg || 'Unknown error'}`;
+          console.error(`[trade-engine] ${lastError}`);
         }
+      } else {
+        const errText = await fundingResp.text().catch(() => 'Unknown');
+        lastError = `OKX Funding HTTP ${fundingResp.status}: ${errText.substring(0, 200)}`;
+        console.error(`[trade-engine] ${lastError}`);
       }
     } catch (err) {
-      console.error('[trade-engine] OKX Funding account fetch error:', err);
+      lastError = `OKX Funding fetch error: ${err instanceof Error ? err.message : 'Unknown'}`;
+      console.error(`[trade-engine] ${lastError}`);
     }
     
-    console.log(`[trade-engine] OKX Total USDT balance: ${balance}`);
+    // OKX auth is successful if at least one endpoint worked
+    authSuccess = tradingSuccess || fundingSuccess;
+    console.log(`[trade-engine] OKX auth success: ${authSuccess}, Total USDT: ${balance}`);
+    
+    // If both failed, provide actionable error
+    if (!authSuccess) {
+      lastError = 'OKX authentication failed. Check: 1) API key permissions (Read for Trading + Funding), 2) Passphrase is correct, 3) IP whitelist includes this server';
+    }
   } else if (exchangeKey === 'bybit' && exchange.api_key && exchange.api_secret) {
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
@@ -124,8 +159,20 @@ async function fetchExchangeBalance(exchange: { exchange_name: string; api_key?:
     });
     if (resp.ok) {
       const data = await resp.json();
-      if (data.retCode === 0 && data.result?.list?.[0]) balance = parseFloat(data.result.list[0].totalEquity || '0');
+      if (data.retCode === 0 && data.result?.list?.[0]) {
+        balance = parseFloat(data.result.list[0].totalEquity || '0');
+        authSuccess = true;
+      } else {
+        lastError = `Bybit API error: ${data.retCode} - ${data.retMsg || 'Unknown'}`;
+      }
+    } else {
+      lastError = `Bybit HTTP error: ${resp.status}`;
     }
+  }
+
+  // Return error if we couldn't authenticate
+  if (!authSuccess && exchangeKey !== 'hyperliquid') {
+    return { balance: 0, pingMs: Date.now() - startTime, error: lastError || 'Authentication failed' };
   }
 
   return { balance, pingMs: Date.now() - startTime };
@@ -143,7 +190,12 @@ serve(async (req) => {
     );
 
     const { action, ...params } = await req.json();
-    console.log(`[trade-engine] Action: ${action}`, params);
+    // Sanitized log - never log secrets
+    const sanitizedParams = { ...params };
+    delete sanitizedParams.apiSecret;
+    delete sanitizedParams.apiPassphrase;
+    delete sanitizedParams.agentPrivateKey;
+    console.log(`[trade-engine] Action: ${action}`, JSON.stringify(sanitizedParams));
 
     switch (action) {
       case 'get-ip': {
@@ -171,8 +223,15 @@ serve(async (req) => {
         }
 
         try {
-          const { balance, pingMs } = await fetchExchangeBalance({ exchange_name: exchangeName, api_key: apiKey, api_secret: apiSecret, api_passphrase: apiPassphrase });
-          return new Response(JSON.stringify({ success: true, balance: balance.toFixed(2), pingMs, message: `Connected to ${exchangeName}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          const result = await fetchExchangeBalance({ exchange_name: exchangeName, api_key: apiKey, api_secret: apiSecret, api_passphrase: apiPassphrase });
+          
+          // Fail-closed: if there's an error, return failure with clear message
+          if (result.error) {
+            console.error(`[trade-engine] Test connection failed for ${exchangeName}: ${result.error}`);
+            return new Response(JSON.stringify({ success: false, error: result.error }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+          
+          return new Response(JSON.stringify({ success: true, balance: result.balance.toFixed(2), pingMs: result.pingMs, message: `Connected to ${exchangeName}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         } catch (err) {
           return new Response(JSON.stringify({ success: false, error: err instanceof Error ? err.message : 'Connection failed' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
