@@ -129,7 +129,7 @@ export function SentimentPanel({ compact = false, className }: SentimentPanelPro
     )}>
       <div className="flex items-center justify-between mb-1 flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <IconContainer color="magenta" size="sm" animated>
+          <IconContainer color="magenta" size="sm">
             <Activity className="w-2.5 h-2.5" />
           </IconContainer>
           <span className="font-medium text-xs">Sentiment</span>

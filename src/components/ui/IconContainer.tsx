@@ -6,7 +6,6 @@ interface IconContainerProps {
   children: ReactNode;
   color: CardColor;
   size?: 'sm' | 'md' | 'lg';
-  animated?: boolean;
   className?: string;
 }
 
@@ -36,15 +35,13 @@ export function IconContainer({
   children, 
   color, 
   size = 'md', 
-  animated = false,
   className 
-}: IconContainerProps) {
+}: Omit<IconContainerProps, 'animated'>) {
   return (
     <div 
       className={cn(
         sizeClassMap[size],
         colorClassMap[color],
-        animated && 'animate-bounce-subtle',
         'transition-all duration-300',
         className
       )}

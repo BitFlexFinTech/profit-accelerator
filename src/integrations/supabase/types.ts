@@ -79,6 +79,7 @@ export type Database = {
       }
       ai_market_updates: {
         Row: {
+          ai_provider: string | null
           confidence: number | null
           created_at: string | null
           current_price: number | null
@@ -95,6 +96,7 @@ export type Database = {
           symbol: string
         }
         Insert: {
+          ai_provider?: string | null
           confidence?: number | null
           created_at?: string | null
           current_price?: number | null
@@ -111,6 +113,7 @@ export type Database = {
           symbol: string
         }
         Update: {
+          ai_provider?: string | null
           confidence?: number | null
           created_at?: string | null
           current_price?: number | null
@@ -172,6 +175,7 @@ export type Database = {
           color_hex: string
           created_at: string | null
           current_usage: number | null
+          daily_usage: number | null
           display_name: string
           error_count: number | null
           free_tier_info: string | null
@@ -180,12 +184,14 @@ export type Database = {
           id: string
           is_active: boolean | null
           is_enabled: boolean | null
+          last_daily_reset_at: string | null
           last_error: string | null
           last_reset_at: string | null
           last_used_at: string | null
           model_name: string
           priority: number | null
           provider_name: string
+          rate_limit_rpd: number | null
           rate_limit_rpm: number | null
           secret_name: string
           short_name: string
@@ -200,6 +206,7 @@ export type Database = {
           color_hex: string
           created_at?: string | null
           current_usage?: number | null
+          daily_usage?: number | null
           display_name: string
           error_count?: number | null
           free_tier_info?: string | null
@@ -208,12 +215,14 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_enabled?: boolean | null
+          last_daily_reset_at?: string | null
           last_error?: string | null
           last_reset_at?: string | null
           last_used_at?: string | null
           model_name: string
           priority?: number | null
           provider_name: string
+          rate_limit_rpd?: number | null
           rate_limit_rpm?: number | null
           secret_name: string
           short_name: string
@@ -228,6 +237,7 @@ export type Database = {
           color_hex?: string
           created_at?: string | null
           current_usage?: number | null
+          daily_usage?: number | null
           display_name?: string
           error_count?: number | null
           free_tier_info?: string | null
@@ -236,12 +246,14 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_enabled?: boolean | null
+          last_daily_reset_at?: string | null
           last_error?: string | null
           last_reset_at?: string | null
           last_used_at?: string | null
           model_name?: string
           priority?: number | null
           provider_name?: string
+          rate_limit_rpd?: number | null
           rate_limit_rpm?: number | null
           secret_name?: string
           short_name?: string
@@ -2489,6 +2501,7 @@ export type Database = {
     }
     Functions: {
       increment_paper_trade: { Args: never; Returns: undefined }
+      reset_ai_provider_daily_usage: { Args: never; Returns: undefined }
       reset_ai_provider_usage: { Args: never; Returns: undefined }
     }
     Enums: {

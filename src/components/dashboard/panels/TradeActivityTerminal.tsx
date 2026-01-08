@@ -129,7 +129,7 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
       <CardHeader className="pb-2 flex-shrink-0 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <IconContainer color="green" size="sm" animated>
+            <IconContainer color="green" size="sm">
               <Terminal className="h-3.5 w-3.5" />
             </IconContainer>
             <CardTitle className="text-sm font-medium">Live Trade Activity</CardTitle>
