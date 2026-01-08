@@ -109,26 +109,45 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
             publicIp: existingData.publicIp,
           });
 
-          // Upsert vps_config with the existing instance
-          await supabase.from('vps_config').upsert({
+          // Upsert vps_config with the existing instance - use proper structure
+          const { error: configError } = await supabase.from('vps_config').upsert({
             provider: 'vultr',
-            region: existingData.region || 'nrt',
+            region: existingData.region || 'tokyo',
             status: 'running',
             outbound_ip: existingData.publicIp,
             updated_at: new Date().toISOString()
           }, { onConflict: 'provider' });
+          
+          if (configError) {
+            console.error('[VultrWizard] vps_config upsert error:', configError);
+          } else {
+            console.log('[VultrWizard] vps_config updated successfully');
+          }
 
-          // Also upsert into vps_instances
-          await supabase.from('vps_instances').upsert({
+          // Also insert into vps_instances
+          const { error: instanceError } = await supabase.from('vps_instances').upsert({
             provider: 'vultr',
             provider_instance_id: existingData.instanceId,
             ip_address: existingData.publicIp,
             status: 'running',
-            region: existingData.region || 'nrt',
+            region: existingData.region || 'tokyo',
             instance_size: existingData.plan || 'vhf-1c-1gb',
             nickname: existingData.label || 'Tokyo HFT Bot',
             updated_at: new Date().toISOString()
           }, { onConflict: 'provider_instance_id' });
+
+          if (instanceError) {
+            console.error('[VultrWizard] vps_instances upsert error:', instanceError);
+          }
+          
+          // Update failover_config for Vultr
+          await supabase.from('failover_config').upsert({
+            provider: 'vultr',
+            is_primary: true,
+            is_enabled: true,
+            last_health_check: new Date().toISOString(),
+            region: existingData.region || 'tokyo'
+          }, { onConflict: 'provider' });
 
           setIsValidating(false);
 

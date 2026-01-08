@@ -474,8 +474,11 @@ export function SettingsTab() {
           {CLOUD_PROVIDERS.map((provider) => {
             const providerStatus = getProviderStatus(provider.id);
             const pricing = PROVIDER_PRICING[provider.id];
-            const isConnected = providerStatus.status === 'running';
-            const isPrimary = providerStatus.isPrimary;
+            // Check both useCloudInfrastructure and useSystemStatus for connected state
+            const isConnected = providerStatus.status === 'running' || 
+                               (provider.id === vps.provider && (vps.status === 'running' || vps.status === 'idle'));
+            const isPrimary = providerStatus.isPrimary || 
+                             (provider.id === vps.provider && vps.status === 'running');
 
             return (
               <button
@@ -489,8 +492,14 @@ export function SettingsTab() {
                       : 'bg-secondary/30 hover:bg-secondary/50 border border-transparent'
                 }`}
               >
-                {/* Status Badge */}
-                <div className="absolute -top-2 -right-2 flex gap-1">
+                {/* Status Indicator with Pulse */}
+                <div className="absolute -top-2 -right-2 flex items-center gap-1">
+                  {isConnected && (
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-success" />
+                    </span>
+                  )}
                   {isPrimary && (
                     <span className="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-foreground font-medium">
                       PRIMARY
@@ -501,7 +510,7 @@ export function SettingsTab() {
                       Running
                     </span>
                   )}
-                  {pricing?.free && (
+                  {pricing?.free && !isConnected && (
                     <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent font-medium">
                       FREE
                     </span>

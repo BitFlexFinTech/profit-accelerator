@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Wifi, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle, Edit } from 'lucide-react';
+import { Wifi, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle, Edit, Server } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useExchangeStatus, ExchangeConnection } from '@/hooks/useExchangeStatus';
+import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
@@ -27,6 +28,7 @@ interface TestResult {
 
 export function ExchangeConnectionsCard() {
   const { exchanges, connectedCount, totalBalance, isLoading } = useExchangeStatus();
+  const { vps } = useSystemStatus();
   const [testingExchange, setTestingExchange] = useState<string | null>(null);
   const [disconnectingExchange, setDisconnectingExchange] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -34,6 +36,8 @@ export function ExchangeConnectionsCard() {
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   const [showExchangeWizard, setShowExchangeWizard] = useState(false);
   const [wizardExchangeId, setWizardExchangeId] = useState<string | null>(null);
+  
+  const isVpsActive = vps.status === 'running' || (vps.status === 'idle' && vps.ip);
 
   const handleTestConnection = async (exchange: ExchangeConnection) => {
     if (!exchange.is_connected) {
@@ -162,6 +166,12 @@ export function ExchangeConnectionsCard() {
           <div className="flex items-center gap-2">
             <Wifi className="w-5 h-5 text-primary" />
             <h3 className="text-lg font-semibold">Exchange Connections</h3>
+            {isVpsActive && (
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">
+                <Server className="w-3 h-3" />
+                VPS Active
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">

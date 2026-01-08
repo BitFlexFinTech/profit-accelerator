@@ -90,10 +90,13 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
     return 'VPS inactive';
   };
 
-  // VPS pulse when BOTH vps.status is running AND bot_status is 'running'
-  const isVpsActive = status.vps.status === 'running' && botStatus === 'running';
+  // VPS pulse when vps.status is running OR we have a valid IP with running status
+  // Show green pulse for connected VPS even if bot isn't running yet
+  const isVpsActive = status.vps.status === 'running' || 
+                      (status.vps.ip && botStatus === 'running');
   const isVpsConnected = status.vps.status === 'running' || 
-                         (status.vps.status === 'idle' && status.vps.ip);
+                         status.vps.status === 'idle' || 
+                         !!status.vps.ip;
   
   const indicators = [
     {
