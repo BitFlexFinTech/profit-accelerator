@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Target, TrendingUp, TrendingDown, X, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,11 +23,12 @@ interface Position {
 
 export function PositionsPanel() {
   const paperTradingMode = useAppStore(state => state.paperTradingMode);
+  const lastUpdate = useAppStore(state => state.lastUpdate);
   const [positions, setPositions] = useState<Position[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [closingId, setClosingId] = useState<string | null>(null);
 
-  const fetchPositions = async () => {
+  const fetchPositions = useCallback(async () => {
     const table = paperTradingMode ? 'paper_positions' : 'positions';
     const { data, error } = await supabase
       .from(table)
@@ -38,28 +39,12 @@ export function PositionsPanel() {
       setPositions(data as Position[]);
     }
     setIsLoading(false);
-  };
+  }, [paperTradingMode]);
 
+  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
   useEffect(() => {
     fetchPositions();
-
-    // Set up realtime subscription
-    const table = paperTradingMode ? 'paper_positions' : 'positions';
-    const channel = supabase
-      .channel('positions-realtime')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table
-      }, () => {
-        fetchPositions();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [paperTradingMode]);
+  }, [fetchPositions, lastUpdate]);
 
   const handleClosePosition = async (position: Position) => {
     setClosingId(position.id);

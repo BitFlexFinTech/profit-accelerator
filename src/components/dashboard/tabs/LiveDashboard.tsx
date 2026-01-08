@@ -13,7 +13,7 @@ import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
 export function LiveDashboard() {
   useTradeNotifications();
   const { sync } = useExchangeWebSocket();
-  const { startPolling, stopPolling } = useLiveBalancePolling(30);
+  const { startPolling, stopPolling } = useLiveBalancePolling(60);
 
   useEffect(() => {
     sync();

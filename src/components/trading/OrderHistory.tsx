@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { History, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,11 +26,12 @@ type StatusFilter = 'all' | 'pending' | 'filled' | 'cancelled';
 
 export function OrderHistory() {
   const paperTradingMode = useAppStore(state => state.paperTradingMode);
+  const lastUpdate = useAppStore(state => state.lastUpdate);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<StatusFilter>('all');
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     const table = paperTradingMode ? 'paper_orders' : 'orders';
     let query = supabase
       .from(table)
@@ -48,28 +49,12 @@ export function OrderHistory() {
       setOrders(data as Order[]);
     }
     setIsLoading(false);
-  };
+  }, [paperTradingMode, filter]);
 
+  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
   useEffect(() => {
     fetchOrders();
-
-    // Set up realtime subscription
-    const table = paperTradingMode ? 'paper_orders' : 'orders';
-    const channel = supabase
-      .channel('orders-realtime')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table
-      }, () => {
-        fetchOrders();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [paperTradingMode, filter]);
+  }, [fetchOrders, lastUpdate]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {

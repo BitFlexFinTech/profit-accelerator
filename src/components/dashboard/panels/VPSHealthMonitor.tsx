@@ -115,27 +115,17 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
     setIsRefreshing(false);
   };
 
+  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
+  const lastUpdate = useAppStore((s) => s.lastUpdate);
+  
   useEffect(() => {
     fetchHealthData();
+  }, [lastUpdate]);
 
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchHealthData, 30000);
-
-    // Subscribe to realtime updates
-    const channel = supabase
-      .channel('vps-health-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, () => {
-        fetchHealthData();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'vps_metrics' }, () => {
-        fetchHealthData();
-      })
-      .subscribe();
-
-    return () => {
-      clearInterval(interval);
-      supabase.removeChannel(channel);
-    };
+  // Auto-refresh every 60 seconds (reduced from 30s)
+  useEffect(() => {
+    const interval = setInterval(fetchHealthData, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const getStatusIcon = (status: VpsHealthData['status']) => {

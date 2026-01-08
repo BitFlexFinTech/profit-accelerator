@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { ArrowUpRight, ArrowDownRight, Terminal, Activity, Zap } from 'lucide-re
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { useAppStore } from '@/store/useAppStore';
 
 interface Trade {
   id: string;
@@ -44,8 +45,9 @@ interface TradeActivityTerminalProps {
 export function TradeActivityTerminal({ expanded = false, compact = false, className }: TradeActivityTerminalProps) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
+  const lastUpdate = useAppStore((s) => s.lastUpdate);
 
-  const fetchTrades = async () => {
+  const fetchTrades = useCallback(async () => {
     try {
       const limit = expanded ? 50 : compact ? 10 : 15;
       
@@ -64,26 +66,12 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
     } finally {
       setLoading(false);
     }
-  };
+  }, [expanded, compact]);
 
+  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
   useEffect(() => {
     fetchTrades();
-
-    const channel = supabase
-      .channel('trade-activity-terminal')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'trading_journal'
-      }, () => {
-        fetchTrades();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [expanded, compact]);
+  }, [fetchTrades, lastUpdate]);
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '--';

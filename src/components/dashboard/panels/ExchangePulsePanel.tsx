@@ -1,8 +1,9 @@
-import { useState, useEffect, forwardRef } from 'react';
+import { useState, useEffect, forwardRef, useCallback } from 'react';
 import { Activity, CheckCircle2, XCircle, RefreshCw, Server, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { useAppStore } from '@/store/useAppStore';
 
 interface ExchangePulse {
   id: string;
@@ -28,26 +29,9 @@ interface ExchangePulsePanelProps {
 export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelProps>(({ compact = false }, ref) => {
   const [pulses, setPulses] = useState<ExchangePulse[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const lastUpdate = useAppStore((s) => s.lastUpdate);
 
-  useEffect(() => {
-    fetchPulses();
-    const channel = supabase
-      .channel('exchange-pulse-compact')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'exchange_pulse'
-      }, () => fetchPulses())
-      .subscribe();
-
-    const interval = setInterval(fetchPulses, 30000);
-    return () => {
-      supabase.removeChannel(channel);
-      clearInterval(interval);
-    };
-  }, []);
-
-  const fetchPulses = async () => {
+  const fetchPulses = useCallback(async () => {
     try {
       // First get connected exchanges to prioritize them
       const { data: connections } = await supabase
@@ -78,7 +62,12 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
     } catch (err) {
       console.error('[ExchangePulsePanel] Error:', err);
     }
-  };
+  }, []);
+
+  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
+  useEffect(() => {
+    fetchPulses();
+  }, [fetchPulses, lastUpdate]);
 
   const refreshPulses = async () => {
     setIsRefreshing(true);
