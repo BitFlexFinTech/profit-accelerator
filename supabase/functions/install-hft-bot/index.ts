@@ -650,6 +650,195 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: String(err) }));
       }
     });
+  } else if (req.url === '/place-order' && req.method === 'POST') {
+    // ========== VPS-BASED TRADE EXECUTION FOR HFT ==========
+    // All trades execute directly from VPS for lowest latency
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      const startTime = Date.now();
+      try {
+        const { exchange, symbol, side, quantity, orderType, price, apiKey, apiSecret, passphrase } = JSON.parse(body);
+        console.log('[🐟 PIRANHA] Executing order:', exchange, symbol, side, quantity, orderType);
+        
+        let result;
+        
+        if (exchange === 'binance' || exchange === 'Binance') {
+          // Binance order execution with HMAC-SHA256 signing
+          result = await new Promise((resolve) => {
+            const timestamp = Date.now();
+            let queryString = \`symbol=\${symbol}&side=\${side.toUpperCase()}&type=\${orderType.toUpperCase()}&quantity=\${quantity}&timestamp=\${timestamp}\`;
+            
+            if (orderType.toUpperCase() === 'LIMIT' && price) {
+              queryString += \`&price=\${price}&timeInForce=GTC\`;
+            }
+            
+            const signature = signBinance(queryString, apiSecret);
+            const fullQuery = \`\${queryString}&signature=\${signature}\`;
+            
+            const postData = fullQuery;
+            const options = {
+              hostname: 'api.binance.com',
+              path: '/api/v3/order',
+              method: 'POST',
+              headers: {
+                'X-MBX-APIKEY': apiKey,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Length': Buffer.byteLength(postData)
+              }
+            };
+            
+            const req = https.request(options, (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => {
+                try {
+                  const json = JSON.parse(data);
+                  const latency = Date.now() - startTime;
+                  console.log('[🐟 PIRANHA] Binance response:', json.status, 'latency:', latency, 'ms');
+                  resolve({
+                    success: json.orderId ? true : false,
+                    orderId: json.orderId,
+                    executedPrice: parseFloat(json.price || json.cummulativeQuoteQty / json.executedQty || 0),
+                    executedQty: parseFloat(json.executedQty || 0),
+                    status: json.status,
+                    latencyMs: latency,
+                    error: json.msg
+                  });
+                } catch (e) { 
+                  resolve({ success: false, error: data, latencyMs: Date.now() - startTime }); 
+                }
+              });
+            });
+            req.on('error', (e) => resolve({ success: false, error: e.message, latencyMs: Date.now() - startTime }));
+            req.setTimeout(10000, () => { req.destroy(); resolve({ success: false, error: 'Timeout', latencyMs: Date.now() - startTime }); });
+            req.write(postData);
+            req.end();
+          });
+          
+        } else if (exchange === 'okx' || exchange === 'OKX') {
+          // OKX order execution with OK-ACCESS-SIGN
+          result = await new Promise((resolve) => {
+            const timestamp = new Date().toISOString();
+            const instId = symbol.includes('-') ? symbol : symbol.replace('USDT', '-USDT');
+            const orderBody = JSON.stringify({
+              instId,
+              tdMode: 'cash',
+              side: side.toLowerCase(),
+              ordType: orderType.toLowerCase() === 'market' ? 'market' : 'limit',
+              sz: quantity.toString(),
+              ...(price && orderType.toLowerCase() === 'limit' ? { px: price.toString() } : {})
+            });
+            
+            const sign = signOKX(timestamp, 'POST', '/api/v5/trade/order', orderBody, apiSecret);
+            
+            const options = {
+              hostname: 'www.okx.com',
+              path: '/api/v5/trade/order',
+              method: 'POST',
+              headers: {
+                'OK-ACCESS-KEY': apiKey,
+                'OK-ACCESS-SIGN': sign,
+                'OK-ACCESS-TIMESTAMP': timestamp,
+                'OK-ACCESS-PASSPHRASE': passphrase || '',
+                'Content-Type': 'application/json'
+              }
+            };
+            
+            const req = https.request(options, (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => {
+                try {
+                  const json = JSON.parse(data);
+                  const latency = Date.now() - startTime;
+                  console.log('[🐟 PIRANHA] OKX response:', json.code, 'latency:', latency, 'ms');
+                  resolve({
+                    success: json.code === '0',
+                    orderId: json.data?.[0]?.ordId,
+                    latencyMs: latency,
+                    error: json.msg || json.data?.[0]?.sMsg
+                  });
+                } catch (e) { 
+                  resolve({ success: false, error: data, latencyMs: Date.now() - startTime }); 
+                }
+              });
+            });
+            req.on('error', (e) => resolve({ success: false, error: e.message, latencyMs: Date.now() - startTime }));
+            req.setTimeout(10000, () => { req.destroy(); resolve({ success: false, error: 'Timeout', latencyMs: Date.now() - startTime }); });
+            req.write(orderBody);
+            req.end();
+          });
+          
+        } else if (exchange === 'bybit' || exchange === 'Bybit') {
+          // Bybit order execution
+          result = await new Promise((resolve) => {
+            const timestamp = Date.now().toString();
+            const orderBody = JSON.stringify({
+              category: 'spot',
+              symbol: symbol,
+              side: side.charAt(0).toUpperCase() + side.slice(1).toLowerCase(),
+              orderType: orderType.charAt(0).toUpperCase() + orderType.slice(1).toLowerCase(),
+              qty: quantity.toString(),
+              ...(price && orderType.toLowerCase() === 'limit' ? { price: price.toString() } : {})
+            });
+            
+            const signStr = timestamp + apiKey + '5000' + orderBody;
+            const signature = crypto.createHmac('sha256', apiSecret).update(signStr).digest('hex');
+            
+            const options = {
+              hostname: 'api.bybit.com',
+              path: '/v5/order/create',
+              method: 'POST',
+              headers: {
+                'X-BAPI-API-KEY': apiKey,
+                'X-BAPI-SIGN': signature,
+                'X-BAPI-SIGN-TYPE': '2',
+                'X-BAPI-TIMESTAMP': timestamp,
+                'X-BAPI-RECV-WINDOW': '5000',
+                'Content-Type': 'application/json'
+              }
+            };
+            
+            const req = https.request(options, (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => {
+                try {
+                  const json = JSON.parse(data);
+                  const latency = Date.now() - startTime;
+                  console.log('[🐟 PIRANHA] Bybit response:', json.retCode, 'latency:', latency, 'ms');
+                  resolve({
+                    success: json.retCode === 0,
+                    orderId: json.result?.orderId,
+                    latencyMs: latency,
+                    error: json.retMsg
+                  });
+                } catch (e) { 
+                  resolve({ success: false, error: data, latencyMs: Date.now() - startTime }); 
+                }
+              });
+            });
+            req.on('error', (e) => resolve({ success: false, error: e.message, latencyMs: Date.now() - startTime }));
+            req.setTimeout(10000, () => { req.destroy(); resolve({ success: false, error: 'Timeout', latencyMs: Date.now() - startTime }); });
+            req.write(orderBody);
+            req.end();
+          });
+          
+        } else {
+          result = { success: false, error: 'Unsupported exchange: ' + exchange, latencyMs: Date.now() - startTime };
+        }
+        
+        console.log('[🐟 PIRANHA] Order result:', result.success ? 'SUCCESS' : 'FAILED', result.latencyMs + 'ms');
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        
+      } catch (err) {
+        console.error('[🐟 PIRANHA] Order execution error:', err);
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: String(err), latencyMs: Date.now() - startTime }));
+      }
+    });
   } else {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not found' }));

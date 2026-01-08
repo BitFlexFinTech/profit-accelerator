@@ -49,7 +49,7 @@ export class OrderManager {
     const clientOrderId = uuidv4();
     const idempotencyKey = uuidv4();
 
-    // Insert order into database
+    // Insert order into database first
     const { data: order, error } = await supabase
       .from('orders')
       .insert({
@@ -70,23 +70,28 @@ export class OrderManager {
     if (!order) throw new Error('Order creation returned no data');
 
     try {
-      // Execute order via edge function
-      const { data: result, error: execError } = await supabase.functions.invoke('trade-engine', {
-        body: {
-          action: 'place-order',
-          exchangeName: request.exchangeName,
-          symbol: request.symbol,
-          side: request.side,
-          quantity: request.amount,
-          price: request.price,
-          clientOrderId,
-          idempotencyKey
-        }
-      });
+      // Check for running VPS to route through for lowest latency
+      const { data: vpsConfig } = await supabase
+        .from('vps_config')
+        .select('outbound_ip, status')
+        .eq('status', 'running')
+        .not('outbound_ip', 'is', null)
+        .limit(1);
 
-      if (execError) throw execError;
+      const vpsIp = vpsConfig?.[0]?.outbound_ip;
 
-      // Update order with exchange response
+      let result;
+      if (vpsIp) {
+        // Route through VPS for HFT - lowest latency
+        console.log('[OrderManager] Routing order through VPS:', vpsIp);
+        result = await this.executeViaVPS(vpsIp, request, clientOrderId);
+      } else {
+        // Fallback to edge function (higher latency)
+        console.log('[OrderManager] No VPS available, using edge function');
+        result = await this.executeViaEdgeFunction(request, clientOrderId, idempotencyKey);
+      }
+
+      // Update order with execution response
       await supabase
         .from('orders')
         .update({
@@ -99,7 +104,7 @@ export class OrderManager {
         })
         .eq('id', order.id);
 
-      // Log transaction
+      // Log transaction with latency info
       await this.logTransaction('order_placed', request.exchangeName, request.symbol, {
         orderId: order.id,
         clientOrderId,
@@ -107,7 +112,9 @@ export class OrderManager {
         type: request.type,
         amount: request.amount,
         price: request.price,
-        executionTimeMs: result?.executionTimeMs
+        executionTimeMs: result?.latencyMs,
+        executedViaVPS: !!vpsIp,
+        vpsIp: vpsIp || null
       }, result?.success ? 'success' : 'error');
 
       if (result?.success) {
@@ -136,6 +143,69 @@ export class OrderManager {
 
       throw error;
     }
+  }
+
+  private async executeViaVPS(
+    vpsIp: string, 
+    request: OrderRequest, 
+    clientOrderId: string
+  ): Promise<{ success: boolean; orderId?: string; executedPrice?: number; latencyMs?: number; error?: string }> {
+    // Get exchange credentials
+    const { data: exchange } = await supabase
+      .from('exchange_connections')
+      .select('api_key, api_secret, api_passphrase')
+      .eq('exchange_name', request.exchangeName)
+      .eq('is_connected', true)
+      .single();
+
+    if (!exchange) {
+      throw new Error(`Exchange ${request.exchangeName} not connected`);
+    }
+
+    // Call VPS order endpoint directly for lowest latency
+    const response = await fetch(`http://${vpsIp}:8080/place-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        exchange: request.exchangeName,
+        symbol: request.symbol,
+        side: request.side,
+        quantity: request.amount,
+        orderType: request.type,
+        price: request.price,
+        apiKey: exchange.api_key,
+        apiSecret: exchange.api_secret,
+        passphrase: exchange.api_passphrase,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`VPS returned ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  private async executeViaEdgeFunction(
+    request: OrderRequest, 
+    clientOrderId: string, 
+    idempotencyKey: string
+  ): Promise<{ success: boolean; orderId?: string; executedPrice?: number; latencyMs?: number; error?: string }> {
+    const { data: result, error: execError } = await supabase.functions.invoke('trade-engine', {
+      body: {
+        action: 'place-order',
+        exchangeName: request.exchangeName,
+        symbol: request.symbol,
+        side: request.side,
+        quantity: request.amount,
+        price: request.price,
+        clientOrderId,
+        idempotencyKey
+      }
+    });
+
+    if (execError) throw execError;
+    return result;
   }
 
   async cancelOrder(orderId: string): Promise<void> {

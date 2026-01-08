@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Check, Eye, EyeOff, RefreshCw, Zap, 
-  Server, Globe, Shield, BookOpen, Trash2
+  Server, Globe, Shield, BookOpen, Trash2, Save, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +40,7 @@ interface CloudCredentials {
     apiKey: string;
     secret: string;
     isComplete: boolean;
+    isSaving?: boolean;
     isActive: boolean;
   };
 }
@@ -101,6 +102,65 @@ export default function Setup() {
       
       return updated;
     });
+  };
+
+  const handleSaveRow = async (providerId: string) => {
+    const provider = CLOUD_PROVIDERS.find(p => p.id === providerId);
+    const cred = credentials[providerId];
+    
+    if (!provider || !cred?.apiKey) {
+      toast.error('Please enter API key first');
+      return;
+    }
+    
+    if (provider.hasSecret && !cred?.secret) {
+      toast.error('Please enter API secret');
+      return;
+    }
+    
+    // Set saving state
+    setCredentials(prev => ({
+      ...prev,
+      [providerId]: { ...prev[providerId], isSaving: true }
+    }));
+    
+    try {
+      const credentialsObj: Record<string, string> = {
+        [provider.apiKeyField]: cred.apiKey,
+      };
+      if (provider.hasSecret && provider.secretField) {
+        credentialsObj[provider.secretField] = cred.secret;
+      }
+
+      const { error } = await supabase.from('cloud_config').upsert({
+        provider: provider.id,
+        region: provider.region,
+        credentials: credentialsObj,
+        is_active: false,
+        status: 'configured',
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'provider' });
+
+      if (error) throw error;
+
+      toast.success(`${provider.shortName} credentials saved`);
+      
+      setCredentials(prev => ({
+        ...prev,
+        [providerId]: { 
+          ...prev[providerId], 
+          isSaving: false,
+          isComplete: true 
+        }
+      }));
+    } catch (err: any) {
+      console.error('Save error:', err);
+      toast.error(`Failed to save ${provider.shortName}: ${err.message}`);
+      setCredentials(prev => ({
+        ...prev,
+        [providerId]: { ...prev[providerId], isSaving: false }
+      }));
+    }
   };
 
   const handleConnectAll = async () => {
@@ -283,6 +343,7 @@ export default function Setup() {
                   <th className="text-left p-3">API Secret / Key</th>
                   <th className="text-left p-3 w-28">Region</th>
                   <th className="text-center p-3 w-20">Pulse</th>
+                  <th className="text-center p-3 w-28">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -356,6 +417,22 @@ export default function Setup() {
                         <div className={`w-3 h-3 rounded-full mx-auto ${
                           isActive ? 'bg-green-400 animate-pulse' : 'bg-muted'
                         }`} />
+                      </td>
+                      <td className="p-3 text-center">
+                        <Button
+                          size="sm"
+                          variant={isComplete ? "outline" : "default"}
+                          disabled={!cred?.apiKey || (provider.hasSecret && !cred?.secret) || cred?.isSaving}
+                          onClick={() => handleSaveRow(provider.id)}
+                          className="gap-1"
+                        >
+                          {cred?.isSaving ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Save className="h-3 w-3" />
+                          )}
+                          {isComplete ? 'Saved' : 'Save'}
+                        </Button>
                       </td>
                     </tr>
                   );
