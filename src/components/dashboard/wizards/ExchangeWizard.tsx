@@ -12,39 +12,19 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useRealtimeConfirmation } from '@/hooks/useRealtimeConfirmation';
+import { SUPPORTED_EXCHANGES, SupportedExchange } from '@/lib/supportedExchanges';
 
 interface ExchangeWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-interface Exchange {
-  id: string;
-  name: string;
-  color: string;
-  needsPassphrase?: boolean;
-  isHyperliquid?: boolean;
+  initialExchangeId?: string | null;
 }
 
 interface IPWhitelistStatus {
   [provider: string]: boolean;
 }
 
-const exchanges: Exchange[] = [
-  { id: 'bybit', name: 'Bybit', color: '#f7a600' },
-  { id: 'okx', name: 'OKX', color: '#ffffff', needsPassphrase: true },
-  { id: 'bitget', name: 'Bitget', color: '#00d9a5', needsPassphrase: true },
-  { id: 'bingx', name: 'BingX', color: '#2b63f6' },
-  { id: 'mexc', name: 'MEXC', color: '#00b897' },
-  { id: 'gateio', name: 'Gate.io', color: '#17e5a2' },
-  { id: 'binance', name: 'Binance', color: '#f3ba2f' },
-  { id: 'kucoin', name: 'KuCoin', color: '#23af91', needsPassphrase: true },
-  { id: 'kraken', name: 'Kraken', color: '#5741d9' },
-  { id: 'nexo', name: 'Nexo', color: '#1a4bff' },
-  { id: 'hyperliquid', name: 'Hyperliquid', color: '#00ff88', isHyperliquid: true },
-];
-
-export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
+export function ExchangeWizard({ open, onOpenChange, initialExchangeId }: ExchangeWizardProps) {
   const [selectedExchange, setSelectedExchange] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
@@ -58,7 +38,7 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
   const [ipWhitelistStatus, setIpWhitelistStatus] = useState<IPWhitelistStatus>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  const selectedExchangeData = exchanges.find(e => e.id === selectedExchange);
+  const selectedExchangeData = SUPPORTED_EXCHANGES.find(e => e.id === selectedExchange);
 
   // Realtime confirmation for optimistic UI
   const confirmation = useRealtimeConfirmation({
@@ -68,6 +48,13 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
     timeoutMs: 5000,
   });
 
+  // Handle initial exchange selection
+  useEffect(() => {
+    if (open && initialExchangeId) {
+      setSelectedExchange(initialExchangeId);
+    }
+  }, [open, initialExchangeId]);
+
   // Auto-complete when realtime confirms
   useEffect(() => {
     if (confirmation.isConfirmed && isSaving && selectedExchange) {
@@ -75,6 +62,7 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
       toast.success(`${selectedExchangeData?.name} connected successfully!`);
       setConnectedExchanges(prev => [...prev, selectedExchange]);
       resetForm();
+      onOpenChange(false);
     }
   }, [confirmation.isConfirmed, isSaving, selectedExchange, selectedExchangeData?.name]);
 
@@ -82,6 +70,9 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
     if (open) {
       fetchConnectedExchanges();
       fetchIPWhitelistStatus();
+    } else {
+      // Reset when closing
+      resetForm();
     }
   }, [open]);
 
@@ -198,6 +189,7 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
     setWalletAddress('');
     setAgentPrivateKey('');
     setTestResult(null);
+    setValidationErrors({});
     confirmation.reset();
   };
 
@@ -211,8 +203,13 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
     return apiKey.length > 5 && apiSecret.length > 5;
   };
 
+  const handleClose = () => {
+    resetForm();
+    onOpenChange(false);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="glass-card sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -220,9 +217,11 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
               <Wallet className="w-6 h-6 text-accent" />
             </div>
             <div>
-              <DialogTitle>Exchange Connections</DialogTitle>
+              <DialogTitle>
+                {selectedExchange ? `Connect ${selectedExchangeData?.name}` : 'Exchange Connections'}
+              </DialogTitle>
               <p className="text-sm text-muted-foreground">
-                Connect all 11 exchanges for HFT trading
+                {selectedExchange ? 'Enter API credentials' : 'Connect all 11 exchanges for HFT trading'}
               </p>
             </div>
           </div>
@@ -231,16 +230,16 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
         <div className="py-4">
           {!selectedExchange ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-fade-in">
-              {exchanges.map((exchange) => {
-                const isConnected = connectedExchanges.includes(exchange.id);
+              {SUPPORTED_EXCHANGES.map((exchange) => {
+                const isConnected = connectedExchanges.includes(exchange.id) || 
+                                    connectedExchanges.includes(exchange.name.toLowerCase());
                 return (
                   <button
                     key={exchange.id}
-                    onClick={() => !isConnected && setSelectedExchange(exchange.id)}
-                    disabled={isConnected}
+                    onClick={() => setSelectedExchange(exchange.id)}
                     className={`p-4 rounded-xl border text-center transition-all ${
                       isConnected
-                        ? 'bg-success/10 border-success/30'
+                        ? 'bg-success/10 border-success/30 hover:bg-success/20'
                         : 'bg-secondary/30 border-border hover:border-primary/50 hover:bg-secondary/50'
                     }`}
                   >
@@ -438,7 +437,7 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
                   {isSaving ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {confirmation.isWaiting ? 'Connecting...' : 'Saving...'}
+                      Saving...
                     </>
                   ) : (
                     'Save & Connect'
@@ -447,10 +446,6 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
               </div>
             </div>
           )}
-        </div>
-
-        <div className="text-center text-xs text-muted-foreground border-t border-border pt-4">
-          {connectedExchanges.length}/11 exchanges connected
         </div>
       </DialogContent>
     </Dialog>
