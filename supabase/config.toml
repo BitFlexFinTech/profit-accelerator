@@ -171,3 +171,6 @@ verify_jwt = false
 
 [functions.update-vps-bot]
 verify_jwt = false
+
+[functions.balance-receiver]
+verify_jwt = false

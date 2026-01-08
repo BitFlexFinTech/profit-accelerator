@@ -47,8 +47,9 @@ const STAGES: StageInfo[] = [
   { number: 14, name: 'Installing PM2 process manager' },
   { number: 15, name: 'Starting bot service' },
   { number: 16, name: 'Configuring PM2 startup script' },
-  { number: 17, name: 'Running bot health checks' },
-  { number: 18, name: 'Deployment complete' },
+  { number: 17, name: 'Installing 2-second balance poller' },
+  { number: 18, name: 'Running bot health checks' },
+  { number: 19, name: 'Deployment complete' },
 ];
 
 serve(async (req) => {
@@ -307,12 +308,56 @@ serve(async (req) => {
     await logStage(supabase, deploymentId, provider, 15, 'completed', 94, 'Bot started');
 
     // Stage 16: Configure PM2 startup
-    await logStage(supabase, deploymentId, provider, 16, 'running', 95, 'Configuring PM2 startup script...');
+    await logStage(supabase, deploymentId, provider, 16, 'running', 92, 'Configuring PM2 startup script...');
     await runSSH('pm2 startup systemd -u root --hp /root && pm2 save');
-    await logStage(supabase, deploymentId, provider, 16, 'completed', 96, 'PM2 startup configured');
+    await logStage(supabase, deploymentId, provider, 16, 'completed', 93, 'PM2 startup configured');
 
-    // Stage 17: Health check
-    await logStage(supabase, deploymentId, provider, 17, 'running', 97, 'Running bot health checks...');
+    // Stage 17: Install 2-second balance poller
+    await logStage(supabase, deploymentId, provider, 17, 'running', 94, 'Installing 2-second balance poller...');
+    
+    // Generate VPS token for authentication
+    const vpsToken = crypto.randomUUID() + crypto.randomUUID().replace(/-/g, '');
+    
+    // Get exchange credentials for the poller
+    const { data: exchangeCreds } = await supabase
+      .from('exchange_connections')
+      .select('exchange_name, api_key, api_secret, api_passphrase')
+      .eq('is_connected', true);
+    
+    // Build exchange config for the poller
+    const exchangeConfig = (exchangeCreds || []).map(ex => ({
+      name: ex.exchange_name,
+      apiKey: ex.api_key,
+      secret: ex.api_secret,
+      passphrase: ex.api_passphrase,
+    }));
+
+    // Create the balance poller script
+    const balancePollerScript = generateBalancePollerScript(supabaseUrl, vpsToken, exchangeConfig);
+    
+    // Write the balance poller script to VPS
+    const pollerCmd = `cat > /opt/hft-bot/balance-poller.js << 'POLLEREOF'\n${balancePollerScript}\nPOLLEREOF`;
+    await runSSH(pollerCmd);
+    
+    // Install ccxt for the poller
+    await runSSH('cd /opt/hft-bot && npm install ccxt --save', 60000);
+    
+    // Start balance poller as separate PM2 process
+    await runSSH('cd /opt/hft-bot && pm2 delete balance-poller 2>/dev/null || true && pm2 start balance-poller.js --name balance-poller');
+    await runSSH('pm2 save');
+    
+    // Store VPS token in vps_config
+    await supabase.from('vps_config').upsert({
+      provider: provider,
+      vps_token: vpsToken,
+      balance_poll_interval_ms: 2000,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'provider' });
+    
+    await logStage(supabase, deploymentId, provider, 17, 'completed', 96, 'Balance poller installed (2-second updates)');
+
+    // Stage 18: Health check
+    await logStage(supabase, deploymentId, provider, 18, 'running', 97, 'Running bot health checks...');
     let healthPassed = false;
     for (let i = 0; i < 5; i++) {
       await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -321,12 +366,12 @@ serve(async (req) => {
         healthPassed = true;
         break;
       }
-      await logStage(supabase, deploymentId, provider, 17, 'running', 97 + i, `Checking bot status... (${i + 1}/5)`);
+      await logStage(supabase, deploymentId, provider, 18, 'running', 97 + i, `Checking bot status... (${i + 1}/5)`);
     }
     if (!healthPassed) {
       console.warn('Health check warning: Bot may not be fully running');
     }
-    await logStage(supabase, deploymentId, provider, 17, 'completed', 99, 'Health checks passed - bot is running');
+    await logStage(supabase, deploymentId, provider, 18, 'completed', 99, 'Health checks passed - bot is running');
 
     // Create VPS instance record
     const monthlyCost = getMonthlyPrice(provider, config.size);
@@ -393,8 +438,8 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'provider' });
 
-    // Stage 18: Complete
-    await logStage(supabase, deploymentId, provider, 18, 'completed', 100, '✅ Deployment complete! Bot is running successfully.');
+    // Stage 19: Complete
+    await logStage(supabase, deploymentId, provider, 19, 'completed', 100, '✅ Deployment complete! Bot is running with 2-second balance updates.');
 
     console.log(`Deployment ${deploymentId} completed successfully`);
 
@@ -583,4 +628,111 @@ function getMonthlyPrice(provider: string, size: string): number {
   };
 
   return prices[provider]?.[size] || prices[provider]?.medium || 45;
+}
+
+interface ExchangeCredential {
+  name: string;
+  apiKey: string | null;
+  secret: string | null;
+  passphrase: string | null;
+}
+
+function generateBalancePollerScript(supabaseUrl: string, vpsToken: string, exchanges: ExchangeCredential[]): string {
+  const exchangeConfigs = exchanges.map(ex => {
+    const config: Record<string, string> = { exchange: ex.name };
+    if (ex.apiKey) config.apiKey = ex.apiKey;
+    if (ex.secret) config.secret = ex.secret;
+    if (ex.passphrase) config.password = ex.passphrase;
+    return config;
+  });
+
+  return `// Balance Poller - Updates exchange balances every 2 seconds
+const ccxt = require('ccxt');
+
+const SUPABASE_URL = '${supabaseUrl}';
+const VPS_TOKEN = '${vpsToken}';
+const POLL_INTERVAL = 2000; // 2 seconds
+
+const EXCHANGES = ${JSON.stringify(exchangeConfigs, null, 2)};
+
+async function fetchBalance(exchangeConfig) {
+  const { exchange: name, apiKey, secret, password } = exchangeConfig;
+  
+  try {
+    const ExchangeClass = ccxt[name];
+    if (!ExchangeClass) {
+      return { exchange: name, balance: 0, error: 'Unsupported exchange' };
+    }
+    
+    const client = new ExchangeClass({
+      apiKey,
+      secret,
+      password,
+      enableRateLimit: true,
+    });
+    
+    const balance = await client.fetchBalance();
+    
+    // Calculate total USDT value
+    let total = 0;
+    const assets = {};
+    
+    for (const [currency, amount] of Object.entries(balance.total || {})) {
+      if (typeof amount === 'number' && amount > 0) {
+        assets[currency] = amount;
+        if (currency === 'USDT' || currency === 'USD') {
+          total += amount;
+        } else if (currency === 'BTC') {
+          // Approximate BTC to USDT (would need price feed for accuracy)
+          total += amount * 95000;
+        } else if (currency === 'ETH') {
+          total += amount * 3500;
+        }
+        // For other assets, we'd need a price feed
+      }
+    }
+    
+    // If total is 0 but we have USDT balance, use that
+    if (total === 0 && balance.total?.USDT) {
+      total = balance.total.USDT;
+    }
+    
+    return { exchange: name, balance: total, assets };
+  } catch (err) {
+    return { exchange: name, balance: 0, error: err.message };
+  }
+}
+
+async function pollBalances() {
+  const results = await Promise.all(EXCHANGES.map(fetchBalance));
+  
+  try {
+    const response = await fetch(SUPABASE_URL + '/functions/v1/balance-receiver', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-VPS-Token': VPS_TOKEN,
+      },
+      body: JSON.stringify({
+        balances: results,
+        timestamp: new Date().toISOString(),
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error('[balance-poller] Failed to post:', await response.text());
+    } else {
+      const data = await response.json();
+      console.log('[balance-poller] Updated:', data.updated?.join(', ') || 'none', '- Total: $' + (data.totalBalance?.toFixed(2) || '0'));
+    }
+  } catch (err) {
+    console.error('[balance-poller] Network error:', err.message);
+  }
+}
+
+// Run immediately and then every 2 seconds
+console.log('[balance-poller] Starting with', EXCHANGES.length, 'exchanges, polling every', POLL_INTERVAL, 'ms');
+pollBalances();
+setInterval(pollBalances, POLL_INTERVAL);
+`;
 }

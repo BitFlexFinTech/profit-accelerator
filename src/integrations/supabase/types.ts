@@ -2177,43 +2177,52 @@ export type Database = {
       }
       vps_config: {
         Row: {
+          balance_poll_interval_ms: number | null
           cors_proxy_enabled: boolean | null
           created_at: string | null
           emergency_stopped_at: string | null
           execution_buffer_ms: number | null
           id: string
           instance_type: string | null
+          last_balance_poll_at: string | null
           outbound_ip: string | null
           provider: string | null
           region: string
           status: string | null
           updated_at: string | null
+          vps_token: string | null
         }
         Insert: {
+          balance_poll_interval_ms?: number | null
           cors_proxy_enabled?: boolean | null
           created_at?: string | null
           emergency_stopped_at?: string | null
           execution_buffer_ms?: number | null
           id?: string
           instance_type?: string | null
+          last_balance_poll_at?: string | null
           outbound_ip?: string | null
           provider?: string | null
           region?: string
           status?: string | null
           updated_at?: string | null
+          vps_token?: string | null
         }
         Update: {
+          balance_poll_interval_ms?: number | null
           cors_proxy_enabled?: boolean | null
           created_at?: string | null
           emergency_stopped_at?: string | null
           execution_buffer_ms?: number | null
           id?: string
           instance_type?: string | null
+          last_balance_poll_at?: string | null
           outbound_ip?: string | null
           provider?: string | null
           region?: string
           status?: string | null
           updated_at?: string | null
+          vps_token?: string | null
         }
         Relationships: []
       }
