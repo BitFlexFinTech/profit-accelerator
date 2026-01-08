@@ -254,14 +254,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       
       const { data: metricsData } = await supabase
         .from('vps_metrics')
-        .select('provider, cpu_percent, ram_percent, latency_ms, recorded_at')
+        .select('provider, cpu_percent, ram_percent, recorded_at')
         .order('recorded_at', { ascending: false });
+      
+      // CRITICAL FIX: Fetch VPS→Exchange latency from exchange_pulse (HFT-relevant)
+      // NOT from vps_metrics.latency_ms (which is Edge→VPS, irrelevant for HFT)
+      const { data: vpsPulseData } = await supabase
+        .from('exchange_pulse')
+        .select('latency_ms')
+        .eq('source', 'vps');
+      
+      // Calculate average VPS→Exchange latency
+      const avgExchangeLatency = vpsPulseData?.length 
+        ? Math.round(vpsPulseData.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / vpsPulseData.length)
+        : 0;
       
       if (vpsData) {
         const statuses: Record<string, VpsStatus> = {};
         vpsData.forEach(v => {
           if (!v.provider) return;
           const metrics = metricsData?.find(m => m.provider === v.provider);
+          const isDeployed = v.status === 'running';
           const statusMap: Record<string, 'healthy' | 'warning' | 'error' | 'offline'> = {
             'running': 'healthy',
             'provisioning': 'warning',
@@ -270,7 +283,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           };
           statuses[v.provider] = {
             status: statusMap[v.status || 'error'] || 'error',
-            latencyMs: metrics?.latency_ms || 0,
+            // Use VPS→Exchange latency for deployed VPS
+            latencyMs: isDeployed ? avgExchangeLatency : 0,
             cpuPercent: metrics?.cpu_percent || 0,
             memoryPercent: metrics?.ram_percent || 0,
             publicIp: v.outbound_ip,
@@ -297,7 +311,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         .eq('status', 'closed')
         .gte('closed_at', todayStart.toISOString());
 
-      const dailyPnl = todayTrades?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0;
+      // STRICT RULE: PnL is exactly $0 when no trades exist
+      const dailyPnl = todayTrades?.length 
+        ? todayTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) 
+        : 0;
 
       // Get this week's closed trades PnL
       const { data: weekTrades } = await supabase
@@ -306,7 +323,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         .eq('status', 'closed')
         .gte('closed_at', weekStart.toISOString());
 
-      const weeklyPnl = weekTrades?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0;
+      const weeklyPnl = weekTrades?.length 
+        ? weekTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) 
+        : 0;
+      
+      console.log(`[SSOT] Daily PnL: $${dailyPnl} from ${todayTrades?.length || 0} closed trades`);
       
       set({ dailyPnl, weeklyPnl });
       
