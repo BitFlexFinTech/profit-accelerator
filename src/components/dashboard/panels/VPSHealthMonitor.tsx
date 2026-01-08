@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAppStore } from '@/store/useAppStore';
 import { ActionButton } from '@/components/ui/ActionButton';
 import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
+import { cn } from '@/lib/utils';
 
 interface VpsHealthData {
   provider: string;
@@ -20,12 +21,12 @@ interface VpsHealthData {
 const PROVIDER_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   aws: { bg: 'bg-orange-500/20', border: 'border-orange-500', text: 'text-orange-400' },
   digitalocean: { bg: 'bg-sky-400/20', border: 'border-sky-400', text: 'text-sky-400' },
-  vultr: { bg: 'bg-yellow-400/20', border: 'border-yellow-400', text: 'text-yellow-400' },
+  vultr: { bg: 'bg-amber-400/20', border: 'border-amber-400', text: 'text-amber-400' },
   contabo: { bg: 'bg-pink-500/20', border: 'border-pink-500', text: 'text-pink-400' },
-  oracle: { bg: 'bg-red-500/20', border: 'border-red-500', text: 'text-red-400' },
-  gcp: { bg: 'bg-green-400/20', border: 'border-green-400', text: 'text-green-400' },
-  alibaba: { bg: 'bg-purple-500/20', border: 'border-purple-500', text: 'text-purple-400' },
-  azure: { bg: 'bg-teal-500/20', border: 'border-teal-500', text: 'text-teal-400' },
+  oracle: { bg: 'bg-rose-500/20', border: 'border-rose-500', text: 'text-rose-400' },
+  gcp: { bg: 'bg-emerald-400/20', border: 'border-emerald-400', text: 'text-emerald-400' },
+  alibaba: { bg: 'bg-violet-500/20', border: 'border-violet-500', text: 'text-violet-400' },
+  azure: { bg: 'bg-cyan-500/20', border: 'border-cyan-500', text: 'text-cyan-400' },
 };
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -59,7 +60,6 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
         .order('recorded_at', { ascending: false });
 
       // CRITICAL FIX: Fetch VPS→Exchange latency from exchange_pulse WHERE source='vps'
-      // This is the HFT-relevant latency, NOT the Edge→VPS latency in vps_metrics
       const { data: pulseData } = await supabase
         .from('exchange_pulse')
         .select('latency_ms')
@@ -94,7 +94,6 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
           region: config?.region || '---',
           cpuPercent: metrics?.cpu_percent || 0,
           memoryPercent: metrics?.ram_percent || 0,
-          // Use VPS→Exchange latency for deployed VPS, 0 for non-deployed
           latencyMs: isDeployed ? avgExchangeLatency : 0,
           lastHealthCheck: metrics?.recorded_at ? new Date(metrics.recorded_at) : null,
         });
@@ -115,27 +114,27 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
     setIsRefreshing(false);
   };
 
-  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
+  // Use SSOT lastUpdate to trigger refetch
   const lastUpdate = useAppStore((s) => s.lastUpdate);
   
   useEffect(() => {
     fetchHealthData();
   }, [lastUpdate]);
 
-  // Auto-refresh every 60 seconds (reduced from 30s)
+  // Auto-refresh every 10 seconds (STRICT RULE)
   useEffect(() => {
-    const interval = setInterval(fetchHealthData, 60000);
+    const interval = setInterval(fetchHealthData, 10000);
     return () => clearInterval(interval);
   }, []);
 
   const getStatusIcon = (status: VpsHealthData['status']) => {
     switch (status) {
       case 'healthy':
-        return <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />;
+        return <div className="w-3 h-3 rounded-full bg-emerald-400 animate-blink" />;
       case 'warning':
-        return <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse" />;
+        return <div className="w-3 h-3 rounded-full bg-amber-400 animate-blink" />;
       case 'error':
-        return <AlertCircle className="w-4 h-4 text-destructive" />;
+        return <AlertCircle className="w-4 h-4 text-rose-400 animate-blink" />;
       case 'offline':
         return <div className="w-3 h-3 rounded-full bg-muted" />;
       default:
@@ -144,9 +143,9 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
   };
 
   const getCpuColor = (percent: number) => {
-    if (percent >= 80) return 'text-destructive';
-    if (percent >= 50) return 'text-yellow-400';
-    return 'text-success';
+    if (percent >= 80) return 'text-rose-400';
+    if (percent >= 50) return 'text-amber-400';
+    return 'text-emerald-400';
   };
 
   const deployedCount = healthData.filter(h => h.status !== 'not_deployed').length;
@@ -156,21 +155,22 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
     <div ref={ref} className="glass-card overflow-hidden">
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Activity className="w-5 h-5 text-primary" />
+          <Activity className="w-5 h-5 text-primary animate-blink" />
           <h2 className="font-semibold">VPS Health Monitoring</h2>
           <span className="text-xs text-muted-foreground px-2 py-0.5 bg-secondary rounded-full">
             {healthyCount}/{deployedCount} healthy
           </span>
+          <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 rounded">10s refresh</span>
         </div>
         <ActionButton 
           variant="ghost" 
           size="sm" 
           onClick={handleRefresh}
           disabled={isRefreshing}
-          className="gap-1"
+          className="gap-1 transition-all duration-300"
           tooltip={BUTTON_TOOLTIPS.refreshData}
         >
-          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={cn("w-4 h-4", isRefreshing && 'animate-spin')} />
           Refresh
         </ActionButton>
       </div>
@@ -180,7 +180,7 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
           <div className="text-center text-muted-foreground py-8">Loading health data...</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {healthData.map((vps) => {
+            {healthData.map((vps, index) => {
               const colors = PROVIDER_COLORS[vps.provider] || PROVIDER_COLORS.aws;
               const name = PROVIDER_NAMES[vps.provider] || vps.provider.toUpperCase();
               const isDeployed = vps.status !== 'not_deployed';
@@ -188,13 +188,18 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
               return (
                 <div 
                   key={vps.provider}
-                  className={`p-3 rounded-lg border ${colors.border} ${colors.bg} transition-all duration-300`}
+                  className={cn(
+                    "p-3 rounded-lg border transition-all duration-300 animate-fade-slide-in",
+                    colors.border,
+                    colors.bg
+                  )}
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Server className={`w-4 h-4 ${colors.text}`} />
-                      <span className={`font-semibold ${colors.text}`}>{name}</span>
+                      <Server className={cn("w-4 h-4", colors.text)} />
+                      <span className={cn("font-semibold", colors.text)}>{name}</span>
                     </div>
                     {getStatusIcon(vps.status)}
                   </div>
@@ -219,7 +224,10 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
                               className="h-1.5"
                             />
                           </div>
-                          <span className={`text-xs font-mono ${getCpuColor(vps.cpuPercent)}`}>
+                          <span className={cn(
+                            "text-xs font-mono transition-colors duration-300",
+                            getCpuColor(vps.cpuPercent)
+                          )}>
                             {vps.cpuPercent}%
                           </span>
                         </div>
@@ -233,19 +241,23 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
                               className="h-1.5"
                             />
                           </div>
-                          <span className={`text-xs font-mono ${getCpuColor(vps.memoryPercent)}`}>
+                          <span className={cn(
+                            "text-xs font-mono transition-colors duration-300",
+                            getCpuColor(vps.memoryPercent)
+                          )}>
                             {vps.memoryPercent}%
                           </span>
                         </div>
 
                         {/* Latency - VPS→Exchange (HFT-relevant) */}
                         <div className="flex items-center gap-2">
-                          <Wifi className="w-3 h-3 text-muted-foreground" />
+                          <Wifi className="w-3 h-3 text-muted-foreground animate-blink" />
                           <span className="text-xs text-muted-foreground flex-1">VPS→Exchange</span>
-                          <span className={`text-xs font-mono ${
-                            vps.latencyMs < 50 ? 'text-success' : 
-                            vps.latencyMs < 100 ? 'text-yellow-400' : 'text-destructive'
-                          }`}>
+                          <span className={cn(
+                            "text-xs font-mono transition-colors duration-300",
+                            vps.latencyMs < 50 ? 'text-emerald-400' : 
+                            vps.latencyMs < 100 ? 'text-amber-400' : 'text-rose-400'
+                          )}>
                             {vps.latencyMs > 0 ? `${vps.latencyMs}ms` : '---'}
                           </span>
                         </div>

@@ -37,9 +37,9 @@ const EXCHANGE_ENDPOINTS: Record<string, { ticker24h: string; parseTop10: (data:
   }
 };
 
-// Price cache to avoid redundant API calls (30 second TTL)
+// Price cache with 5 second TTL (faster updates)
 const priceCache: Map<string, { price: number; change: number; timestamp: number }> = new Map();
-const CACHE_TTL_MS = 30000;
+const CACHE_TTL_MS = 5000;
 
 async function fetchPriceData(symbol: string, exchange: string): Promise<{ price: number; change: number } | null> {
   const cacheKey = `${exchange}:${symbol}`;
@@ -172,7 +172,7 @@ serve(async (req) => {
     }
 
     if (action === 'market-scan') {
-      console.log('[ai-analyze] market-scan start - analyzing top 10 pairs per connected exchange');
+      console.log('[ai-analyze] market-scan start - analyzing top 10 pairs per connected exchange (5s updates)');
       
       // Get ALL connected exchanges
       const { data: exchanges } = await supabase
@@ -205,7 +205,7 @@ serve(async (req) => {
         
         let exchangeCount = 0;
         
-        // Analyze each symbol with rate limiting (max 2 per second to avoid rate limits)
+        // Analyze each symbol with faster rate limiting (200ms delay for 5s updates)
         for (const sym of top10) {
           try {
             // Fetch price with caching
@@ -215,35 +215,41 @@ serve(async (req) => {
             const { price, change } = priceData;
             const cleanSymbol = sym.replace('USDT', '');
             
-            // Check if we recently analyzed this symbol (skip if <5 minutes old and price change <0.5%)
+            // Skip if very recent update exists (within 3 seconds) - faster updates
             const { data: recent } = await supabase
               .from('ai_market_updates')
               .select('id, current_price')
               .eq('symbol', cleanSymbol)
               .eq('exchange_name', exName)
-              .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+              .gte('created_at', new Date(Date.now() - 3 * 1000).toISOString())
               .limit(1);
             
             if (recent?.length) {
-              const oldPrice = recent[0].current_price;
-              const priceChangePct = Math.abs((price - oldPrice) / oldPrice * 100);
-              if (priceChangePct < 0.5) {
-                console.log(`[ai-analyze] Skipping ${cleanSymbol} - price barely changed (${priceChangePct.toFixed(2)}%)`);
-                continue;
-              }
+              continue; // Skip - already analyzed very recently
             }
             
-            // Call Groq API for analysis
+            // Call Groq API for HFT analysis with profit timeframe prediction
             const gr = await fetch(GROQ_API_URL, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 model: cfg?.model || 'llama-3.3-70b-versatile',
                 messages: [
-                  { role: 'system', content: 'Reply JSON only. Be concise.' },
-                  { role: 'user', content: `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. JSON: {"sentiment":"BULLISH/BEARISH/NEUTRAL","confidence":0-100,"insight":"1 sentence max 15 words","support":number,"resistance":number}` }
+                  { role: 'system', content: 'You are an HFT scalping AI. Reply JSON only. Predict profit timeframes for micro-scalping.' },
+                  { role: 'user', content: `${sym} $${price.toFixed(2)} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%. HFT analysis. JSON only:
+{
+  "sentiment": "BULLISH" or "BEARISH" or "NEUTRAL",
+  "confidence": 0-100,
+  "insight": "max 12 words",
+  "support": number,
+  "resistance": number,
+  "profit_timeframe_minutes": 1 or 3 or 5,
+  "recommended_side": "long" or "short",
+  "expected_move_percent": 0.1 to 1.0
+}
+Target: $1 profit on $400 position = 0.25% move needed. Predict fastest timeframe to hit target.` }
                 ],
-                max_tokens: 100,
+                max_tokens: 150,
               }),
             });
             
@@ -261,6 +267,19 @@ serve(async (req) => {
             
             const a = JSON.parse(m[0]);
             
+            // Validate and normalize profit_timeframe_minutes
+            let profitTimeframe = parseInt(a.profit_timeframe_minutes) || 5;
+            if (![1, 3, 5].includes(profitTimeframe)) {
+              profitTimeframe = 5; // Default to 5 minutes if invalid
+            }
+            
+            // Validate recommended_side
+            const recommendedSide = a.recommended_side === 'short' ? 'short' : 'long';
+            
+            // Validate expected_move_percent
+            let expectedMove = parseFloat(a.expected_move_percent) || 0.25;
+            expectedMove = Math.max(0.1, Math.min(2.0, expectedMove));
+            
             await supabase.from('ai_market_updates').insert({
               symbol: cleanSymbol,
               exchange_name: exName,
@@ -270,14 +289,17 @@ serve(async (req) => {
               current_price: price,
               price_change_24h: change,
               support_level: a.support || null,
-              resistance_level: a.resistance || null
+              resistance_level: a.resistance || null,
+              profit_timeframe_minutes: profitTimeframe,
+              recommended_side: recommendedSide,
+              expected_move_percent: expectedMove
             });
             
             exchangeCount++;
             totalAnalyzed++;
             
-            // Rate limit: 500ms between API calls to avoid hitting limits
-            await new Promise(r => setTimeout(r, 500));
+            // Rate limit: 200ms between API calls for faster updates (5s scan interval)
+            await new Promise(r => setTimeout(r, 200));
             
           } catch (e) {
             console.error(`[ai-analyze] Error analyzing ${sym}:`, e);
@@ -298,6 +320,45 @@ serve(async (req) => {
         analyzed: totalAnalyzed, 
         exchanges: exchangeResults,
         message: `Analyzed top 10 pairs for ${Object.keys(exchangeResults).length} exchange(s)`
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Analyze last trades for learning loop
+    if (action === 'analyze-last-trade') {
+      const { data: trades } = await supabase
+        .from('trading_journal')
+        .select('*')
+        .eq('status', 'closed')
+        .order('closed_at', { ascending: false })
+        .limit(10);
+      
+      if (!trades?.length) {
+        return new Response(JSON.stringify({ success: true, message: 'No closed trades to analyze' }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      
+      // Calculate metrics
+      const avgHoldTime = trades.reduce((sum, t) => {
+        if (t.created_at && t.closed_at) {
+          return sum + (new Date(t.closed_at).getTime() - new Date(t.created_at).getTime()) / 1000;
+        }
+        return sum;
+      }, 0) / trades.length;
+      
+      const winningTrades = trades.filter(t => (t.pnl || 0) > 0);
+      const winRate = (winningTrades.length / trades.length) * 100;
+      const avgProfit = trades.reduce((sum, t) => sum + (t.pnl || 0), 0) / trades.length;
+      
+      console.log(`[ai-analyze] Trade analysis: ${trades.length} trades, ${winRate.toFixed(1)}% win rate, avg hold ${avgHoldTime.toFixed(0)}s, avg profit $${avgProfit.toFixed(2)}`);
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        analysis: {
+          tradeCount: trades.length,
+          avgHoldTimeSeconds: Math.round(avgHoldTime),
+          winRate: Math.round(winRate),
+          avgProfitPerTrade: avgProfit
+        }
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 

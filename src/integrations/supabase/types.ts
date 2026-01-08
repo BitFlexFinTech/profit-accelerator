@@ -83,9 +83,12 @@ export type Database = {
           created_at: string | null
           current_price: number | null
           exchange_name: string
+          expected_move_percent: number | null
           id: string
           insight: string
           price_change_24h: number | null
+          profit_timeframe_minutes: number | null
+          recommended_side: string | null
           resistance_level: number | null
           sentiment: string | null
           support_level: number | null
@@ -96,9 +99,12 @@ export type Database = {
           created_at?: string | null
           current_price?: number | null
           exchange_name: string
+          expected_move_percent?: number | null
           id?: string
           insight: string
           price_change_24h?: number | null
+          profit_timeframe_minutes?: number | null
+          recommended_side?: string | null
           resistance_level?: number | null
           sentiment?: string | null
           support_level?: number | null
@@ -109,9 +115,12 @@ export type Database = {
           created_at?: string | null
           current_price?: number | null
           exchange_name?: string
+          expected_move_percent?: number | null
           id?: string
           insight?: string
           price_change_24h?: number | null
+          profit_timeframe_minutes?: number | null
+          recommended_side?: string | null
           resistance_level?: number | null
           sentiment?: string | null
           support_level?: number | null
