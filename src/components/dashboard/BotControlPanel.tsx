@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, AlertTriangle, Loader2, FlaskConical, RefreshCw } from 'lucide-react';
+import { Play, Square, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
@@ -23,12 +22,10 @@ type BotStatus = 'idle' | 'running' | 'stopped';
 interface TradingConfig {
   bot_status: BotStatus;
   trading_enabled: boolean;
-  test_mode: boolean;
 }
 
 export function BotControlPanel() {
   const [botStatus, setBotStatus] = useState<BotStatus>('idle');
-  const [testMode, setTestMode] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -55,13 +52,12 @@ export function BotControlPanel() {
       setIsLoading(true);
       const { data, error } = await supabase
         .from('trading_config')
-        .select('bot_status, trading_enabled, test_mode')
+        .select('bot_status, trading_enabled')
         .single();
 
       if (!error && data) {
         const config = data as TradingConfig;
         setBotStatus((config.bot_status as BotStatus) || 'idle');
-        setTestMode(config.test_mode ?? true);
       }
       setIsLoading(false);
     };
@@ -78,9 +74,6 @@ export function BotControlPanel() {
         const newData = payload.new as TradingConfig;
         if (newData.bot_status) {
           setBotStatus(newData.bot_status as BotStatus);
-        }
-        if (typeof newData.test_mode === 'boolean') {
-          setTestMode(newData.test_mode);
         }
       })
       .subscribe();
@@ -128,7 +121,7 @@ export function BotControlPanel() {
       }
 
       setBotStatus('running');
-      toast.success(testMode ? 'Bot started in TEST MODE (paper trading)' : 'Bot started - LIVE TRADING enabled');
+      toast.success('Bot started - LIVE TRADING enabled');
     } catch (error) {
       console.error('[BotControl] Start error:', error);
       toast.error('Failed to start bot');
@@ -138,11 +131,7 @@ export function BotControlPanel() {
   };
 
   const handleStartClick = () => {
-    if (!testMode) {
-      setShowLiveConfirm(true);
-    } else {
-      handleStartBot();
-    }
+    setShowLiveConfirm(true);
   };
 
   const handleStopBot = async () => {
@@ -192,22 +181,6 @@ export function BotControlPanel() {
     }
   };
 
-  const handleTestModeToggle = async (checked: boolean) => {
-    try {
-      await supabase.from('trading_config')
-        .update({ 
-          test_mode: checked,
-          updated_at: new Date().toISOString()
-        })
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      setTestMode(checked);
-      toast.success(checked ? 'TEST MODE enabled (paper trading)' : 'LIVE MODE enabled - Real money at risk!');
-    } catch (error) {
-      toast.error('Failed to update test mode');
-    }
-  };
-
   const getStatusBadge = () => {
     switch (botStatus) {
       case 'running':
@@ -254,13 +227,6 @@ export function BotControlPanel() {
               <span className="text-sm font-medium text-muted-foreground">Bot Status:</span>
               {getStatusBadge()}
             </div>
-            
-            {testMode && (
-              <Badge variant="outline" className="bg-warning/10 text-warning border-warning/40 gap-1">
-                <FlaskConical className="w-3 h-3" />
-                TEST MODE
-              </Badge>
-            )}
           </div>
 
           <div className="flex items-center gap-4">
@@ -274,15 +240,6 @@ export function BotControlPanel() {
               <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
               Sync
             </Button>
-            
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Test Mode:</span>
-              <Switch 
-                checked={testMode} 
-                onCheckedChange={handleTestModeToggle}
-                disabled={botStatus === 'running'}
-              />
-            </div>
 
             {botStatus === 'running' ? (
               <Button 
@@ -302,25 +259,25 @@ export function BotControlPanel() {
               <Button 
                 onClick={handleStartClick}
                 disabled={isStarting}
-                className={`gap-2 ${!testMode ? 'bg-destructive hover:bg-destructive/90' : 'bg-success hover:bg-success/90'}`}
+                className="gap-2 bg-destructive hover:bg-destructive/90"
               >
                 {isStarting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Play className="w-4 h-4" />
                 )}
-                {!testMode && <AlertTriangle className="w-4 h-4" />}
+                <AlertTriangle className="w-4 h-4" />
                 START BOT
               </Button>
             )}
           </div>
         </div>
 
-        {!testMode && botStatus !== 'running' && (
+        {botStatus !== 'running' && (
           <div className="mt-3 p-2 rounded-lg bg-destructive/10 border border-destructive/30 flex items-center gap-2 animate-pulse">
             <AlertTriangle className="w-4 h-4 text-destructive" />
             <span className="text-sm text-destructive font-medium">
-              ⚠️ LIVE MODE ACTIVE: Starting the bot will execute REAL trades with your ${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} equity.
+              ⚠️ LIVE MODE: Starting the bot will execute REAL trades with your ${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} equity.
             </span>
           </div>
         )}
