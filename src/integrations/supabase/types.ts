@@ -127,6 +127,8 @@ export type Database = {
           created_at: string | null
           id: string
           is_enabled: boolean | null
+          latency_threshold_healthy: number | null
+          latency_threshold_jitter: number | null
           threshold_value: number | null
           updated_at: string | null
           webhook_url: string | null
@@ -138,6 +140,8 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_enabled?: boolean | null
+          latency_threshold_healthy?: number | null
+          latency_threshold_jitter?: number | null
           threshold_value?: number | null
           updated_at?: string | null
           webhook_url?: string | null
@@ -149,6 +153,8 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_enabled?: boolean | null
+          latency_threshold_healthy?: number | null
+          latency_threshold_jitter?: number | null
           threshold_value?: number | null
           updated_at?: string | null
           webhook_url?: string | null
@@ -1462,6 +1468,63 @@ export type Database = {
         }
         Relationships: []
       }
+      strategy_config: {
+        Row: {
+          allowed_exchanges: string[] | null
+          allowed_symbols: string[] | null
+          created_at: string | null
+          display_name: string
+          id: string
+          is_enabled: boolean | null
+          leverage_multiplier: number | null
+          max_concurrent_positions: number | null
+          max_position_size: number | null
+          min_position_size: number | null
+          profit_target_leverage: number | null
+          profit_target_spot: number | null
+          strategy_name: string
+          trade_both_directions: boolean | null
+          updated_at: string | null
+          use_leverage: boolean | null
+        }
+        Insert: {
+          allowed_exchanges?: string[] | null
+          allowed_symbols?: string[] | null
+          created_at?: string | null
+          display_name: string
+          id?: string
+          is_enabled?: boolean | null
+          leverage_multiplier?: number | null
+          max_concurrent_positions?: number | null
+          max_position_size?: number | null
+          min_position_size?: number | null
+          profit_target_leverage?: number | null
+          profit_target_spot?: number | null
+          strategy_name: string
+          trade_both_directions?: boolean | null
+          updated_at?: string | null
+          use_leverage?: boolean | null
+        }
+        Update: {
+          allowed_exchanges?: string[] | null
+          allowed_symbols?: string[] | null
+          created_at?: string | null
+          display_name?: string
+          id?: string
+          is_enabled?: boolean | null
+          leverage_multiplier?: number | null
+          max_concurrent_positions?: number | null
+          max_position_size?: number | null
+          min_position_size?: number | null
+          profit_target_leverage?: number | null
+          profit_target_spot?: number | null
+          strategy_name?: string
+          trade_both_directions?: boolean | null
+          updated_at?: string | null
+          use_leverage?: boolean | null
+        }
+        Relationships: []
+      }
       strategy_rules: {
         Row: {
           action: string
@@ -1495,6 +1558,81 @@ export type Database = {
           strategy_name?: string
           updated_at?: string | null
           value?: number | null
+        }
+        Relationships: []
+      }
+      strategy_trades: {
+        Row: {
+          created_at: string | null
+          entry_price: number
+          entry_time: string | null
+          exchange_name: string
+          exit_price: number | null
+          exit_time: string | null
+          fees_paid: number | null
+          gross_pnl: number | null
+          hold_duration_seconds: number | null
+          id: string
+          is_leverage: boolean | null
+          leverage_multiplier: number | null
+          net_pnl: number | null
+          position_value: number
+          profit_target: number
+          side: string
+          size: number
+          status: string | null
+          strategy_name: string
+          symbol: string
+          vps_ip: string | null
+          vps_provider: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          entry_price: number
+          entry_time?: string | null
+          exchange_name: string
+          exit_price?: number | null
+          exit_time?: string | null
+          fees_paid?: number | null
+          gross_pnl?: number | null
+          hold_duration_seconds?: number | null
+          id?: string
+          is_leverage?: boolean | null
+          leverage_multiplier?: number | null
+          net_pnl?: number | null
+          position_value: number
+          profit_target: number
+          side: string
+          size: number
+          status?: string | null
+          strategy_name?: string
+          symbol: string
+          vps_ip?: string | null
+          vps_provider?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          entry_price?: number
+          entry_time?: string | null
+          exchange_name?: string
+          exit_price?: number | null
+          exit_time?: string | null
+          fees_paid?: number | null
+          gross_pnl?: number | null
+          hold_duration_seconds?: number | null
+          id?: string
+          is_leverage?: boolean | null
+          leverage_multiplier?: number | null
+          net_pnl?: number | null
+          position_value?: number
+          profit_target?: number
+          side?: string
+          size?: number
+          status?: string | null
+          strategy_name?: string
+          symbol?: string
+          vps_ip?: string | null
+          vps_provider?: string | null
         }
         Relationships: []
       }

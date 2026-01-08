@@ -557,10 +557,15 @@ export function SettingsTab() {
                 {/* Latency & Cost */}
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
                   <div className="text-xs">
-                    <span className="text-muted-foreground">Latency: </span>
-                    <span className={`font-mono ${providerStatus.latency ? (providerStatus.latency < 100 ? 'text-success' : providerStatus.latency < 150 ? 'text-warning' : 'text-destructive') : 'text-muted-foreground'}`}>
+                    <span className="text-muted-foreground">{isActiveVps ? 'VPS→Exch: ' : 'Latency: '}</span>
+                    <span className={`font-mono ${providerStatus.latency ? (providerStatus.latency < 30 ? 'text-success' : providerStatus.latency < 80 ? 'text-warning' : 'text-destructive') : 'text-muted-foreground'}`}>
                       {providerStatus.latency ? `${Math.round(providerStatus.latency)}ms` : '—'}
                     </span>
+                    {isActiveVps && (
+                      <span className="text-muted-foreground ml-1 text-[10px]" title="VPS to Exchange latency - what matters for trading">
+                        (trade speed)
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs font-mono">
                     {pricing?.free ? (
