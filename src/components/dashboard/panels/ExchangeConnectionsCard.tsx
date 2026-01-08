@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wifi, WifiOff, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
 import { supabase } from '@/integrations/supabase/client';
@@ -194,6 +194,12 @@ export function ExchangeConnectionsCard() {
                         <span className="text-success">{exchange.last_ping_ms}ms</span>
                       )}
                     </div>
+                    {exchange.last_error && (
+                      <div className="flex items-center gap-1 text-xs text-destructive mt-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {exchange.last_error}
+                      </div>
+                    )}
                   </div>
                 </div>
 

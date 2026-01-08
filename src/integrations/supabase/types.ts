@@ -756,6 +756,8 @@ export type Database = {
           exchange_name: string
           id: string
           is_connected: boolean | null
+          last_error: string | null
+          last_error_at: string | null
           last_ping_at: string | null
           last_ping_ms: number | null
           updated_at: string | null
@@ -773,6 +775,8 @@ export type Database = {
           exchange_name: string
           id?: string
           is_connected?: boolean | null
+          last_error?: string | null
+          last_error_at?: string | null
           last_ping_at?: string | null
           last_ping_ms?: number | null
           updated_at?: string | null
@@ -790,6 +794,8 @@ export type Database = {
           exchange_name?: string
           id?: string
           is_connected?: boolean | null
+          last_error?: string | null
+          last_error_at?: string | null
           last_ping_at?: string | null
           last_ping_ms?: number | null
           updated_at?: string | null

@@ -8,6 +8,8 @@ interface ExchangeConnection {
   last_ping_ms: number | null;
   balance_usdt: number | null;
   balance_updated_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
 }
 
 interface ExchangeStatus {
@@ -30,7 +32,7 @@ export function useExchangeStatus() {
       try {
         const { data, error } = await supabase
           .from('exchange_connections')
-          .select('id, exchange_name, is_connected, last_ping_ms, balance_usdt, balance_updated_at')
+          .select('id, exchange_name, is_connected, last_ping_ms, balance_usdt, balance_updated_at, last_error, last_error_at')
           .order('exchange_name');
 
         if (error) {

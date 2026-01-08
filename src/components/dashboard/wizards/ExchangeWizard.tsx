@@ -32,8 +32,8 @@ interface IPWhitelistStatus {
 
 const exchanges: Exchange[] = [
   { id: 'bybit', name: 'Bybit', color: '#f7a600' },
-  { id: 'okx', name: 'OKX', color: '#ffffff' },
-  { id: 'bitget', name: 'Bitget', color: '#00d9a5' },
+  { id: 'okx', name: 'OKX', color: '#ffffff', needsPassphrase: true },
+  { id: 'bitget', name: 'Bitget', color: '#00d9a5', needsPassphrase: true },
   { id: 'bingx', name: 'BingX', color: '#2b63f6' },
   { id: 'mexc', name: 'MEXC', color: '#00b897' },
   { id: 'gateio', name: 'Gate.io', color: '#17e5a2' },
@@ -369,7 +369,22 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
                         className="font-mono bg-secondary/50"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        KuCoin requires a passphrase set during API key creation
+                        Passphrase set during API key creation
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedExchange === 'binance' && (
+                    <div className="p-3 rounded-lg bg-warning/20 border border-warning/30">
+                      <p className="text-sm text-warning flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <span>
+                          <strong>Important:</strong> If your Binance API key has IP restrictions, 
+                          you must disable IP restrictions or whitelist the server IP.
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Create API keys with "Unrestricted" IP access for best compatibility.
                       </p>
                     </div>
                   )}
