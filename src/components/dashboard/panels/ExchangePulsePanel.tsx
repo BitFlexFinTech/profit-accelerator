@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, XCircle, RefreshCw, HelpCircle, Server, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, XCircle, RefreshCw, HelpCircle, Server, Zap, RotateCcw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -43,9 +43,60 @@ export function ExchangePulsePanel() {
   const [selectedPulse, setSelectedPulse] = useState<ExchangePulse | null>(null);
   const [showFixGuide, setShowFixGuide] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [vpsUpdateRequired, setVpsUpdateRequired] = useState(false);
+  const [isUpdatingVPS, setIsUpdatingVPS] = useState(false);
+
+  // Ping VPS immediately and update data
+  const pingVPSAndUpdate = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('ping-exchanges-vps');
+      if (error) {
+        console.error('[ExchangePulsePanel] VPS ping error:', error);
+        return;
+      }
+      
+      if (data?.update_required) {
+        setVpsUpdateRequired(true);
+      } else if (data?.success) {
+        setVpsUpdateRequired(false);
+      }
+      
+      await fetchPulses();
+    } catch (err) {
+      console.error('[ExchangePulsePanel] VPS ping error:', err);
+    }
+  };
+
+  const updateVPSBot = async () => {
+    setIsUpdatingVPS(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('update-vps-bot');
+      if (error) throw error;
+      
+      if (data?.success) {
+        toast.success('VPS bot updated! Refreshing latency data...');
+        setVpsUpdateRequired(false);
+        // Wait for container restart then ping
+        setTimeout(async () => {
+          await pingVPSAndUpdate();
+        }, 5000);
+      } else {
+        toast.error(data?.error || 'Failed to update VPS bot');
+      }
+    } catch (err) {
+      console.error('[ExchangePulsePanel] VPS update error:', err);
+      toast.error('Failed to update VPS bot');
+    } finally {
+      setIsUpdatingVPS(false);
+    }
+  };
 
   useEffect(() => {
+    // Fetch existing data immediately
     fetchPulses();
+    
+    // Ping VPS immediately on mount to get fresh data
+    pingVPSAndUpdate();
 
     // Subscribe to realtime updates
     const channel = supabase
@@ -62,10 +113,7 @@ export function ExchangePulsePanel() {
     // Auto-refresh every 30 seconds + ping VPS
     let interval: NodeJS.Timeout | null = null;
     if (autoRefresh) {
-      interval = setInterval(async () => {
-        await supabase.functions.invoke('ping-exchanges-vps');
-        await fetchPulses();
-      }, 30000);
+      interval = setInterval(pingVPSAndUpdate, 30000);
     }
 
     return () => {
@@ -228,6 +276,26 @@ export function ExchangePulsePanel() {
             </Button>
           </div>
         </div>
+
+        {/* VPS Update Required Warning */}
+        {vpsUpdateRequired && (
+          <div className="mx-4 mb-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-yellow-400" />
+              <span className="text-sm text-yellow-400">VPS bot needs update to enable latency monitoring</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={updateVPSBot}
+              disabled={isUpdatingVPS}
+              className="h-7 px-3 gap-1 text-xs border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20"
+            >
+              <RotateCcw className={`w-3 h-3 ${isUpdatingVPS ? 'animate-spin' : ''}`} />
+              {isUpdatingVPS ? 'Updating...' : 'Update VPS Bot'}
+            </Button>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 p-4">
           {pulses.map((pulse) => {
