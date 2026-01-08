@@ -6,144 +6,149 @@
 
 @layer base {
   :root {
-    --background: 240 20% 6%;
-    --foreground: 220 10% 95%;
+    /* Deep Navy Command Center Background */
+    --background: 222 47% 5%;
+    --foreground: 210 20% 95%;
 
-    --card: 240 18% 9%;
-    --card-foreground: 220 10% 95%;
+    --card: 220 40% 8%;
+    --card-foreground: 210 20% 95%;
 
-    --popover: 240 18% 10%;
-    --popover-foreground: 220 10% 95%;
+    --popover: 220 40% 10%;
+    --popover-foreground: 210 20% 95%;
 
-    --primary: 270 60% 55%;
+    --primary: 270 70% 55%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 15% 15%;
-    --secondary-foreground: 220 10% 95%;
+    --secondary: 220 35% 12%;
+    --secondary-foreground: 210 20% 95%;
 
-    --muted: 240 12% 14%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 220 30% 11%;
+    --muted-foreground: 210 15% 55%;
 
-    --accent: 185 100% 50%;
-    --accent-foreground: 240 20% 6%;
+    --accent: 185 100% 55%;
+    --accent-foreground: 222 47% 5%;
 
-    --destructive: 350 90% 55%;
+    --destructive: 0 85% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 155 85% 45%;
-    --success-foreground: 240 20% 6%;
+    --success: 155 90% 42%;
+    --success-foreground: 222 47% 5%;
 
-    --warning: 42 100% 55%;
-    --warning-foreground: 240 20% 6%;
+    --warning: 45 100% 55%;
+    --warning-foreground: 222 47% 5%;
 
-    --profit: 155 85% 45%;
-    --loss: 350 90% 55%;
+    --profit: 155 90% 42%;
+    --loss: 0 85% 55%;
 
-    --border: 240 15% 20%;
-    --input: 240 15% 18%;
-    --ring: 270 60% 55%;
+    --border: 220 30% 18%;
+    --input: 220 35% 15%;
+    --ring: 270 70% 55%;
 
     --radius: 0.75rem;
 
-    /* Colorful Dashboard Palette */
-    --color-cyan: 185 100% 50%;
-    --color-magenta: 310 100% 60%;
-    --color-yellow: 42 100% 55%;
-    --color-green: 155 85% 50%;
-    --color-orange: 25 100% 55%;
-    --color-purple: 270 70% 60%;
-    --color-pink: 335 85% 65%;
-    --color-blue: 210 100% 60%;
-    --color-red: 350 90% 55%;
-    --color-teal: 175 80% 45%;
+    /* Vibrant HFT Dashboard Palette */
+    --color-cyan: 185 100% 55%;
+    --color-magenta: 310 100% 65%;
+    --color-yellow: 45 100% 60%;
+    --color-green: 155 90% 48%;
+    --color-orange: 25 100% 58%;
+    --color-purple: 270 80% 62%;
+    --color-pink: 335 90% 68%;
+    --color-blue: 210 100% 62%;
+    --color-red: 0 85% 58%;
+    --color-teal: 175 85% 48%;
 
-    --glass-bg: 240 18% 9% / 0.7;
-    --glass-border: 240 15% 25% / 0.4;
-    --glass-shadow: 240 30% 5% / 0.5;
+    --glass-bg: 220 40% 8% / 0.85;
+    --glass-border: 220 30% 22% / 0.5;
+    --glass-shadow: 222 50% 3% / 0.6;
 
-    --sidebar-background: 240 20% 7%;
-    --sidebar-foreground: 220 10% 90%;
-    --sidebar-primary: 270 60% 55%;
+    --sidebar-background: 222 47% 6%;
+    --sidebar-foreground: 210 20% 90%;
+    --sidebar-primary: 270 70% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 15% 14%;
-    --sidebar-accent-foreground: 220 10% 95%;
-    --sidebar-border: 240 15% 20%;
-    --sidebar-ring: 270 60% 55%;
+    --sidebar-accent: 220 35% 12%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 220 30% 18%;
+    --sidebar-ring: 270 70% 55%;
 
-    --chart-1: 185 100% 50%;
-    --chart-2: 270 60% 55%;
-    --chart-3: 350 90% 55%;
-    --chart-4: 42 100% 55%;
-    --chart-5: 155 85% 45%;
+    /* Vibrant Chart Colors */
+    --chart-1: 185 100% 55%;
+    --chart-2: 270 80% 60%;
+    --chart-3: 0 85% 58%;
+    --chart-4: 45 100% 60%;
+    --chart-5: 155 90% 48%;
   }
 
   .dark {
-    --background: 240 20% 6%;
-    --foreground: 220 10% 95%;
+    /* Deep Navy Command Center Background */
+    --background: 222 47% 5%;
+    --foreground: 210 20% 95%;
 
-    --card: 240 18% 9%;
-    --card-foreground: 220 10% 95%;
+    --card: 220 40% 8%;
+    --card-foreground: 210 20% 95%;
 
-    --popover: 240 18% 10%;
-    --popover-foreground: 220 10% 95%;
+    --popover: 220 40% 10%;
+    --popover-foreground: 210 20% 95%;
 
-    --primary: 270 60% 55%;
+    --primary: 270 70% 55%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 15% 15%;
-    --secondary-foreground: 220 10% 95%;
+    --secondary: 220 35% 12%;
+    --secondary-foreground: 210 20% 95%;
 
-    --muted: 240 12% 14%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 220 30% 11%;
+    --muted-foreground: 210 15% 55%;
 
-    --accent: 185 100% 50%;
-    --accent-foreground: 240 20% 6%;
+    --accent: 185 100% 55%;
+    --accent-foreground: 222 47% 5%;
 
-    --destructive: 350 90% 55%;
+    --destructive: 0 85% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 155 85% 45%;
-    --success-foreground: 240 20% 6%;
+    --success: 155 90% 42%;
+    --success-foreground: 222 47% 5%;
 
-    --warning: 42 100% 55%;
-    --warning-foreground: 240 20% 6%;
+    --warning: 45 100% 55%;
+    --warning-foreground: 222 47% 5%;
 
-    --profit: 155 85% 45%;
-    --loss: 350 90% 55%;
+    --profit: 155 90% 42%;
+    --loss: 0 85% 55%;
 
-    --border: 240 15% 20%;
-    --input: 240 15% 18%;
-    --ring: 270 60% 55%;
+    --border: 220 30% 18%;
+    --input: 220 35% 15%;
+    --ring: 270 70% 55%;
 
-    --color-cyan: 185 100% 50%;
-    --color-magenta: 310 100% 60%;
-    --color-yellow: 42 100% 55%;
-    --color-green: 155 85% 50%;
-    --color-orange: 25 100% 55%;
-    --color-purple: 270 70% 60%;
-    --color-pink: 335 85% 65%;
-    --color-blue: 210 100% 60%;
-    --color-red: 350 90% 55%;
-    --color-teal: 175 80% 45%;
+    /* Vibrant HFT Dashboard Palette */
+    --color-cyan: 185 100% 55%;
+    --color-magenta: 310 100% 65%;
+    --color-yellow: 45 100% 60%;
+    --color-green: 155 90% 48%;
+    --color-orange: 25 100% 58%;
+    --color-purple: 270 80% 62%;
+    --color-pink: 335 90% 68%;
+    --color-blue: 210 100% 62%;
+    --color-red: 0 85% 58%;
+    --color-teal: 175 85% 48%;
 
-    --glass-bg: 240 18% 9% / 0.7;
-    --glass-border: 240 15% 25% / 0.4;
-    --glass-shadow: 240 30% 5% / 0.5;
+    --glass-bg: 220 40% 8% / 0.85;
+    --glass-border: 220 30% 22% / 0.5;
+    --glass-shadow: 222 50% 3% / 0.6;
 
-    --sidebar-background: 240 20% 7%;
-    --sidebar-foreground: 220 10% 90%;
-    --sidebar-primary: 270 60% 55%;
+    --sidebar-background: 222 47% 6%;
+    --sidebar-foreground: 210 20% 90%;
+    --sidebar-primary: 270 70% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 15% 14%;
-    --sidebar-accent-foreground: 220 10% 95%;
-    --sidebar-border: 240 15% 20%;
-    --sidebar-ring: 270 60% 55%;
+    --sidebar-accent: 220 35% 12%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 220 30% 18%;
+    --sidebar-ring: 270 70% 55%;
 
-    --chart-1: 185 100% 50%;
-    --chart-2: 270 60% 55%;
-    --chart-3: 350 90% 55%;
-    --chart-4: 42 100% 55%;
-    --chart-5: 155 85% 45%;
+    /* Vibrant Chart Colors */
+    --chart-1: 185 100% 55%;
+    --chart-2: 270 80% 60%;
+    --chart-3: 0 85% 58%;
+    --chart-4: 45 100% 60%;
+    --chart-5: 155 90% 48%;
   }
 }
 
@@ -158,8 +163,28 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    background: linear-gradient(145deg, hsl(240 20% 6%) 0%, hsl(240 18% 9%) 50%, hsl(250 20% 7%) 100%);
+    background: linear-gradient(145deg, hsl(222 47% 5%) 0%, hsl(220 40% 8%) 50%, hsl(225 45% 6%) 100%);
   }
+}
+
+/* Left Border Accent Cards */
+.card-accent-cyan {
+  border-left: 3px solid hsl(var(--color-cyan));
+}
+.card-accent-green {
+  border-left: 3px solid hsl(var(--color-green));
+}
+.card-accent-magenta {
+  border-left: 3px solid hsl(var(--color-magenta));
+}
+.card-accent-purple {
+  border-left: 3px solid hsl(var(--color-purple));
+}
+.card-accent-orange {
+  border-left: 3px solid hsl(var(--color-orange));
+}
+.card-accent-yellow {
+  border-left: 3px solid hsl(var(--color-yellow));
 }
 
 @layer components {
