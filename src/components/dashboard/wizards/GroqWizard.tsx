@@ -48,17 +48,37 @@ export function GroqWizard({ open, onOpenChange }: GroqWizardProps) {
     setIsSaving(true);
     
     try {
-      // Just save model preference to database
-      const { error } = await supabase
+      // Check if config already exists for groq provider
+      const { data: existing } = await supabase
         .from('ai_config')
-        .upsert({
-          provider: 'groq',
-          model: model,
-          is_active: true,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'provider' });
+        .select('id')
+        .eq('provider', 'groq')
+        .maybeSingle();
 
-      if (error) throw error;
+      if (existing) {
+        // Update existing row
+        const { error } = await supabase
+          .from('ai_config')
+          .update({
+            model: model,
+            is_active: true,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id);
+
+        if (error) throw error;
+      } else {
+        // Insert new row
+        const { error } = await supabase
+          .from('ai_config')
+          .insert({
+            provider: 'groq',
+            model: model,
+            is_active: true
+          });
+
+        if (error) throw error;
+      }
 
       await refetch();
       setStep(3);
