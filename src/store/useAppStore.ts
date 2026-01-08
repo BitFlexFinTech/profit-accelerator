@@ -25,6 +25,14 @@ interface ExchangePulse {
   lastPing: Date | null;
 }
 
+interface ActiveVPS {
+  id: string;
+  provider: string;
+  ipAddress: string | null;
+  region: string | null;
+  botStatus: string;
+}
+
 interface AppState {
   // Exchange Balances (from connected exchanges only)
   exchangeBalances: Record<string, ExchangeBalance>;
@@ -52,6 +60,15 @@ interface AppState {
   // Internal flag for initial load
   _hasInitialized: boolean;
   
+  // VPS State (single source of truth for active VPS)
+  activeVPS: ActiveVPS | null;
+  
+  // Simulation/Paper trading gate
+  simulationCompleted: boolean;
+  paperModeUnlocked: boolean;
+  liveModeUnlocked: boolean;
+  successfulPaperTrades: number;
+  
   // COMPUTED SELECTORS (single source of truth calculations)
   getTotalEquity: () => number;
   getTotalPnL24h: () => number;
@@ -65,6 +82,8 @@ interface AppState {
     percentage: number;
     color: string;
   }>;
+  getActiveVPS: () => ActiveVPS | null;
+  getPaperTradeProgress: () => { current: number; required: number; percentage: number };
   
   // ACTIONS (update state from real data sources)
   setExchangeBalance: (exchange: string, balance: ExchangeBalance) => void;
@@ -74,6 +93,8 @@ interface AppState {
   syncFromDatabase: () => Promise<void>;
   togglePaperTrading: () => void;
   setConnectionStatus: (status: 'connected' | 'disconnected' | 'error') => void;
+  setActiveVPS: (vps: ActiveVPS | null) => void;
+  incrementPaperTrades: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -88,6 +109,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   paperTradingMode: false,
   connectionStatus: 'connected',
   _hasInitialized: false,
+  
+  // VPS state
+  activeVPS: null,
+  
+  // Simulation gate state
+  simulationCompleted: false,
+  paperModeUnlocked: false,
+  liveModeUnlocked: false,
+  successfulPaperTrades: 0,
   
   // COMPUTED SELECTORS
   getTotalEquity: () => {
@@ -162,6 +192,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       .sort((a, b) => b.balance - a.balance);
   },
   
+  getActiveVPS: () => get().activeVPS,
+  
+  getPaperTradeProgress: () => {
+    const { successfulPaperTrades } = get();
+    const required = 20;
+    return {
+      current: successfulPaperTrades,
+      required,
+      percentage: Math.min((successfulPaperTrades / required) * 100, 100)
+    };
+  },
+  
   // ACTIONS
   setExchangeBalance: (exchange, balance) => {
     set(state => ({
@@ -194,6 +236,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   setConnectionStatus: (status) => {
     set({ connectionStatus: status });
+  },
+  
+  setActiveVPS: (vps) => {
+    set({ activeVPS: vps, lastUpdate: Date.now() });
+  },
+  
+  incrementPaperTrades: () => {
+    set(state => {
+      const newCount = state.successfulPaperTrades + 1;
+      return {
+        successfulPaperTrades: newCount,
+        liveModeUnlocked: newCount >= 20,
+        lastUpdate: Date.now()
+      };
+    });
   },
   
   syncFromDatabase: async () => {
@@ -331,6 +388,42 @@ export const useAppStore = create<AppState>((set, get) => ({
       
       set({ dailyPnl, weeklyPnl });
       
+      // Fetch simulation progress
+      const { data: simProgress } = await supabase
+        .from('simulation_progress')
+        .select('*')
+        .limit(1)
+        .single();
+
+      if (simProgress) {
+        set({
+          simulationCompleted: simProgress.simulation_completed || false,
+          paperModeUnlocked: simProgress.paper_mode_unlocked || false,
+          liveModeUnlocked: simProgress.live_mode_unlocked || false,
+          successfulPaperTrades: simProgress.successful_paper_trades || 0,
+        });
+      }
+
+      // Fetch active VPS deployment
+      const { data: activeDeployment } = await supabase
+        .from('hft_deployments')
+        .select('id, server_id, ip_address, provider, region, bot_status')
+        .in('status', ['active', 'running'])
+        .limit(1)
+        .single();
+
+      if (activeDeployment) {
+        set({
+          activeVPS: {
+            id: activeDeployment.id,
+            provider: activeDeployment.provider,
+            ipAddress: activeDeployment.ip_address,
+            region: activeDeployment.region,
+            botStatus: activeDeployment.bot_status || 'stopped',
+          }
+        });
+      }
+      
       set({ isLoading: false, lastUpdate: Date.now(), _hasInitialized: true });
     } catch (error) {
       console.error('[useAppStore] Sync error:', error);
@@ -377,6 +470,8 @@ export function initializeAppStore() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_config' }, debouncedSync)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'hft_deployments' }, debouncedSync)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_market_updates' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'simulation_progress' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'failover_config' }, debouncedSync)
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         console.log('[useAppStore] Realtime subscribed');

@@ -228,6 +228,19 @@ export function UnifiedControlBar() {
 
   const handleModeToggle = async (checked: boolean) => {
     if (!checked && isPaperMode) {
+      // Switching to live mode - check paper trade gate
+      const { data: simProgress } = await supabase
+        .from('simulation_progress')
+        .select('live_mode_unlocked, successful_paper_trades')
+        .limit(1)
+        .single();
+      
+      if (!simProgress?.live_mode_unlocked) {
+        const remaining = 20 - (simProgress?.successful_paper_trades || 0);
+        toast.error(`Complete ${remaining} more paper trades to unlock live mode`);
+        return;
+      }
+      
       setShowLiveConfirm(true);
       return;
     }

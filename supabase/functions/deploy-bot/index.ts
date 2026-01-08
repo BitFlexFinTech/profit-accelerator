@@ -353,6 +353,27 @@ serve(async (req) => {
       console.error('Error creating VPS record:', vpsError);
     }
 
+    // Register in failover_config for automatic failover support
+    console.log(`[deploy-bot] Registering ${provider} in failover_config...`);
+    const { error: failoverError } = await supabase
+      .from('failover_config')
+      .upsert({
+        provider: provider,
+        region: config.region,
+        is_enabled: true,
+        is_primary: false, // New VPS is secondary by default
+        health_check_url: `http://${ipAddress}:8080/health`,
+        priority: 10,
+        latency_ms: 0,
+        consecutive_failures: 0,
+      }, { onConflict: 'provider' });
+
+    if (failoverError) {
+      console.error('Error registering failover config:', failoverError);
+    } else {
+      console.log(`[deploy-bot] ${provider} registered in failover_config`);
+    }
+
     // Stage 18: Complete
     await logStage(supabase, deploymentId, provider, 18, 'completed', 100, '✅ Deployment complete! Bot is running successfully.');
 
