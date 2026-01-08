@@ -6,6 +6,7 @@ import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { formatDistanceToNow, differenceInSeconds } from 'date-fns';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -187,14 +188,16 @@ export function ExchangeConnectionsCard() {
   };
 
   return (
-    <>
-      <div className="glass-card p-6">
+    <TooltipProvider delayDuration={200}>
+      <div className="glass-card card-teal p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Wifi className="w-5 h-5 text-primary" />
+            <div className="icon-container-teal p-1.5 rounded-md animate-bounce-subtle">
+              <Wifi className="w-5 h-5 text-teal" />
+            </div>
             <h3 className="text-lg font-semibold">Exchange Connections</h3>
             {isVpsActive && (
-              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/20 text-success">
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-accent/20 text-green-accent animate-pulse">
                 <Server className="w-3 h-3" />
                 VPS Active
               </span>
@@ -202,25 +205,37 @@ export function ExchangeConnectionsCard() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
-              {connectedCount}/11 connected • ${totalBalance.toLocaleString()}
+              {connectedCount}/11 connected • <span className="text-teal">${totalBalance.toLocaleString()}</span>
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenWizard}
-            >
-              <Plus className="w-4 h-4 mr-1" />
-              Add
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSyncAll}
-              disabled={isSyncing || connectedCount === 0}
-            >
-              <RefreshCw className={`w-4 h-4 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
-              Refresh All
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenWizard}
+                  className="hover:border-teal/50 hover:bg-teal/10 transition-all duration-300"
+                >
+                  <Plus className="w-4 h-4 mr-1 text-teal" />
+                  Add
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Connect a new cryptocurrency exchange</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSyncAll}
+                  disabled={isSyncing || connectedCount === 0}
+                  className="hover:border-cyan/50 hover:bg-cyan/10 transition-all duration-300"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-1 text-cyan ${isSyncing ? 'animate-spin' : ''}`} />
+                  Refresh All
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sync all exchange balances and prices</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -372,6 +387,6 @@ export function ExchangeConnectionsCard() {
         onOpenChange={setShowExchangeWizard}
         initialExchangeId={wizardExchangeId}
       />
-    </>
+    </TooltipProvider>
   );
 }
