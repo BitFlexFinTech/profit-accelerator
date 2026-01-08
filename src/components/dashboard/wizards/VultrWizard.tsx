@@ -40,6 +40,12 @@ export function VultrWizard({ open, onOpenChange }: VultrWizardProps) {
       toast.error('Please enter your Vultr API key');
       return;
     }
+    
+    // Validate API key format (Vultr keys are typically 36+ chars)
+    if (apiKey.trim().length < 30) {
+      toast.error('Invalid API key format - Vultr keys are typically 36+ characters');
+      return;
+    }
 
     setIsValidating(true);
 

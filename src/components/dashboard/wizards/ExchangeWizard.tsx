@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Wallet, Check, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
+import { validateExchangeAPI } from '@/lib/validators';
 import {
   Dialog,
   DialogContent,
@@ -55,6 +56,7 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
   const [testResult, setTestResult] = useState<{ success: boolean; balance?: string; error?: string } | null>(null);
   const [connectedExchanges, setConnectedExchanges] = useState<string[]>([]);
   const [ipWhitelistStatus, setIpWhitelistStatus] = useState<IPWhitelistStatus>({});
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const selectedExchangeData = exchanges.find(e => e.id === selectedExchange);
 
@@ -112,6 +114,21 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
   const handleTest = async () => {
     if (!selectedExchange) return;
     
+    // Validate before testing
+    const errors = validateExchangeAPI({
+      exchange_name: selectedExchangeData?.name,
+      api_key: selectedExchangeData?.isHyperliquid ? walletAddress : apiKey,
+      api_secret: selectedExchangeData?.isHyperliquid ? agentPrivateKey : apiSecret,
+      api_passphrase: apiPassphrase
+    });
+    
+    if (errors) {
+      setValidationErrors(errors);
+      Object.values(errors).forEach(err => toast.error(err));
+      return;
+    }
+    
+    setValidationErrors({});
     setIsLoading(true);
     setTestResult(null);
     
@@ -319,9 +336,12 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
                       type="password"
                       placeholder="Enter your API key"
                       value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      className="font-mono bg-secondary/50"
+                      onChange={(e) => { setApiKey(e.target.value); setValidationErrors(prev => ({ ...prev, api_key: '' })); }}
+                      className={`font-mono bg-secondary/50 ${validationErrors.api_key ? 'border-destructive' : ''}`}
                     />
+                    {validationErrors.api_key && (
+                      <p className="text-xs text-destructive mt-1">{validationErrors.api_key}</p>
+                    )}
                   </div>
 
                   <div>
@@ -330,9 +350,12 @@ export function ExchangeWizard({ open, onOpenChange }: ExchangeWizardProps) {
                       type="password"
                       placeholder="Enter your API secret"
                       value={apiSecret}
-                      onChange={(e) => setApiSecret(e.target.value)}
-                      className="font-mono bg-secondary/50"
+                      onChange={(e) => { setApiSecret(e.target.value); setValidationErrors(prev => ({ ...prev, api_secret: '' })); }}
+                      className={`font-mono bg-secondary/50 ${validationErrors.api_secret ? 'border-destructive' : ''}`}
                     />
+                    {validationErrors.api_secret && (
+                      <p className="text-xs text-destructive mt-1">{validationErrors.api_secret}</p>
+                    )}
                   </div>
 
                   {selectedExchangeData?.needsPassphrase && (

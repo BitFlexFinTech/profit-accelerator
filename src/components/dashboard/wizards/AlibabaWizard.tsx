@@ -43,6 +43,18 @@ export function AlibabaWizard({ open, onOpenChange }: AlibabaWizardProps) {
       return;
     }
 
+    // Alibaba Access Key ID format validation (starts with LTAI, ~24 chars)
+    if (!accessKeyId.trim().match(/^LTAI[a-zA-Z0-9]{16,}$/)) {
+      toast.error('Invalid Access Key ID format - should start with LTAI');
+      return;
+    }
+
+    // Secret should be at least 20 characters
+    if (accessKeySecret.trim().length < 20) {
+      toast.error('Invalid Access Key Secret format - should be at least 20 characters');
+      return;
+    }
+
     setIsValidating(true);
 
     try {

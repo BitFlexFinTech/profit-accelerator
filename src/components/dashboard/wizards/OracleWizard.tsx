@@ -48,6 +48,25 @@ export function OracleWizard({ open, onOpenChange }: OracleWizardProps) {
       return;
     }
 
+    // Oracle OCID format validation
+    if (!tenancyOcid.trim().startsWith('ocid1.tenancy.')) {
+      toast.error('Invalid Tenancy OCID format - should start with ocid1.tenancy.');
+      return;
+    }
+    if (!userOcid.trim().startsWith('ocid1.user.')) {
+      toast.error('Invalid User OCID format - should start with ocid1.user.');
+      return;
+    }
+    // Fingerprint format: xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx
+    if (!fingerprint.trim().match(/^([a-f0-9]{2}:){15}[a-f0-9]{2}$/i)) {
+      toast.error('Invalid fingerprint format - should be 16 hex pairs separated by colons');
+      return;
+    }
+    if (!privateKey.trim().includes('-----BEGIN') || !privateKey.trim().includes('-----END')) {
+      toast.error('Invalid private key format - should be a PEM-formatted key');
+      return;
+    }
+
     setIsValidating(true);
 
     try {

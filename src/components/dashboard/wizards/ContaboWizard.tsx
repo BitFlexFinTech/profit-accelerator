@@ -37,7 +37,14 @@ export function ContaboWizard({ open, onOpenChange }: ContaboWizardProps) {
     // Validate IP format
     const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
     if (!ipRegex.test(ipAddress.trim())) {
-      toast.error('Invalid IP address format');
+      toast.error('Invalid IP address format (e.g., 192.168.1.1)');
+      return;
+    }
+
+    // Validate each octet is 0-255
+    const octets = ipAddress.trim().split('.').map(Number);
+    if (octets.some(o => o < 0 || o > 255)) {
+      toast.error('Invalid IP address - each number must be between 0 and 255');
       return;
     }
 
