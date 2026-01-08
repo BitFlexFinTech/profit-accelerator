@@ -25,6 +25,7 @@ interface ExchangeBalance {
 
 export function OrderForm() {
   const paperTradingMode = useAppStore(state => state.paperTradingMode);
+  const vpsStatus = useAppStore(state => state.vpsStatus);
   const [exchanges, setExchanges] = useState<string[]>([]);
   const [exchangeBalances, setExchangeBalances] = useState<Record<string, number>>({});
   const [exchange, setExchange] = useState('');
@@ -36,6 +37,10 @@ export function OrderForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [riskWarnings, setRiskWarnings] = useState<string[]>([]);
   const [riskError, setRiskError] = useState<string | null>(null);
+
+  // Check if VPS is available for live trading (required for HFT)
+  const isVpsOnline = Object.values(vpsStatus).some(v => v.status === 'healthy' && v.publicIp);
+  const vpsRequiredForLive = !paperTradingMode && !isVpsOnline;
 
   // Get available balance for selected exchange
   const availableBalance = useMemo(() => {
@@ -338,12 +343,22 @@ export function OrderForm() {
           </Alert>
         )}
 
+        {/* VPS Required Warning for Live Trading */}
+        {vpsRequiredForLive && (
+          <Alert className="border-destructive/50 bg-destructive/10">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertDescription className="text-xs text-destructive">
+              VPS required for live HFT trading. Deploy a VPS or switch to Paper mode.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Submit Button */}
         <ActionButton
           tooltip={side === 'buy' ? BUTTON_TOOLTIPS.buyOrder : BUTTON_TOOLTIPS.sellOrder}
           className={`w-full ${side === 'buy' ? 'bg-success hover:bg-success/90' : 'bg-destructive hover:bg-destructive/90'}`}
           onClick={handleSubmit}
-          disabled={isSubmitting || !!riskError || !exchange || !amount}
+          disabled={isSubmitting || !!riskError || !exchange || !amount || vpsRequiredForLive}
         >
           {isSubmitting ? (
             <Loader2 className="w-4 h-4 animate-spin mr-2" />

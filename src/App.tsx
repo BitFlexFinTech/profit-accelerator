@@ -13,14 +13,12 @@ import UserSettings from "./pages/UserSettings";
 import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initializeAppStore } from "@/store/useAppStore";
-import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import { useCrossTabSync } from "@/hooks/useCrossTabSync";
 
 const queryClient = new QueryClient();
 
 function AppContent() {
-  // Initialize sync hooks
-  useRealtimeSync();
+  // Cross-tab sync only - realtime handled by initializeAppStore (SSOT)
   useCrossTabSync();
 
   return (
