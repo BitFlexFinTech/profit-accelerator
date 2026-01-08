@@ -165,3 +165,6 @@ verify_jwt = false
 
 [functions.poll-balances]
 verify_jwt = false
+
+[functions.ping-exchanges-vps]
+verify_jwt = false

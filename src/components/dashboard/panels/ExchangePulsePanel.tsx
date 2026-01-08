@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, XCircle, RefreshCw, HelpCircle } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, XCircle, RefreshCw, HelpCircle, Server, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 
 interface ExchangePulse {
   id: string;
@@ -18,6 +19,7 @@ interface ExchangePulse {
   last_check: string;
   error_message: string | null;
   region: string;
+  source?: 'edge' | 'vps';
 }
 
 const EXCHANGE_DISPLAY: Record<string, { name: string; color: string }> = {
@@ -37,8 +39,10 @@ const EXCHANGE_DISPLAY: Record<string, { name: string; color: string }> = {
 export function ExchangePulsePanel() {
   const [pulses, setPulses] = useState<ExchangePulse[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isPingingVPS, setIsPingingVPS] = useState(false);
   const [selectedPulse, setSelectedPulse] = useState<ExchangePulse | null>(null);
   const [showFixGuide, setShowFixGuide] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   useEffect(() => {
     fetchPulses();
@@ -55,14 +59,20 @@ export function ExchangePulsePanel() {
       })
       .subscribe();
 
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(fetchPulses, 10000);
+    // Auto-refresh every 30 seconds + ping VPS
+    let interval: NodeJS.Timeout | null = null;
+    if (autoRefresh) {
+      interval = setInterval(async () => {
+        await supabase.functions.invoke('ping-exchanges-vps');
+        await fetchPulses();
+      }, 30000);
+    }
 
     return () => {
       supabase.removeChannel(channel);
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
-  }, []);
+  }, [autoRefresh]);
 
   const fetchPulses = async () => {
     try {
@@ -81,7 +91,7 @@ export function ExchangePulsePanel() {
   const refreshPulses = async () => {
     setIsRefreshing(true);
     try {
-      // Call trade-engine to ping all exchanges
+      // Call trade-engine to ping all exchanges from edge
       const { data, error } = await supabase.functions.invoke('trade-engine', {
         body: { action: 'ping-all-exchanges' }
       });
@@ -96,6 +106,41 @@ export function ExchangePulsePanel() {
     } finally {
       setIsRefreshing(false);
     }
+  };
+
+  const pingFromVPS = async () => {
+    setIsPingingVPS(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ping-exchanges-vps');
+      
+      if (error) throw error;
+      
+      if (data?.success) {
+        toast.success(`VPS ping: ${data?.pings?.length || 0} exchanges measured from ${data?.vps_region || 'VPS'}`);
+      } else {
+        toast.error(data?.error || 'VPS ping failed');
+      }
+      await fetchPulses();
+    } catch (err) {
+      console.error('[ExchangePulsePanel] VPS ping error:', err);
+      toast.error('Failed to ping from VPS');
+    } finally {
+      setIsPingingVPS(false);
+    }
+  };
+
+  // Get VPS latency color thresholds (stricter for VPS since it should be faster)
+  const getVPSLatencyColor = (latency: number, source?: string) => {
+    if (source === 'vps') {
+      // VPS thresholds: <30ms green, 30-80ms yellow, >80ms red
+      if (latency < 30) return 'text-green-400';
+      if (latency < 80) return 'text-yellow-400';
+      return 'text-red-400';
+    }
+    // Edge thresholds (more lenient): <100ms green, 100-300ms yellow, >300ms red
+    if (latency < 100) return 'text-green-400';
+    if (latency < 300) return 'text-yellow-400';
+    return 'text-red-400';
   };
 
   const getStatusIcon = (status: string) => {
@@ -131,13 +176,21 @@ export function ExchangePulsePanel() {
   const jitterCount = pulses.filter(p => p.status === 'jitter').length;
   const errorCount = pulses.filter(p => p.status === 'error').length;
 
+  const isVPSSource = pulses.some(p => p.source === 'vps');
+
   return (
     <>
       <div className="glass-card overflow-hidden">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Activity className="w-5 h-5 text-primary animate-pulse" />
-            <h2 className="font-semibold">Exchange Pulse Monitor (11)</h2>
+            <h2 className="font-semibold">Exchange Pulse Monitor</h2>
+            {isVPSSource && (
+              <Badge variant="outline" className="gap-1 text-xs border-green-500/50 text-green-400">
+                <Server className="w-3 h-3" />
+                VPS
+              </Badge>
+            )}
             <div className="flex items-center gap-2 ml-4">
               <span className="flex items-center gap-1 text-xs">
                 <span className="w-2 h-2 rounded-full bg-green-400" />
@@ -153,15 +206,27 @@ export function ExchangePulsePanel() {
               </span>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={refreshPulses}
-            disabled={isRefreshing}
-            className="h-7 px-2"
-          >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={pingFromVPS}
+              disabled={isPingingVPS}
+              className="h-7 px-2 gap-1 text-xs"
+            >
+              <Zap className={`w-3 h-3 ${isPingingVPS ? 'animate-pulse' : ''}`} />
+              Ping from VPS
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={refreshPulses}
+              disabled={isRefreshing}
+              className="h-7 px-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 p-4">
@@ -186,12 +251,14 @@ export function ExchangePulsePanel() {
                 </div>
                 <div className="text-left">
                   <p className="font-semibold text-sm">{display.name}</p>
-                  <p className={`text-xs font-mono ${
-                    pulse.latency_ms < 20 ? 'text-green-400' :
-                    pulse.latency_ms < 50 ? 'text-yellow-400' : 'text-red-400'
-                  }`}>
-                    {pulse.latency_ms}ms
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <p className={`text-xs font-mono ${getVPSLatencyColor(pulse.latency_ms, pulse.source)}`}>
+                      {Math.round(pulse.latency_ms)}ms
+                    </p>
+                    {pulse.source === 'vps' && (
+                      <Server className="w-2.5 h-2.5 text-muted-foreground" />
+                    )}
+                  </div>
                 </div>
               </button>
             );
@@ -199,19 +266,49 @@ export function ExchangePulsePanel() {
         </div>
 
         {/* Legend */}
-        <div className="px-4 pb-3 flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-green-400" /> 
-            Healthy (&lt;20ms)
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-yellow-400" /> 
-            Jitter (20-50ms)
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-red-400" /> 
-            Error (&gt;50ms)
-          </span>
+        <div className="px-4 pb-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+          {isVPSSource ? (
+            <>
+              <span className="flex items-center gap-1">
+                <Server className="w-3 h-3" />
+                VPS → Exchange
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-400" /> 
+                Fast (&lt;30ms)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-yellow-400" /> 
+                Normal (30-80ms)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-400" /> 
+                Slow (&gt;80ms)
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-400" /> 
+                Healthy (&lt;100ms)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-yellow-400" /> 
+                Jitter (100-300ms)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-400" /> 
+                Error (&gt;300ms)
+              </span>
+            </>
+          )}
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded ${autoRefresh ? 'bg-green-500/20 text-green-400' : 'bg-secondary'}`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${autoRefresh ? 'bg-green-400 animate-pulse' : 'bg-muted-foreground'}`} />
+            Auto {autoRefresh ? 'ON' : 'OFF'}
+          </button>
         </div>
       </div>
 
