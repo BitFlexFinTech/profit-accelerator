@@ -3,12 +3,13 @@ import { BotControlPanel } from '../BotControlPanel';
 import { CompactMetricsBar } from '../panels/CompactMetricsBar';
 import { EquityChartPanel } from '../panels/EquityChartPanel';
 import { TradeActivityTerminal } from '../panels/TradeActivityTerminal';
-import { TradeExecutionLatencyPanel } from '../panels/TradeExecutionLatencyPanel';
 import { CloudStatusPanel } from '../panels/CloudStatusPanel';
 import { SentimentPanel } from '../panels/SentimentPanel';
 import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
 import { PortfolioBreakdownPanel } from '../panels/PortfolioBreakdownPanel';
 import { RateLimitMonitorPanel } from '../panels/RateLimitMonitorPanel';
+import { MarketWatchPanel } from '../panels/MarketWatchPanel';
+import { QuickActionsPanel } from '../panels/QuickActionsPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { supabase } from '@/integrations/supabase/client';
@@ -50,19 +51,19 @@ export function LiveDashboard() {
 
       {/* Main Content Area - 50/50 split for larger AI panel */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-3 min-h-0">
-        {/* Left Column: Equity + Latency + Trade Activity + Portfolio */}
+        {/* Left Column: Equity + Trade Activity + Portfolio + Quick Actions */}
         <div className="flex flex-col gap-3 min-h-0">
           <div className="flex-shrink-0">
             <EquityChartPanel />
-          </div>
-          <div className="flex-shrink-0">
-            <TradeExecutionLatencyPanel />
           </div>
           <div className="flex-1 min-h-0">
             <TradeActivityTerminal />
           </div>
           <div className="flex-shrink-0">
             <PortfolioBreakdownPanel />
+          </div>
+          <div className="flex-shrink-0">
+            <QuickActionsPanel />
           </div>
         </div>
 
@@ -71,6 +72,11 @@ export function LiveDashboard() {
           {/* AI Market Updates - Takes primary space (50% of right column) */}
           <div className="flex-1 min-h-[300px]">
             <AIMarketUpdatesPanel />
+          </div>
+
+          {/* Market Watch Panel */}
+          <div className="flex-shrink-0">
+            <MarketWatchPanel />
           </div>
 
           {/* Rate Limit Monitor - Real-time API usage */}

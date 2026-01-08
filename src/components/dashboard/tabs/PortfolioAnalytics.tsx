@@ -4,15 +4,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 
-// Import all panels moved from LiveDashboard
+// Import panels for Analytics tab
 import { VPSMeshPanel } from '../panels/VPSMeshPanel';
 import { MeshHealthScoreWidget } from '../panels/MeshHealthScoreWidget';
 import { VPSLatencyTrendsPanel } from '../panels/VPSLatencyTrendsPanel';
 import { VPSDeploymentTimelinePanel } from '../panels/VPSDeploymentTimelinePanel';
 import { CloudCostComparisonPanel } from '../panels/CloudCostComparisonPanel';
 import { VPSMonitorPanel } from '../panels/VPSMonitorPanel';
-import { MarketWatchPanel } from '../panels/MarketWatchPanel';
-import { QuickActionsPanel } from '../panels/QuickActionsPanel';
 import { FailoverStatusPanel } from '../panels/FailoverStatusPanel';
 import { FailoverHistoryPanel } from '../panels/FailoverHistoryPanel';
 import { TradeLogPanel } from '../panels/TradeLogPanel';
@@ -24,6 +22,7 @@ import { VPSBenchmarkPanel } from '../panels/VPSBenchmarkPanel';
 import { VPSTerminalPanel } from '../panels/VPSTerminalPanel';
 import { RecentTradesPanel } from '../panels/RecentTradesPanel';
 import { PnLPanel } from '../panels/PnLPanel';
+import { TradeExecutionLatencyPanel } from '../panels/TradeExecutionLatencyPanel';
 
 interface PortfolioMetrics {
   sharpeRatio: number | null;
@@ -208,6 +207,9 @@ export function PortfolioAnalytics() {
         <PnLPanel />
       </div>
 
+      {/* Trade Execution Latency - Moved from LiveDashboard */}
+      <TradeExecutionLatencyPanel />
+
       {/* Equity Curve Chart */}
       <div className="glass-card p-6">
         <h3 className="text-lg font-semibold mb-4">Equity Curve</h3>
@@ -278,9 +280,9 @@ export function PortfolioAnalytics() {
 
       {/* Trading Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <MarketWatchPanel />
         <TradeLogPanel />
         <TradeCopierPanel />
+        <CostOptimizationPanel />
       </div>
 
       <RecentTradesPanel />
@@ -294,11 +296,6 @@ export function PortfolioAnalytics() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ExchangePingPanel />
         <APIDiagnosticsPanel />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <QuickActionsPanel />
-        <CostOptimizationPanel />
       </div>
 
       <VPSBenchmarkPanel />

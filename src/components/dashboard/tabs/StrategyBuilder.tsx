@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Play, Pause, Trash2, Loader2, FlaskConical, TrendingUp } from 'lucide-react';
+import { Plus, Play, Pause, Trash2, Loader2, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
@@ -23,14 +23,12 @@ interface Strategy {
 interface TradingConfig {
   trading_mode: string;
   leverage: number;
-  test_mode: boolean;
 }
 
 export function StrategyBuilder() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [tradingMode, setTradingMode] = useState<'spot' | 'futures'>('spot');
   const [leverage, setLeverage] = useState(1);
-  const [testMode, setTestMode] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [isSavingMode, setIsSavingMode] = useState(false);
@@ -51,14 +49,13 @@ export function StrategyBuilder() {
         // Fetch trading config
         const { data: configData } = await supabase
           .from('trading_config')
-          .select('trading_mode, leverage, test_mode')
+          .select('trading_mode, leverage')
           .single();
 
         if (configData) {
           const config = configData as TradingConfig;
           setTradingMode((config.trading_mode as 'spot' | 'futures') || 'spot');
           setLeverage(config.leverage || 1);
-          setTestMode(config.test_mode ?? true);
         }
       } catch (err) {
         console.error('[StrategyBuilder] Error:', err);
@@ -124,6 +121,16 @@ export function StrategyBuilder() {
     }
   };
 
+  const getServerIp = async (): Promise<string> => {
+    const { data: vps } = await supabase
+      .from('hft_deployments')
+      .select('ip_address')
+      .not('ip_address', 'is', null)
+      .limit(1)
+      .single();
+    return vps?.ip_address || '';
+  };
+
   const handlePauseStrategy = async (strategyId: string) => {
     setLoadingId(strategyId);
     try {
@@ -136,14 +143,17 @@ export function StrategyBuilder() {
         })
         .eq('id', strategyId);
 
-      // Signal VPS to pause this strategy
-      await supabase.functions.invoke('install-hft-bot', {
-        body: { 
-          action: 'pause-strategy',
-          strategyId,
-          serverIp: '167.179.83.239'
-        }
-      });
+      const serverIp = await getServerIp();
+      if (serverIp) {
+        // Signal VPS to pause this strategy
+        await supabase.functions.invoke('install-hft-bot', {
+          body: { 
+            action: 'pause-strategy',
+            strategyId,
+            serverIp
+          }
+        });
+      }
 
       toast.success('Strategy paused');
     } catch (error) {
@@ -165,16 +175,19 @@ export function StrategyBuilder() {
         })
         .eq('id', strategyId);
 
-      // Signal VPS to start this strategy
-      await supabase.functions.invoke('install-hft-bot', {
-        body: { 
-          action: 'start-strategy',
-          strategyId,
-          serverIp: '167.179.83.239'
-        }
-      });
+      const serverIp = await getServerIp();
+      if (serverIp) {
+        // Signal VPS to start this strategy
+        await supabase.functions.invoke('install-hft-bot', {
+          body: { 
+            action: 'start-strategy',
+            strategyId,
+            serverIp
+          }
+        });
+      }
 
-      toast.success(testMode ? 'Strategy started (TEST MODE)' : 'Strategy started - LIVE TRADING');
+      toast.success('Strategy started - LIVE TRADING');
     } catch (error) {
       toast.error('Failed to start strategy');
     } finally {
@@ -266,14 +279,6 @@ export function StrategyBuilder() {
                 {leverage}x
               </Badge>
             </div>
-          )}
-
-          {/* Test Mode Indicator */}
-          {testMode && (
-            <Badge variant="outline" className="bg-warning/10 text-warning border-warning/40 gap-1">
-              <FlaskConical className="w-3 h-3" />
-              TEST MODE
-            </Badge>
           )}
         </div>
       </div>

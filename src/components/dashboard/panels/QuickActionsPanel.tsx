@@ -1,11 +1,17 @@
 import { useState } from 'react';
-import { Zap, StopCircle, RefreshCw, Bell, Loader2 } from 'lucide-react';
+import { Zap, StopCircle, RefreshCw, Bell, Loader2, Play, Square, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useHFTDeployments } from '@/hooks/useHFTDeployments';
 
 export function QuickActionsPanel() {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const { deployments, startBot, stopBot, restartBot, actionLoading, getTokyoDeployment } = useHFTDeployments();
+  
+  const tokyoDeployment = getTokyoDeployment();
+  const botStatus = tokyoDeployment?.bot_status || 'stopped';
 
   const handleStartTrading = async () => {
     setLoadingAction('start');
@@ -87,9 +93,88 @@ export function QuickActionsPanel() {
     }
   };
 
+  const handleStartBot = async () => {
+    if (tokyoDeployment) {
+      await startBot(tokyoDeployment.id);
+    } else {
+      toast.error('No VPS deployment found');
+    }
+  };
+
+  const handleStopBot = async () => {
+    if (tokyoDeployment) {
+      await stopBot(tokyoDeployment.id);
+    } else {
+      toast.error('No VPS deployment found');
+    }
+  };
+
+  const handleRestartBot = async () => {
+    if (tokyoDeployment) {
+      await restartBot(tokyoDeployment.id);
+    } else {
+      toast.error('No VPS deployment found');
+    }
+  };
+
   return (
     <div className="glass-card p-6">
       <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
+      
+      {/* Bot Status & Controls */}
+      <div className="mb-4 p-3 rounded-lg bg-muted/50">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Bot Status:</span>
+            <Badge 
+              variant="outline" 
+              className={
+                botStatus === 'running' 
+                  ? 'bg-success/20 text-success border-success/40' 
+                  : 'bg-muted text-muted-foreground'
+              }
+            >
+              <span className={`w-2 h-2 rounded-full mr-1.5 ${botStatus === 'running' ? 'bg-success animate-pulse' : 'bg-muted-foreground'}`} />
+              {botStatus.toUpperCase()}
+            </Badge>
+          </div>
+        </div>
+        
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 gap-1.5 hover:bg-success/10 hover:border-success/50"
+            onClick={handleStartBot}
+            disabled={actionLoading || botStatus === 'running' || !tokyoDeployment ? true : false}
+          >
+            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 text-success" />}
+            Start
+          </Button>
+          
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 gap-1.5 hover:bg-destructive/10 hover:border-destructive/50"
+            onClick={handleStopBot}
+            disabled={actionLoading || botStatus === 'stopped' || !tokyoDeployment ? true : false}
+          >
+            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4 text-destructive" />}
+            Stop
+          </Button>
+          
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 gap-1.5"
+            onClick={handleRestartBot}
+            disabled={actionLoading || !tokyoDeployment ? true : false}
+          >
+            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            Restart
+          </Button>
+        </div>
+      </div>
       
       <div className="grid grid-cols-2 gap-3">
         <Button 

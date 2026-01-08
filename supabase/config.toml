@@ -159,3 +159,6 @@ verify_jwt = false
 
 [functions.manage-secrets]
 verify_jwt = false
+
+[functions.equity-snapshot]
+verify_jwt = false

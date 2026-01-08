@@ -11,8 +11,29 @@ import CloudCredentials from "./pages/CloudCredentials";
 import VPSSetup from "./pages/VPSSetup";
 import NotFound from "./pages/NotFound";
 import { initializeAppStore } from "@/store/useAppStore";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
+import { useCrossTabSync } from "@/hooks/useCrossTabSync";
 
 const queryClient = new QueryClient();
+
+function AppContent() {
+  // Initialize sync hooks
+  useRealtimeSync();
+  useCrossTabSync();
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="/setup" element={<Setup />} />
+        <Route path="/vps-dashboard" element={<VPSDashboard />} />
+        <Route path="/cloud-credentials" element={<CloudCredentials />} />
+        <Route path="/vps-setup" element={<VPSSetup />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
 
 const App = () => {
   // Initialize global store and realtime subscriptions on mount
@@ -23,23 +44,13 @@ const App = () => {
   }, []);
 
   return (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/setup" element={<Setup />} />
-          <Route path="/vps-dashboard" element={<VPSDashboard />} />
-          <Route path="/cloud-credentials" element={<CloudCredentials />} />
-          <Route path="/vps-setup" element={<VPSSetup />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <AppContent />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 };
 
