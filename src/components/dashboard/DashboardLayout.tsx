@@ -180,8 +180,11 @@ export function DashboardLayout() {
         </div>
       )}
 
-      {/* Main Content */}
-      <main className="flex-1 p-2 overflow-hidden">
+      {/* Main Content - Tab-aware scrolling */}
+      <main className={cn(
+        "flex-1 p-2",
+        activeTab === 'dashboard' ? "overflow-hidden" : "overflow-y-auto scrollbar-thin"
+      )}>
         {renderTabContent()}
       </main>
 

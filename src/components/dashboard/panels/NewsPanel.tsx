@@ -98,6 +98,15 @@ export function NewsPanel() {
                       onClick={() => setSelectedArticle({ title: item.title, url: item.url })}
                     >
                       <div className="flex items-start gap-2">
+                        {/* Thumbnail Image */}
+                        {item.imageUrl && (
+                          <img 
+                            src={item.imageUrl} 
+                            alt=""
+                            className="w-10 h-10 rounded object-cover flex-shrink-0"
+                            onError={(e) => (e.currentTarget.style.display = 'none')}
+                          />
+                        )}
                         <SentimentBadge sentiment={sentiment} />
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium leading-tight line-clamp-2">
