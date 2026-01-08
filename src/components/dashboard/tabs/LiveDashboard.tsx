@@ -22,7 +22,7 @@ export function LiveDashboard() {
   }, [sync, startPolling, stopPolling]);
 
   return (
-    <div className="h-[calc(100vh-80px)] flex flex-col gap-1.5 p-2 overflow-hidden">
+    <div className="h-full flex flex-col gap-1.5 overflow-hidden">
       {/* Scrolling Price Ticker - Very Top */}
       <ScrollingPriceTicker />
       

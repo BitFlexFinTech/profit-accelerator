@@ -181,7 +181,7 @@ export function DashboardLayout() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 p-4 md:p-6 overflow-auto">
+      <main className="flex-1 p-2 overflow-hidden">
         {renderTabContent()}
       </main>
 
