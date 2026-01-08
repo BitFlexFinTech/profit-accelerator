@@ -282,22 +282,26 @@ serve(async (req) => {
     // Calculate total equity
     const totalEquity = balances.reduce((sum, b) => sum + b.totalUSDT, 0);
 
-    // Always insert into balance_history for chart data
-    const exchangeBreakdown = balances.map(b => ({
-      exchange: b.exchange,
-      balance: b.totalUSDT
-    }));
+    // Only insert into balance_history if we have a valid balance (> 0)
+    if (totalEquity > 0) {
+      const exchangeBreakdown = balances.map(b => ({
+        exchange: b.exchange,
+        balance: b.totalUSDT
+      }));
 
-    const { error: insertError } = await supabase.from('balance_history').insert({
-      total_balance: totalEquity,
-      exchange_breakdown: exchangeBreakdown,
-      snapshot_time: new Date().toISOString()
-    });
+      const { error: insertError } = await supabase.from('balance_history').insert({
+        total_balance: totalEquity,
+        exchange_breakdown: exchangeBreakdown,
+        snapshot_time: new Date().toISOString()
+      });
 
-    if (insertError) {
-      console.error('[poll-balances] Error inserting balance_history:', insertError);
+      if (insertError) {
+        console.error('[poll-balances] Error inserting balance_history:', insertError);
+      } else {
+        console.log(`[poll-balances] Recorded snapshot: $${totalEquity.toFixed(2)}`);
+      }
     } else {
-      console.log(`[poll-balances] Recorded snapshot: $${totalEquity.toFixed(2)}`);
+      console.log('[poll-balances] Skipping balance_history insert - totalEquity is 0');
     }
 
     // Calculate 24h PnL by comparing with previous balance

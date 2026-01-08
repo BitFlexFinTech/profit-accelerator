@@ -281,17 +281,47 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ vpsStatus: statuses });
       }
       
-      // Fetch PnL data
-      const { data: snapshot } = await supabase
-        .from('portfolio_snapshots')
-        .select('daily_pnl, weekly_pnl')
+      // Calculate PnL from balance_history instead of portfolio_snapshots
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+
+      // Get current balance (most recent with value > 0)
+      const { data: currentSnapshot } = await supabase
+        .from('balance_history')
+        .select('total_balance')
+        .gt('total_balance', 0)
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
+
+      // Get yesterday's balance
+      const { data: yesterdaySnapshot } = await supabase
+        .from('balance_history')
+        .select('total_balance')
+        .gt('total_balance', 0)
+        .lt('created_at', yesterday.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      // Get week ago balance
+      const { data: weekAgoSnapshot } = await supabase
+        .from('balance_history')
+        .select('total_balance')
+        .gt('total_balance', 0)
+        .lt('created_at', weekAgo.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      const currentBalance = currentSnapshot?.total_balance || 0;
+      const dailyPnl = currentBalance - (yesterdaySnapshot?.total_balance || currentBalance);
+      const weeklyPnl = currentBalance - (weekAgoSnapshot?.total_balance || currentBalance);
       
-      if (snapshot) {
-        set({ dailyPnl: snapshot.daily_pnl || 0, weeklyPnl: snapshot.weekly_pnl || 0 });
-      }
+      set({ dailyPnl, weeklyPnl });
       
       set({ isLoading: false, lastUpdate: Date.now(), _hasInitialized: true });
     } catch (error) {

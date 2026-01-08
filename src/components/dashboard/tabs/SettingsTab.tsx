@@ -46,6 +46,30 @@ import { useAIConfig } from '@/hooks/useAIConfig';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
+// Region code to display name mapping
+const REGION_NAMES: Record<string, string> = {
+  'nrt': 'Tokyo',
+  'sgp': 'Singapore',
+  'lax': 'Los Angeles',
+  'ewr': 'New Jersey',
+  'fra': 'Frankfurt',
+  'lhr': 'London',
+  'ams': 'Amsterdam',
+  'syd': 'Sydney',
+  'ap-northeast-1': 'Tokyo',
+  'ap-southeast-1': 'Singapore',
+  'us-west-1': 'California',
+  'us-east-1': 'Virginia',
+  'eu-west-1': 'Ireland',
+  'asia-northeast1': 'Tokyo',
+  'asia-southeast1': 'Singapore',
+};
+
+function getRegionDisplayName(regionCode: string | undefined): string {
+  if (!regionCode) return 'Unknown';
+  return REGION_NAMES[regionCode] || regionCode;
+}
+
 // Cloud Provider Configuration
 const CLOUD_PROVIDERS = [
   { id: 'contabo', name: 'Contabo', region: 'Singapore', icon: '🌏', wizard: 'contabo' },
@@ -76,10 +100,10 @@ function VPSStatusSection() {
         <Server className="w-5 h-5 text-primary" />
         <h3 className="font-semibold">VPS Configuration</h3>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 rounded-lg bg-secondary/30">
           <p className="text-muted-foreground text-sm">Region</p>
-          <p className="font-medium text-accent">Singapore ({vps.region || 'sgp'})</p>
+          <p className="font-medium text-accent">{getRegionDisplayName(vps.region)} ({vps.region || 'N/A'})</p>
         </div>
         <div className="p-4 rounded-lg bg-secondary/30">
           <p className="text-muted-foreground text-sm">Status</p>
