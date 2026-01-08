@@ -109,6 +109,38 @@ export default {
           from: { opacity: "0", transform: "translateY(-8px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        "shimmer": {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
+        "float": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-6px)" },
+        },
+        "glow-pulse": {
+          "0%, 100%": { boxShadow: "0 0 10px currentColor", opacity: "0.8" },
+          "50%": { boxShadow: "0 0 25px currentColor, 0 0 40px currentColor", opacity: "1" },
+        },
+        "wiggle": {
+          "0%, 100%": { transform: "rotate(-2deg)" },
+          "50%": { transform: "rotate(2deg)" },
+        },
+        "bounce-subtle": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-4px)" },
+        },
+        "scale-pop": {
+          "0%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.05)" },
+          "100%": { transform: "scale(1)" },
+        },
+        "color-cycle": {
+          "0%": { color: "hsl(185 100% 50%)" },
+          "25%": { color: "hsl(310 100% 60%)" },
+          "50%": { color: "hsl(42 100% 55%)" },
+          "75%": { color: "hsl(155 85% 50%)" },
+          "100%": { color: "hsl(185 100% 50%)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -118,6 +150,13 @@ export default {
         "pulse-glow": "pulse-glow 2s ease-in-out infinite",
         "blink": "blink 1s ease-in-out infinite",
         "fade-slide-in": "fade-slide-in 0.4s ease-out forwards",
+        "shimmer": "shimmer 2s ease-in-out infinite",
+        "float": "float 3s ease-in-out infinite",
+        "glow-pulse": "glow-pulse 2s ease-in-out infinite",
+        "wiggle": "wiggle 0.4s ease-in-out",
+        "bounce-subtle": "bounce-subtle 2s ease-in-out infinite",
+        "scale-pop": "scale-pop 0.3s ease-out",
+        "color-cycle": "color-cycle 5s linear infinite",
       },
       backdropBlur: {
         xs: "2px",
