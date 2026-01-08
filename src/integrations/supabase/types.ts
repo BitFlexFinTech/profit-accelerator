@@ -128,6 +128,128 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_provider_performance: {
+        Row: {
+          id: string
+          profitable_signals: number | null
+          provider_name: string
+          recorded_at: string | null
+          total_profit_usdt: number | null
+          trades_analyzed: number | null
+        }
+        Insert: {
+          id?: string
+          profitable_signals?: number | null
+          provider_name: string
+          recorded_at?: string | null
+          total_profit_usdt?: number | null
+          trades_analyzed?: number | null
+        }
+        Update: {
+          id?: string
+          profitable_signals?: number | null
+          provider_name?: string
+          recorded_at?: string | null
+          total_profit_usdt?: number | null
+          trades_analyzed?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_provider_performance_provider_name_fkey"
+            columns: ["provider_name"]
+            isOneToOne: false
+            referencedRelation: "ai_providers"
+            referencedColumns: ["provider_name"]
+          },
+        ]
+      }
+      ai_providers: {
+        Row: {
+          api_endpoint: string
+          api_key_field: string
+          border_class: string
+          color_class: string
+          color_hex: string
+          created_at: string | null
+          current_usage: number | null
+          display_name: string
+          error_count: number | null
+          free_tier_info: string | null
+          get_key_url: string
+          has_secret: boolean | null
+          id: string
+          is_active: boolean | null
+          is_enabled: boolean | null
+          last_error: string | null
+          last_reset_at: string | null
+          last_used_at: string | null
+          model_name: string
+          priority: number | null
+          provider_name: string
+          rate_limit_rpm: number | null
+          secret_name: string
+          short_name: string
+          success_count: number | null
+          total_latency_ms: number | null
+        }
+        Insert: {
+          api_endpoint: string
+          api_key_field?: string
+          border_class: string
+          color_class: string
+          color_hex: string
+          created_at?: string | null
+          current_usage?: number | null
+          display_name: string
+          error_count?: number | null
+          free_tier_info?: string | null
+          get_key_url: string
+          has_secret?: boolean | null
+          id?: string
+          is_active?: boolean | null
+          is_enabled?: boolean | null
+          last_error?: string | null
+          last_reset_at?: string | null
+          last_used_at?: string | null
+          model_name: string
+          priority?: number | null
+          provider_name: string
+          rate_limit_rpm?: number | null
+          secret_name: string
+          short_name: string
+          success_count?: number | null
+          total_latency_ms?: number | null
+        }
+        Update: {
+          api_endpoint?: string
+          api_key_field?: string
+          border_class?: string
+          color_class?: string
+          color_hex?: string
+          created_at?: string | null
+          current_usage?: number | null
+          display_name?: string
+          error_count?: number | null
+          free_tier_info?: string | null
+          get_key_url?: string
+          has_secret?: boolean | null
+          id?: string
+          is_active?: boolean | null
+          is_enabled?: boolean | null
+          last_error?: string | null
+          last_reset_at?: string | null
+          last_used_at?: string | null
+          model_name?: string
+          priority?: number | null
+          provider_name?: string
+          rate_limit_rpm?: number | null
+          secret_name?: string
+          short_name?: string
+          success_count?: number | null
+          total_latency_ms?: number | null
+        }
+        Relationships: []
+      }
       alert_config: {
         Row: {
           alert_type: string
@@ -2367,6 +2489,7 @@ export type Database = {
     }
     Functions: {
       increment_paper_trade: { Args: never; Returns: undefined }
+      reset_ai_provider_usage: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
