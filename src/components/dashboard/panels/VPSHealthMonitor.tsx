@@ -1,9 +1,10 @@
 import { useState, useEffect, forwardRef } from 'react';
 import { Activity, Cpu, HardDrive, Wifi, Server, RefreshCw, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { useAppStore } from '@/store/useAppStore';
+import { ActionButton } from '@/components/ui/ActionButton';
+import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 
 interface VpsHealthData {
   provider: string;
@@ -171,16 +172,17 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
             {healthyCount}/{deployedCount} healthy
           </span>
         </div>
-        <Button 
+        <ActionButton 
           variant="ghost" 
           size="sm" 
           onClick={handleRefresh}
           disabled={isRefreshing}
           className="gap-1"
+          tooltip={BUTTON_TOOLTIPS.refreshData}
         >
           <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           Refresh
-        </Button>
+        </ActionButton>
       </div>
 
       <div className="p-4">

@@ -44,11 +44,17 @@ export const BUTTON_TOOLTIPS = {
   viewVPS: 'Manage VPS servers for low-latency trading',
   viewStrategies: 'View and manage your trading strategies',
   
-  // VPS
+  // VPS Management
   deployVPS: 'Deploy a new VPS instance for automated trading',
   restartVPS: 'Restart the VPS server',
-  stopVPS: 'Stop the VPS server',
+  stopVPS: 'Stop the VPS server - trading will halt',
+  startVPS: 'Start this VPS instance',
   viewLogs: 'View real-time logs from the VPS',
+  viewSSH: 'Open SSH terminal to connect to this server',
+  copyIP: 'Copy server IP address to clipboard',
+  editName: 'Edit the nickname for this server',
+  deleteVPS: 'Permanently delete this VPS instance',
+  rebootVPS: 'Reboot the VPS server (bot will restart)',
   
   // Refresh & Sync
   refreshData: 'Refresh data from the server',
@@ -64,6 +70,20 @@ export const BUTTON_TOOLTIPS = {
   amount50: 'Set order amount to 50% of available balance',
   amount75: 'Set order amount to 75% of available balance',
   amount100: 'Set order amount to 100% of available balance (max)',
+  
+  // Navigation & Actions
+  goBack: 'Go back to the previous step',
+  done: 'Complete setup and close',
+  
+  // Telegram
+  openBotFather: 'Open Telegram to create a bot with @BotFather',
+  haveBotToken: 'Proceed if you already have a bot token',
+  validateToken: 'Verify your bot token is valid',
+  openTelegramBot: 'Open your bot in Telegram to send /start',
+  
+  // Exchange Wizard
+  testExchange: 'Test the exchange connection with your credentials',
+  saveExchange: 'Save credentials and connect to this exchange',
 } as const;
 
 export type ButtonTooltipKey = keyof typeof BUTTON_TOOLTIPS;
