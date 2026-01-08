@@ -26,7 +26,7 @@ export function TradeCopierPanel() {
         
         const { data: copies } = await supabase
           .from('trade_copies')
-          .select('*')
+          .select('delay_ms, is_active')
           .eq('is_active', true);
 
         // Fetch recent trades to calculate success rate
@@ -37,6 +37,11 @@ export function TradeCopierPanel() {
           .order('created_at', { ascending: false })
           .limit(100);
 
+        // Calculate average delay from trade_copies with actual delay data
+        const avgDelayMs = copies && copies.length > 0
+          ? Math.round(copies.reduce((sum, c) => sum + ((c as { delay_ms?: number }).delay_ms || 0), 0) / copies.length)
+          : 0;
+
         if (trades && trades.length > 0) {
           const successCount = trades.filter(t => t.status !== 'error').length;
           const successRate = Math.round((successCount / trades.length) * 100);
@@ -44,10 +49,10 @@ export function TradeCopierPanel() {
           setStats({
             copiesToday: trades.length,
             successRate: successRate || 0,
-            avgDelayMs: 0 // Would need trade_copier_logs table for real delay
+            avgDelayMs
           });
         } else {
-          setStats({ copiesToday: 0, successRate: 0, avgDelayMs: 0 });
+          setStats({ copiesToday: 0, successRate: 0, avgDelayMs });
         }
 
         setIsActive(copies && copies.length > 0);
