@@ -134,6 +134,15 @@ export function InfrastructurePanel() {
     return <XCircle className="w-2 h-2 text-red-400" />;
   };
 
+  const getExchangeLabel = (name: string) => {
+    const labels: Record<string, string> = {
+      binance: 'BIN', okx: 'OKX', bybit: 'BYB', bitget: 'BGT',
+      kucoin: 'KUC', mexc: 'MEX', kraken: 'KRK', gateio: 'GAT',
+      bingx: 'BNX', hyperliquid: 'HYP', nexo: 'NXO', 'gate.io': 'GAT'
+    };
+    return labels[name.toLowerCase()] || name.slice(0, 3).toUpperCase();
+  };
+
   const getProviderLabel = (provider: string) => {
     const labels: Record<string, string> = {
       contabo: 'CTB', vultr: 'VLT', aws: 'AWS', digitalocean: 'DO',
@@ -213,7 +222,7 @@ export function InfrastructurePanel() {
               <div className="flex items-center justify-center gap-0.5">
                 {getStatusIcon(pulse.status)}
                 <span className="text-[8px] font-medium">
-                  {pulse.exchange_name.slice(0, 3).toUpperCase()}
+                  {getExchangeLabel(pulse.exchange_name)}
                 </span>
               </div>
               <p className={cn(

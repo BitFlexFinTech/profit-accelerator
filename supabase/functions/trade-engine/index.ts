@@ -361,17 +361,62 @@ serve(async (req) => {
 
       case 'get-tickers': {
         const { symbols } = params;
-        const symList = symbols || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT'];
+        const symList = symbols || ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT'];
         const tickers: Array<{ symbol: string; exchange: string; lastPrice: number; priceChange24h: number; volume24h: number }> = [];
 
-        for (const sym of symList) {
-          try {
-            const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}`);
-            if (resp.ok) {
-              const d = await resp.json();
-              tickers.push({ symbol: sym, exchange: 'binance', lastPrice: parseFloat(d.lastPrice), priceChange24h: parseFloat(d.priceChangePercent), volume24h: parseFloat(d.volume) });
-            }
-          } catch { /* skip */ }
+        // Get connected exchanges
+        const { data: connectedExchanges } = await supabase
+          .from('exchange_connections')
+          .select('exchange_name')
+          .eq('is_connected', true);
+        
+        const connectedNames = connectedExchanges?.map(e => e.exchange_name.toLowerCase()) || ['binance'];
+
+        // Fetch from Binance
+        if (connectedNames.includes('binance')) {
+          for (const sym of symList) {
+            try {
+              const resp = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}`);
+              if (resp.ok) {
+                const d = await resp.json();
+                tickers.push({ symbol: sym, exchange: 'binance', lastPrice: parseFloat(d.lastPrice), priceChange24h: parseFloat(d.priceChangePercent), volume24h: parseFloat(d.volume) });
+              }
+            } catch { /* skip */ }
+          }
+        }
+
+        // Fetch from OKX
+        if (connectedNames.includes('okx')) {
+          for (const sym of symList) {
+            try {
+              const okxSymbol = sym.replace('USDT', '-USDT');
+              const resp = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${okxSymbol}`);
+              if (resp.ok) {
+                const d = await resp.json();
+                if (d.code === '0' && d.data?.[0]) {
+                  const t = d.data[0];
+                  const change = ((parseFloat(t.last) - parseFloat(t.open24h)) / parseFloat(t.open24h)) * 100;
+                  tickers.push({ symbol: sym, exchange: 'okx', lastPrice: parseFloat(t.last), priceChange24h: change, volume24h: parseFloat(t.vol24h) });
+                }
+              }
+            } catch { /* skip */ }
+          }
+        }
+
+        // Fetch from Bybit
+        if (connectedNames.includes('bybit')) {
+          for (const sym of symList) {
+            try {
+              const resp = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${sym}`);
+              if (resp.ok) {
+                const d = await resp.json();
+                if (d.retCode === 0 && d.result?.list?.[0]) {
+                  const t = d.result.list[0];
+                  tickers.push({ symbol: sym, exchange: 'bybit', lastPrice: parseFloat(t.lastPrice), priceChange24h: parseFloat(t.price24hPcnt) * 100, volume24h: parseFloat(t.volume24h) });
+                }
+              }
+            } catch { /* skip */ }
+          }
         }
 
         return new Response(JSON.stringify({ success: true, tickers }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
