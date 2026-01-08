@@ -49,6 +49,9 @@ interface AppState {
   // Connection status
   connectionStatus: 'connected' | 'disconnected' | 'error';
   
+  // Internal flag for initial load
+  _hasInitialized: boolean;
+  
   // COMPUTED SELECTORS (single source of truth calculations)
   getTotalEquity: () => number;
   getTotalPnL24h: () => number;
@@ -84,6 +87,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isLoading: true,
   paperTradingMode: false,
   connectionStatus: 'connected',
+  _hasInitialized: false,
   
   // COMPUTED SELECTORS
   getTotalEquity: () => {
@@ -193,8 +197,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   
   syncFromDatabase: async () => {
+    const { _hasInitialized } = get();
+    
     try {
-      set({ isLoading: true, connectionStatus: 'connected' });
+      // Only show loading state on INITIAL load - prevents flickering on updates
+      if (!_hasInitialized) {
+        set({ isLoading: true });
+      }
+      set({ connectionStatus: 'connected' });
       
       // Fetch exchange balances
       const { data: exchanges } = await supabase
@@ -283,80 +293,45 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ dailyPnl: snapshot.daily_pnl || 0, weeklyPnl: snapshot.weekly_pnl || 0 });
       }
       
-      set({ isLoading: false, lastUpdate: Date.now() });
+      set({ isLoading: false, lastUpdate: Date.now(), _hasInitialized: true });
     } catch (error) {
       console.error('[useAppStore] Sync error:', error);
-      set({ isLoading: false, connectionStatus: 'error' });
+      set({ isLoading: false, connectionStatus: 'error', _hasInitialized: true });
     }
   }
 }));
 
-// Auto-polling with background tab handling
-let pollInterval: ReturnType<typeof setInterval> | null = null;
+// Debounce timer for realtime updates
+let realtimeDebounceTimer: NodeJS.Timeout | null = null;
+const REALTIME_DEBOUNCE_MS = 500;
 
-const startPolling = () => {
-  if (pollInterval) return;
-  pollInterval = setInterval(() => {
-    if (document.visibilityState === 'visible') {
-      useAppStore.getState().syncFromDatabase();
-    }
-  }, 5000);
-};
-
-const stopPolling = () => {
-  if (pollInterval) {
-    clearInterval(pollInterval);
-    pollInterval = null;
+// Debounced sync to prevent flickering from rapid updates
+const debouncedSync = () => {
+  if (realtimeDebounceTimer) {
+    clearTimeout(realtimeDebounceTimer);
   }
+  realtimeDebounceTimer = setTimeout(() => {
+    useAppStore.getState().syncFromDatabase();
+  }, REALTIME_DEBOUNCE_MS);
 };
 
 // Initialize store and set up realtime subscriptions
 export function initializeAppStore() {
   const store = useAppStore.getState();
+  
+  // Initial sync
   store.syncFromDatabase();
   
-  // Start polling
-  if (typeof window !== 'undefined') {
-    startPolling();
-    
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        startPolling();
-        store.syncFromDatabase();
-      } else {
-        stopPolling();
-      }
-    });
-  }
-  
-  // Subscribe to realtime updates
+  // Subscribe to realtime updates with debouncing - single channel for all tables
   const channel = supabase
     .channel('app-store-sync')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, () => {
-      console.log('[useAppStore] exchange_connections changed, syncing...');
-      store.syncFromDatabase();
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_pulse' }, () => {
-      store.syncFromDatabase();
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, () => {
-      store.syncFromDatabase();
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_snapshots' }, () => {
-      store.syncFromDatabase();
-    })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'balance_history' }, () => {
-      console.log('[useAppStore] balance_history INSERT, syncing...');
-      store.syncFromDatabase();
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-      console.log('[useAppStore] orders changed, syncing...');
-      store.syncFromDatabase();
-    })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, () => {
-      console.log('[useAppStore] positions changed, syncing...');
-      store.syncFromDatabase();
-    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_pulse' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_snapshots' }, debouncedSync)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'balance_history' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, debouncedSync)
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         console.log('[useAppStore] Realtime subscribed');
@@ -368,7 +343,9 @@ export function initializeAppStore() {
     });
   
   return () => {
-    stopPolling();
+    if (realtimeDebounceTimer) {
+      clearTimeout(realtimeDebounceTimer);
+    }
     supabase.removeChannel(channel);
   };
 }
