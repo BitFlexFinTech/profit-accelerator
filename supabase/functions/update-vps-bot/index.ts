@@ -6,13 +6,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// The health.js code that includes /ping-exchanges endpoint
+// The latest health.js code with /ping-exchanges and /update-bot endpoints
 const HEALTH_JS_CODE = `const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const os = require('os');
+const fs = require('fs');
 
 const startTime = Date.now();
+const BOT_VERSION = '1.2.0';
 
 const getMetrics = () => ({
   status: 'ok',
@@ -27,7 +29,7 @@ const getMetrics = () => ({
   cpu: os.loadavg(),
   hostname: os.hostname(),
   platform: os.platform(),
-  version: '1.1.0'
+  version: BOT_VERSION
 });
 
 const signBinance = (query, secret) => {
@@ -241,7 +243,67 @@ const server = http.createServer(async (req, res) => {
     }));
 
     res.writeHead(200);
-    res.end(JSON.stringify({ success: true, source: 'vps', pings: results }));
+    res.end(JSON.stringify({ success: true, source: 'vps', version: BOT_VERSION, pings: results }));
+  } else if (req.url === '/update-bot' && req.method === 'POST') {
+    // Self-update endpoint - accepts new health.js code via HTTP POST
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { code, secret } = JSON.parse(body);
+        
+        // Validate update secret
+        const updateSecret = process.env.BOT_UPDATE_SECRET || 'hft-update-2024';
+        if (secret !== updateSecret) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, error: 'Invalid update secret' }));
+          return;
+        }
+        
+        if (!code || typeof code !== 'string') {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Missing or invalid code' }));
+          return;
+        }
+        
+        // Write new code to temp file first
+        const tempPath = '/app/health.js.new';
+        const mainPath = '/app/health.js';
+        
+        console.log('[HFT] Writing new code to temp file...');
+        fs.writeFileSync(tempPath, code);
+        
+        // Basic syntax validation - try to parse as JS
+        try {
+          new Function(code);
+        } catch (syntaxErr) {
+          fs.unlinkSync(tempPath);
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Syntax error: ' + syntaxErr.message }));
+          return;
+        }
+        
+        // Replace current health.js with new code
+        console.log('[HFT] Replacing health.js...');
+        fs.renameSync(tempPath, mainPath);
+        
+        res.writeHead(200);
+        res.end(JSON.stringify({ 
+          success: true, 
+          message: 'Bot code updated, container will restart',
+          version: BOT_VERSION
+        }));
+        
+        // Exit process - Docker will auto-restart with new code
+        console.log('[HFT] Exiting for restart with new code...');
+        setTimeout(() => process.exit(0), 200);
+        
+      } catch (err) {
+        console.error('[HFT] Update error:', err);
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: String(err) }));
+      }
+    });
   } else {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not found' }));
@@ -249,7 +311,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(8080, '0.0.0.0', () => {
-  console.log('[HFT] Health check + Balance proxy running on port 8080');
+  console.log('[HFT] Health check + Balance proxy running on port 8080 (v' + BOT_VERSION + ')');
 });
 
 process.on('SIGTERM', () => {
@@ -257,6 +319,9 @@ process.on('SIGTERM', () => {
   server.close();
   process.exit(0);
 });`;
+
+// Update secret for VPS bot updates
+const UPDATE_SECRET = 'hft-update-2024';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -268,16 +333,6 @@ serve(async (req) => {
       'https://iibdlazwkossyelyroap.supabase.co',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     );
-
-    // Get SSH private key from Supabase secret
-    const sshPrivateKey = Deno.env.get('VULTR_SSH_PRIVATE_KEY');
-    
-    if (!sshPrivateKey) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'VULTR_SSH_PRIVATE_KEY secret not configured'
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
 
     // Get VPS config
     const { data: vpsConfig } = await supabase
@@ -294,61 +349,108 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    console.log(`[update-vps-bot] Updating bot on ${vpsConfig.outbound_ip}`);
+    const vpsIp = vpsConfig.outbound_ip;
+    console.log(`[update-vps-bot] Updating bot on ${vpsIp} via HTTP`);
 
-    // Use ssh-command to update the health.js file
-    const updateCommand = `cat > /opt/hft-bot/app/health.js << 'HEALTHEOF'
-${HEALTH_JS_CODE}
-HEALTHEOF
-
-# Restart the container
-cd /opt/hft-bot && docker-compose restart hft-bot 2>/dev/null || docker compose restart hft-bot
-
-# Wait for container to be ready
-sleep 3
-
-# Test the endpoint
-curl -s http://localhost:8080/health | head -c 100`;
-
-    const { data: sshResult, error: sshError } = await supabase.functions.invoke('ssh-command', {
-      body: {
-        ipAddress: vpsConfig.outbound_ip,
-        privateKey: sshPrivateKey,
-        username: 'root',
-        command: updateCommand
-      }
-    });
-
-    if (sshError) {
-      throw new Error(`SSH failed: ${sshError.message}`);
-    }
-
-    console.log(`[update-vps-bot] Update result:`, sshResult);
-
-    // Test the ping endpoint
+    // First, check if VPS is reachable and has the /update-bot endpoint
+    let hasUpdateEndpoint = false;
+    let currentVersion = 'unknown';
+    
     try {
-      const testResponse = await fetch(`http://${vpsConfig.outbound_ip}:8080/ping-exchanges`, {
-        method: 'GET'
+      const healthCheck = await fetch(`http://${vpsIp}:8080/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000)
       });
       
-      if (testResponse.ok) {
-        const testData = await testResponse.json();
+      if (healthCheck.ok) {
+        const healthData = await healthCheck.json();
+        currentVersion = healthData.version || 'unknown';
+        console.log(`[update-vps-bot] VPS is reachable, current version: ${currentVersion}`);
+        
+        // Try calling update endpoint to see if it exists
+        try {
+          const updateCheck = await fetch(`http://${vpsIp}:8080/update-bot`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: '', secret: 'invalid' }), // Will fail auth but confirm endpoint exists
+            signal: AbortSignal.timeout(5000)
+          });
+          // 400 or 403 means endpoint exists, 404 means it doesn't
+          hasUpdateEndpoint = updateCheck.status !== 404;
+        } catch {
+          hasUpdateEndpoint = false;
+        }
+      }
+    } catch (err) {
+      console.log(`[update-vps-bot] VPS health check failed: ${err}`);
+      return new Response(JSON.stringify({
+        success: false,
+        error: `VPS unreachable at ${vpsIp}:8080. Please run the install script manually: ssh root@${vpsIp} "curl -fsSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | bash"`
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // If VPS doesn't have /update-bot endpoint, user needs to run install script
+    if (!hasUpdateEndpoint) {
+      console.log(`[update-vps-bot] VPS lacks /update-bot endpoint, manual update required`);
+      return new Response(JSON.stringify({
+        success: false,
+        needs_manual_update: true,
+        current_version: currentVersion,
+        error: `VPS bot (v${currentVersion}) doesn't have remote update capability. Please run:\n\nssh root@${vpsIp} "curl -fsSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | bash"`
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // VPS has /update-bot endpoint - push new code via HTTP
+    console.log(`[update-vps-bot] Pushing new code to VPS via HTTP POST...`);
+    
+    const updateResponse = await fetch(`http://${vpsIp}:8080/update-bot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: HEALTH_JS_CODE,
+        secret: UPDATE_SECRET
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+
+    const updateResult = await updateResponse.json();
+    
+    if (!updateResponse.ok || !updateResult.success) {
+      throw new Error(updateResult.error || `Update failed with status ${updateResponse.status}`);
+    }
+
+    console.log(`[update-vps-bot] Update successful, waiting for restart...`);
+
+    // Wait for container to restart
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Verify the update by calling /ping-exchanges
+    try {
+      const verifyResponse = await fetch(`http://${vpsIp}:8080/ping-exchanges`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (verifyResponse.ok) {
+        const verifyData = await verifyResponse.json();
         return new Response(JSON.stringify({
           success: true,
-          message: 'VPS bot updated successfully',
-          vps_ip: vpsConfig.outbound_ip,
-          ping_test: testData
+          message: 'VPS bot updated and verified',
+          vps_ip: vpsIp,
+          previous_version: currentVersion,
+          new_version: verifyData.version || '1.2.0',
+          ping_test: verifyData
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-    } catch (testErr) {
-      console.log(`[update-vps-bot] Ping test failed, but update may still be in progress`);
+    } catch (verifyErr) {
+      console.log(`[update-vps-bot] Verification failed, but update may still be pending: ${verifyErr}`);
     }
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'VPS bot update initiated',
-      vps_ip: vpsConfig.outbound_ip,
-      ssh_output: sshResult?.output || 'Update command executed'
+      message: 'VPS bot update initiated, container restarting',
+      vps_ip: vpsIp,
+      previous_version: currentVersion
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {
