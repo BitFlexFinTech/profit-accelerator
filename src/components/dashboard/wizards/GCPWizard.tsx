@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,6 +26,32 @@ export function GCPWizard({ open, onOpenChange }: GCPWizardProps) {
   const [copied, setCopied] = useState(false);
 
   const installCommand = `curl -sSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash`;
+
+  // Load credentials from database when wizard opens
+  const loadCredentialsFromDB = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('cloud_credentials')
+        .select('field_name, encrypted_value')
+        .eq('provider', 'gcp');
+      
+      if (data) {
+        data.forEach(row => {
+          if (row.field_name === 'service_account_json' && row.encrypted_value) {
+            setServiceAccountJson(row.encrypted_value);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('[GCPWizard] Error loading credentials:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      loadCredentialsFromDB();
+    }
+  }, [open, loadCredentialsFromDB]);
 
   const handleReset = () => {
     setStep('credentials');

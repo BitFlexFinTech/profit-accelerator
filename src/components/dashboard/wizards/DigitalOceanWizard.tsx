@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,32 @@ export function DigitalOceanWizard({ open, onOpenChange }: DigitalOceanWizardPro
   const [copied, setCopied] = useState(false);
 
   const installCommand = `curl -sSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash`;
+
+  // Load credentials from database when wizard opens
+  const loadCredentialsFromDB = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('cloud_credentials')
+        .select('field_name, encrypted_value')
+        .eq('provider', 'digitalocean');
+      
+      if (data) {
+        data.forEach(row => {
+          if (row.field_name === 'personal_access_token' && row.encrypted_value) {
+            setApiToken(row.encrypted_value);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('[DigitalOceanWizard] Error loading credentials:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      loadCredentialsFromDB();
+    }
+  }, [open, loadCredentialsFromDB]);
 
   const handleReset = () => {
     setStep('credentials');

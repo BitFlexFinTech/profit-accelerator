@@ -6,9 +6,8 @@ import { TradeActivityTerminal } from '../panels/TradeActivityTerminal';
 import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
 import { MarketWatchPanel } from '../panels/MarketWatchPanel';
 import { CloudStatusPanel } from '../panels/CloudStatusPanel';
-import { ExchangePulsePanel } from '../panels/ExchangePulsePanel';
-import { RateLimitMonitorPanel } from '../panels/RateLimitMonitorPanel';
-import { SentimentPanel } from '../panels/SentimentPanel';
+import { ExchangeInfoPanel } from '../panels/ExchangeInfoPanel';
+import { ScrollingPriceTicker } from '../panels/ScrollingPriceTicker';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
@@ -25,7 +24,10 @@ export function LiveDashboard() {
   }, [sync, startPolling, stopPolling]);
 
   return (
-    <div className="h-[calc(100vh-80px)] flex flex-col gap-2 p-2 overflow-hidden">
+    <div className="h-[calc(100vh-80px)] flex flex-col gap-1.5 p-2 overflow-hidden">
+      {/* Scrolling Price Ticker - Very Top */}
+      <ScrollingPriceTicker />
+      
       {/* Top Control Bar - Merged Bot Status + Quick Actions */}
       <UnifiedControlBar />
       
@@ -34,35 +36,29 @@ export function LiveDashboard() {
       
       {/* Main 3-Column Grid - No Scroll */}
       <div className="flex-1 grid grid-cols-[30%_40%_30%] gap-2 min-h-0">
-        {/* LEFT Column - Trade Activity Terminal (SWAPPED - Full Height) */}
-        <div className="min-h-0">
-          <TradeActivityTerminal expanded />
-        </div>
-        
-        {/* CENTER Column - AI Market Analysis (SWAPPED - Full Height) */}
+        {/* LEFT Column - AI Market Analysis (Full Height) */}
         <div className="min-h-0">
           <AIMarketUpdatesPanel fullHeight />
         </div>
         
+        {/* CENTER Column - Live Trade Activity Terminal (Full Height) */}
+        <div className="min-h-0">
+          <TradeActivityTerminal expanded />
+        </div>
+        
         {/* RIGHT Column - Stacked Compact Panels */}
-        <div className="flex flex-col gap-1.5 min-h-0">
-          <div className="h-[120px] flex-shrink-0">
+        <div className="flex flex-col gap-1 min-h-0">
+          <div className="h-[100px] flex-shrink-0">
             <EquityChartPanel compact />
           </div>
-          <div className="h-[100px] flex-shrink-0">
-            <MarketWatchPanel compact limit={2} />
+          <div className="h-[180px] flex-shrink-0">
+            <MarketWatchPanel compact={false} limit={3} />
           </div>
-          <div className="h-[80px] flex-shrink-0">
-            <CloudStatusPanel compact />
-          </div>
-          <div className="h-[75px] flex-shrink-0">
-            <ExchangePulsePanel compact />
-          </div>
-          <div className="h-[70px] flex-shrink-0">
-            <RateLimitMonitorPanel compact />
+          <div className="h-[120px] flex-shrink-0">
+            <ExchangeInfoPanel />
           </div>
           <div className="flex-1 min-h-0">
-            <SentimentPanel compact />
+            <CloudStatusPanel compact />
           </div>
         </div>
       </div>

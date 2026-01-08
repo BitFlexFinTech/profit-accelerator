@@ -26,7 +26,7 @@ const DEFAULT_PRICES: MarketPrices = {
   SOL: { price: 0, change24h: 0 }
 };
 
-export function useMarketPrices(refreshInterval = 5000): UseMarketPricesReturn {
+export function useMarketPrices(refreshInterval = 2000): UseMarketPricesReturn {
   const [prices, setPrices] = useState<MarketPrices | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
