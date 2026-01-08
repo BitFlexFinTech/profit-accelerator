@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef } from 'react';
 import { Activity, Cpu, HardDrive, Wifi, Server, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -38,7 +38,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   azure: 'Azure',
 };
 
-export function VPSHealthMonitor() {
+export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
   const [healthData, setHealthData] = useState<VpsHealthData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -148,7 +148,7 @@ export function VPSHealthMonitor() {
   const healthyCount = healthData.filter(h => h.status === 'healthy').length;
 
   return (
-    <div className="glass-card overflow-hidden">
+    <div ref={ref} className="glass-card overflow-hidden">
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-primary" />
@@ -265,4 +265,6 @@ export function VPSHealthMonitor() {
       </div>
     </div>
   );
-}
+});
+
+VPSHealthMonitor.displayName = 'VPSHealthMonitor';

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef } from 'react';
 import { Activity, CheckCircle2, XCircle, RefreshCw, Server, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,7 @@ interface ExchangePulsePanelProps {
   compact?: boolean;
 }
 
-export function ExchangePulsePanel({ compact = false }: ExchangePulsePanelProps) {
+export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelProps>(({ compact = false }, ref) => {
   const [pulses, setPulses] = useState<ExchangePulse[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -112,7 +112,7 @@ export function ExchangePulsePanel({ compact = false }: ExchangePulsePanelProps)
   const isVPS = pulses.some(p => p.source === 'vps');
 
   return (
-    <div className={`glass-card ${compact ? 'p-2' : 'p-4'} h-full flex flex-col`}>
+    <div ref={ref} className={`glass-card ${compact ? 'p-2' : 'p-4'} h-full flex flex-col`}>
       <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <Activity className={`${compact ? 'w-3 h-3' : 'w-4 h-4'} text-primary animate-pulse`} />
@@ -162,4 +162,6 @@ export function ExchangePulsePanel({ compact = false }: ExchangePulsePanelProps)
       </div>
     </div>
   );
-}
+});
+
+ExchangePulsePanel.displayName = 'ExchangePulsePanel';
