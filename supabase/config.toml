@@ -162,3 +162,6 @@ verify_jwt = false
 
 [functions.equity-snapshot]
 verify_jwt = false
+
+[functions.poll-balances]
+verify_jwt = false

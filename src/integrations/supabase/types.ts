@@ -1528,6 +1528,60 @@ export type Database = {
         }
         Relationships: []
       }
+      user_settings: {
+        Row: {
+          auto_refresh_interval: number | null
+          compact_mode: boolean | null
+          created_at: string | null
+          daily_report_enabled: boolean | null
+          default_currency: string | null
+          email_alerts: boolean | null
+          id: string
+          language: string | null
+          notifications_enabled: boolean | null
+          sound_alerts: boolean | null
+          telegram_alerts: boolean | null
+          theme: string | null
+          timezone: string | null
+          updated_at: string | null
+          weekly_report_enabled: boolean | null
+        }
+        Insert: {
+          auto_refresh_interval?: number | null
+          compact_mode?: boolean | null
+          created_at?: string | null
+          daily_report_enabled?: boolean | null
+          default_currency?: string | null
+          email_alerts?: boolean | null
+          id?: string
+          language?: string | null
+          notifications_enabled?: boolean | null
+          sound_alerts?: boolean | null
+          telegram_alerts?: boolean | null
+          theme?: string | null
+          timezone?: string | null
+          updated_at?: string | null
+          weekly_report_enabled?: boolean | null
+        }
+        Update: {
+          auto_refresh_interval?: number | null
+          compact_mode?: boolean | null
+          created_at?: string | null
+          daily_report_enabled?: boolean | null
+          default_currency?: string | null
+          email_alerts?: boolean | null
+          id?: string
+          language?: string | null
+          notifications_enabled?: boolean | null
+          sound_alerts?: boolean | null
+          telegram_alerts?: boolean | null
+          theme?: string | null
+          timezone?: string | null
+          updated_at?: string | null
+          weekly_report_enabled?: boolean | null
+        }
+        Relationships: []
+      }
       vault_audit_log: {
         Row: {
           action: string

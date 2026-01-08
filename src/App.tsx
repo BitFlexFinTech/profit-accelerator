@@ -9,6 +9,7 @@ import Setup from "./pages/Setup";
 import VPSDashboard from "./pages/VPSDashboard";
 import CloudCredentials from "./pages/CloudCredentials";
 import VPSSetup from "./pages/VPSSetup";
+import UserSettings from "./pages/UserSettings";
 import NotFound from "./pages/NotFound";
 import { initializeAppStore } from "@/store/useAppStore";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
@@ -29,6 +30,7 @@ function AppContent() {
         <Route path="/vps-dashboard" element={<VPSDashboard />} />
         <Route path="/cloud-credentials" element={<CloudCredentials />} />
         <Route path="/vps-setup" element={<VPSSetup />} />
+        <Route path="/settings" element={<UserSettings />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
