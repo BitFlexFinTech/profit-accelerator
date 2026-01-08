@@ -17,6 +17,8 @@ interface RiskMetrics {
   };
   dailyLossPercent: number;
   drawdownPercent: number;
+  maxOpenPosition: number;
+  maxPositionPercent: number;
 }
 
 export function RiskDashboardPanel() {
@@ -87,9 +89,9 @@ export function RiskDashboardPanel() {
     {
       label: 'Max Position',
       icon: DollarSign,
-      current: 0, // Would need to track current largest position
+      current: metrics.maxOpenPosition,
       limit: metrics.limits.maxPositionSize,
-      percent: 0,
+      percent: metrics.maxPositionPercent,
       format: (v: number) => `$${v.toFixed(0)}`
     }
   ];

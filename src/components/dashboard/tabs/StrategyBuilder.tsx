@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { StrategyWizard } from '../wizards/StrategyWizard';
 
 interface Strategy {
   id: string;
@@ -32,6 +33,7 @@ export function StrategyBuilder() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [isSavingMode, setIsSavingMode] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -230,11 +232,20 @@ export function StrategyBuilder() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <h2 className="text-2xl font-bold">Strategy Builder</h2>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setShowWizard(true)}>
           <Plus className="w-4 h-4" />
           New Strategy
         </Button>
       </div>
+
+      {/* Strategy Wizard Dialog */}
+      <StrategyWizard 
+        open={showWizard} 
+        onOpenChange={setShowWizard}
+        onCreated={() => {
+          // Refetch strategies - the realtime subscription will handle it
+        }}
+      />
 
       {/* Trading Mode & Leverage Controls */}
       <div className="glass-card p-4">

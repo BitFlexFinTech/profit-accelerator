@@ -127,8 +127,10 @@ export function PositionsPanel() {
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         ) : positions.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">
-            No open positions
+          <div className="text-center py-8 text-muted-foreground">
+            <TrendingUp className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            <p className="text-sm">No open positions</p>
+            <p className="text-xs mt-1">Your active trades will appear here</p>
           </div>
         ) : (
           <Table>
