@@ -267,8 +267,8 @@ log_info "Creating directory structure..."
 mkdir -p /opt/hft-bot/{app,logs,config,data,strategies}
 cd /opt/hft-bot
 
-# Create docker-compose.yml with both health.js and strategy.js
-log_info "Creating Docker configuration..."
+# Create docker-compose.yml with SUPERVISOR for reliable multi-process management
+log_info "Creating Docker configuration with supervisor..."
 cat > docker-compose.yml << 'COMPOSE_EOF'
 version: '3.8'
 services:
@@ -294,7 +294,7 @@ services:
       - PROFIT_TARGET_LEVERAGE=3
     restart: always
     network_mode: host
-    command: ["sh", "-c", "node health.js & node strategy.js"]
+    command: ["node", "supervisor.js"]
     
   redis:
     image: redis:alpine
@@ -317,7 +317,126 @@ STRATEGY_ENABLED=false
 TRADE_MODE=SPOT
 ENVEOF
 
-# Create health check server with balance proxy
+# =============================================================================
+# CREATE SUPERVISOR.JS - Reliable multi-process manager with auto-restart
+# =============================================================================
+log_info "Creating process supervisor..."
+cat > app/supervisor.js << 'SUPERVISOR_EOF'
+const { spawn } = require('child_process');
+const fs = require('fs');
+
+console.log('[SUPERVISOR] 🐟 Starting Profit Piranha bot supervisor v2.1...');
+console.log('[SUPERVISOR] Time:', new Date().toISOString());
+
+let healthProcess = null;
+let strategyProcess = null;
+let healthRestarts = 0;
+let strategyRestarts = 0;
+
+const MAX_RESTARTS = 50;
+const RESTART_DELAY = 2000;
+
+const startHealth = () => {
+  if (healthRestarts >= MAX_RESTARTS) {
+    console.error('[SUPERVISOR] ❌ health.js exceeded max restarts (' + MAX_RESTARTS + '). Stopping.');
+    return;
+  }
+  
+  console.log('[SUPERVISOR] Starting health.js (attempt ' + (healthRestarts + 1) + ')...');
+  
+  healthProcess = spawn('node', ['health.js'], {
+    cwd: '/app',
+    stdio: 'inherit',
+    env: process.env
+  });
+  
+  healthProcess.on('exit', (code, signal) => {
+    healthRestarts++;
+    console.error('[SUPERVISOR] ❌ health.js exited | code=' + code + ' signal=' + signal + ' | restarts=' + healthRestarts);
+    
+    if (healthRestarts < MAX_RESTARTS) {
+      console.log('[SUPERVISOR] Restarting health.js in ' + (RESTART_DELAY/1000) + 's...');
+      setTimeout(startHealth, RESTART_DELAY);
+    }
+  });
+  
+  healthProcess.on('error', (err) => {
+    healthRestarts++;
+    console.error('[SUPERVISOR] ❌ health.js spawn error:', err.message);
+    setTimeout(startHealth, RESTART_DELAY);
+  });
+};
+
+const startStrategy = () => {
+  if (strategyRestarts >= MAX_RESTARTS) {
+    console.error('[SUPERVISOR] ❌ strategy.js exceeded max restarts (' + MAX_RESTARTS + '). Stopping.');
+    return;
+  }
+  
+  console.log('[SUPERVISOR] Starting strategy.js (attempt ' + (strategyRestarts + 1) + ')...');
+  
+  strategyProcess = spawn('node', ['strategy.js'], {
+    cwd: '/app',
+    stdio: 'inherit',
+    env: process.env
+  });
+  
+  strategyProcess.on('exit', (code, signal) => {
+    strategyRestarts++;
+    console.error('[SUPERVISOR] ❌ strategy.js exited | code=' + code + ' signal=' + signal + ' | restarts=' + strategyRestarts);
+    
+    if (strategyRestarts < MAX_RESTARTS) {
+      console.log('[SUPERVISOR] Restarting strategy.js in ' + (RESTART_DELAY/1000) + 's...');
+      setTimeout(startStrategy, RESTART_DELAY);
+    }
+  });
+  
+  strategyProcess.on('error', (err) => {
+    strategyRestarts++;
+    console.error('[SUPERVISOR] ❌ strategy.js spawn error:', err.message);
+    setTimeout(startStrategy, RESTART_DELAY);
+  });
+};
+
+// Start both processes
+startHealth();
+setTimeout(startStrategy, 500); // Slight delay to let health start first
+
+// Graceful shutdown handlers
+const shutdown = (signal) => {
+  console.log('[SUPERVISOR] Received ' + signal + ', shutting down gracefully...');
+  
+  if (healthProcess) {
+    healthProcess.kill('SIGTERM');
+  }
+  if (strategyProcess) {
+    strategyProcess.kill('SIGTERM');
+  }
+  
+  setTimeout(() => {
+    console.log('[SUPERVISOR] Shutdown complete.');
+    process.exit(0);
+  }, 1000);
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Keep supervisor alive
+setInterval(() => {
+  const healthAlive = healthProcess && !healthProcess.killed;
+  const strategyAlive = strategyProcess && !strategyProcess.killed;
+  console.log('[SUPERVISOR] Status: health=' + (healthAlive ? 'running' : 'stopped') + 
+              ' strategy=' + (strategyAlive ? 'running' : 'stopped') + 
+              ' | restarts: health=' + healthRestarts + ' strategy=' + strategyRestarts);
+}, 60000);
+
+console.log('[SUPERVISOR] ✅ Supervisor initialized. Monitoring health.js and strategy.js...');
+SUPERVISOR_EOF
+
+# =============================================================================
+# CREATE HEALTH.JS - Health endpoint with enhanced error logging
+# =============================================================================
 log_info "Creating health check endpoint with balance proxy..."
 cat > app/health.js << 'HEALTH_EOF'
 const http = require('http');
@@ -884,15 +1003,39 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Enhanced error handling for server
+server.on('error', (err) => {
+  console.error('[🐟 PIRANHA] ❌ Server error:', err.code, err.message);
+  if (err.code === 'EADDRINUSE') {
+    console.error('[🐟 PIRANHA] ❌ Port 8080 already in use! Exiting for supervisor restart...');
+  }
+  process.exit(1);
+});
+
 server.listen(8080, '0.0.0.0', () => {
-  console.log('[🐟 PIRANHA] Health check + Balance proxy running on port 8080');
+  console.log('[🐟 PIRANHA] ✅ Health endpoint listening on 0.0.0.0:8080');
+  console.log('[🐟 PIRANHA] ✅ Balance proxy ready');
+  console.log('[🐟 PIRANHA] ✅ Control endpoint ready');
 });
 
 process.on('SIGTERM', () => {
-  console.log('[🐟 PIRANHA] Shutting down...');
-  server.close();
-  process.exit(0);
+  console.log('[🐟 PIRANHA] Received SIGTERM, shutting down gracefully...');
+  server.close(() => {
+    console.log('[🐟 PIRANHA] Server closed.');
+    process.exit(0);
+  });
 });
+
+process.on('uncaughtException', (err) => {
+  console.error('[🐟 PIRANHA] ❌ Uncaught exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[🐟 PIRANHA] ❌ Unhandled rejection at:', promise, 'reason:', reason);
+});
+
+console.log('[🐟 PIRANHA] Health.js initialized, starting server...');
 HEALTH_EOF
 
 # Create Profit Piranha Strategy Runner
