@@ -11,9 +11,11 @@ import {
   Menu,
   X,
   Zap,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Bell
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { LiveDashboard } from './tabs/LiveDashboard';
 import { PortfolioAnalytics } from './tabs/PortfolioAnalytics';
@@ -22,10 +24,12 @@ import { Backtesting } from './tabs/Backtesting';
 import { Leaderboard } from './tabs/Leaderboard';
 import { SettingsTab } from './tabs/SettingsTab';
 import { TradingTab } from './tabs/TradingTab';
+import { NotificationCenter } from './NotificationCenter';
 import { KillSwitchDialog } from './KillSwitchDialog';
 import { SystemHealthBar } from './SystemHealthBar';
 import { NotificationDropdown } from './NotificationDropdown';
 import { initializeAppStore } from '@/store/useAppStore';
+import { supabase } from '@/integrations/supabase/client';
 
 const tabs = [
   { id: 'dashboard', label: 'Live Dashboard', icon: LayoutDashboard },
@@ -34,6 +38,7 @@ const tabs = [
   { id: 'strategy', label: 'Strategy', icon: Blocks },
   { id: 'backtest', label: 'Backtesting', icon: FlaskConical },
   { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'settings', label: 'Settings', icon: Settings },
 ] as const;
 
@@ -44,11 +49,38 @@ export function DashboardLayout() {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [showKillSwitch, setShowKillSwitch] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Initialize SSOT store on mount
   useEffect(() => {
     const cleanup = initializeAppStore();
     return cleanup;
+  }, []);
+
+  // Fetch unread notification count
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      const { count } = await supabase
+        .from('system_notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('read', false)
+        .eq('dismissed', false);
+      setUnreadCount(count || 0);
+    };
+
+    fetchUnreadCount();
+
+    // Subscribe to notification changes
+    const channel = supabase
+      .channel('notification-count')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'system_notifications' 
+      }, () => fetchUnreadCount())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const renderTabContent = () => {
@@ -65,6 +97,8 @@ export function DashboardLayout() {
         return <Backtesting />;
       case 'leaderboard':
         return <Leaderboard />;
+      case 'notifications':
+        return <NotificationCenter />;
       case 'settings':
         return <SettingsTab />;
       default:
@@ -112,7 +146,7 @@ export function DashboardLayout() {
               size="sm"
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                'gap-2 transition-all',
+                'gap-2 transition-all relative',
                 activeTab === tab.id
                   ? 'bg-primary/20 text-primary border border-primary/30'
                   : 'text-muted-foreground hover:text-foreground'
@@ -120,6 +154,14 @@ export function DashboardLayout() {
             >
               <tab.icon className="w-4 h-4" />
               <span className="hidden lg:inline">{tab.label}</span>
+              {tab.id === 'notifications' && unreadCount > 0 && (
+                <Badge 
+                  variant="destructive" 
+                  className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Badge>
+              )}
             </Button>
             ))}
           
