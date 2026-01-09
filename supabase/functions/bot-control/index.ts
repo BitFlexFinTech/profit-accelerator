@@ -172,13 +172,85 @@ serve(async (req) => {
       }
     }
 
-    // Execute SSH command based on action
+    // Get trading mode from database
+    const { data: tradingConfig } = await supabase
+      .from('trading_config')
+      .select('trading_mode')
+      .limit(1)
+      .single();
+    
+    const tradingMode = tradingConfig?.trading_mode || 'paper';
+    
+    // ═══════════════════════════════════════════════════════════
+    // STRATEGY 1: Try VPS HTTP /control endpoint first (preferred)
+    // This is faster and doesn't require SSH
+    // ═══════════════════════════════════════════════════════════
+    if (action === 'start' || action === 'stop') {
+      console.log(`[bot-control] Trying VPS /control endpoint at ${ipAddress}:8080...`);
+      
+      try {
+        const controlResponse = await fetch(`http://${ipAddress}:8080/control`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            action: action,
+            mode: tradingMode  // 'simulation', 'paper', or 'live'
+          }),
+          signal: AbortSignal.timeout(10000)
+        });
+        
+        if (controlResponse.ok) {
+          const controlResult = await controlResponse.json();
+          console.log(`[bot-control] VPS /control success:`, controlResult);
+          
+          // Update database status
+          const newBotStatus = action === 'start' ? 'running' : 'stopped';
+          const updateTime = new Date().toISOString();
+          
+          await supabase.from('hft_deployments').update({ 
+            bot_status: newBotStatus, updated_at: updateTime 
+          }).eq('id', deployment.id);
+          
+          await supabase.from('vps_instances').update({ 
+            bot_status: newBotStatus, updated_at: updateTime 
+          }).or(`deployment_id.eq.${deployment.server_id},provider_instance_id.eq.${deployment.server_id}`);
+          
+          await supabase.from('trading_config').update({ 
+            bot_status: newBotStatus,
+            trading_enabled: action === 'start',
+            updated_at: updateTime
+          }).neq('id', '00000000-0000-0000-0000-000000000000');
+          
+          return new Response(JSON.stringify({ 
+            success: true, 
+            action,
+            mode: tradingMode,
+            botStatus: newBotStatus,
+            method: 'http_control',
+            result: controlResult,
+            ipAddress
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        } else {
+          console.log(`[bot-control] VPS /control returned ${controlResponse.status}, falling back to SSH`);
+        }
+      } catch (httpErr) {
+        console.log(`[bot-control] VPS /control failed: ${httpErr}, falling back to SSH`);
+      }
+    }
+    
+    // ═══════════════════════════════════════════════════════════
+    // STRATEGY 2: Fall back to SSH commands
+    // ═══════════════════════════════════════════════════════════
+    
+    // Build SSH command based on action
     let command = '';
     let newBotStatus = '';
 
     switch (action) {
       case 'start':
-        command = `mkdir -p /opt/hft-bot/app/data && touch /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
+        // Create START_SIGNAL with trading mode
+        const signalData = JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', mode: tradingMode });
+        command = `mkdir -p /opt/hft-bot/app/data && echo '${signalData}' > /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
         newBotStatus = 'starting';
         break;
       case 'stop':
@@ -186,7 +258,8 @@ serve(async (req) => {
         newBotStatus = 'stopped';
         break;
       case 'restart':
-        command = `echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
+        const restartSignalData = JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', mode: tradingMode });
+        command = `echo '${restartSignalData}' > /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
         newBotStatus = 'starting';
         break;
       case 'status':
