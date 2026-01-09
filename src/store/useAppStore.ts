@@ -494,6 +494,9 @@ export function initializeAppStore() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_market_updates' }, debouncedSync)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'simulation_progress' }, debouncedSync)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'failover_config' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'system_notifications' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_trade_decisions' }, debouncedSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_sessions' }, debouncedSync)
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         console.log('[useAppStore] Realtime subscribed');

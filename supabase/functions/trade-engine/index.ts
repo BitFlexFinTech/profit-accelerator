@@ -556,6 +556,30 @@ serve(async (req) => {
           return new Response(JSON.stringify({ success: false, error: 'Kill switch is active. Disable it from the dashboard to trade.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
+        // Check for VPS availability for IP-whitelisted exchanges
+        const ipRestrictedExchanges = ['okx', 'kucoin', 'gate.io', 'bitget'];
+        const normalizedExchange = exchangeName.toLowerCase();
+        
+        if (ipRestrictedExchanges.includes(normalizedExchange)) {
+          const { data: vpsConfig } = await supabase
+            .from('vps_config')
+            .select('outbound_ip, status')
+            .eq('status', 'running')
+            .not('outbound_ip', 'is', null)
+            .limit(1);
+          
+          if (!vpsConfig?.length) {
+            console.log(`[trade-engine] No VPS available for IP-restricted exchange: ${exchangeName}`);
+            return new Response(JSON.stringify({ 
+              success: false, 
+              error: `${exchangeName} requires VPS with whitelisted IP. Deploy a VPS first and whitelist its IP on the exchange.`,
+              requiresVPS: true
+            }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+          
+          console.log(`[trade-engine] VPS available at ${vpsConfig[0].outbound_ip} for ${exchangeName}`);
+        }
+
         // Get exchange credentials
         const { data: conn, error: connError } = await supabase
           .from('exchange_connections')
@@ -573,7 +597,6 @@ serve(async (req) => {
         let orderId = '';
         let filledPrice = price || 0;
         let orderStatus = 'unknown';
-        const normalizedExchange = exchangeName.toLowerCase();
 
         try {
           if (normalizedExchange === 'binance') {
