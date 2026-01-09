@@ -196,7 +196,7 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         
         console.log('[Trade] Live order executed:', orderData);
       } else if (config.tradingMode === 'paper') {
-        // Log paper trade to trading_journal
+        // Log paper trade to trading_journal with paper_trade flag
         await supabase.from('trading_journal').insert({
           exchange: selectedExchange,
           symbol: selectedSymbol,
@@ -204,7 +204,8 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
           entry_price: entryPriceForCalc,
           quantity: config.amountPerPosition / entryPriceForCalc,
           status: 'open',
-          ai_reasoning: `Paper trade via ${config.strategy} strategy`
+          ai_reasoning: `Paper trade via ${config.strategy} strategy`,
+          paper_trade: true
         });
       }
       

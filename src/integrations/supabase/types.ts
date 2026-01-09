@@ -2029,6 +2029,7 @@ export type Database = {
           execution_latency_ms: number | null
           exit_price: number | null
           id: string
+          paper_trade: boolean | null
           pnl: number | null
           quantity: number
           side: string
@@ -2044,6 +2045,7 @@ export type Database = {
           execution_latency_ms?: number | null
           exit_price?: number | null
           id?: string
+          paper_trade?: boolean | null
           pnl?: number | null
           quantity: number
           side: string
@@ -2059,6 +2061,7 @@ export type Database = {
           execution_latency_ms?: number | null
           exit_price?: number | null
           id?: string
+          paper_trade?: boolean | null
           pnl?: number | null
           quantity?: number
           side?: string
