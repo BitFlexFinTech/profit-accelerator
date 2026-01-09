@@ -111,9 +111,66 @@ Deno.serve(async (req) => {
         );
       }
 
+      case 'deploy-instance': {
+        const token = await getAccessToken();
+        const { region, instanceType, imageId, sshPublicKey } = body;
+        
+        // Get available images
+        const imagesResponse = await fetch(`${CONTABO_API_BASE}/compute/images?standardImage=true`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-request-id': crypto.randomUUID(),
+          },
+        });
+        
+        let osImageId = imageId;
+        if (!osImageId && imagesResponse.ok) {
+          const imagesData = await imagesResponse.json();
+          const ubuntu24 = imagesData.data?.find((img: { name: string }) => 
+            img.name.toLowerCase().includes('ubuntu') && img.name.includes('24')
+          );
+          osImageId = ubuntu24?.imageId || 'afecbb85-e2fc-46f0-9684-b46b1faf00bb'; // Default Ubuntu 24.04
+        }
+        
+        // Create instance
+        const createResponse = await fetch(`${CONTABO_API_BASE}/compute/instances`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-request-id': crypto.randomUUID(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            imageId: osImageId,
+            productId: instanceType || 'V45', // Contabo VPS S SSD (4 vCPU, 8GB RAM)
+            region: region || 'EU',
+            displayName: `hft-bot-${Date.now()}`,
+            sshKeys: sshPublicKey ? [sshPublicKey] : undefined,
+          }),
+        });
+        
+        if (!createResponse.ok) {
+          const errorText = await createResponse.text();
+          throw new Error(`Contabo deployment failed: ${errorText}`);
+        }
+        
+        const instanceData = await createResponse.json();
+        const instance = instanceData.data?.[0];
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true,
+            instanceId: instance?.instanceId?.toString(),
+            publicIp: instance?.ipConfig?.v4?.ip || 'Provisioning...',
+            status: instance?.status || 'provisioning'
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       default:
         return new Response(
-          JSON.stringify({ error: 'Unknown action' }),
+          JSON.stringify({ error: 'Unknown action. Supported: validate-credentials, list-instances, get-instance-status, deploy-instance' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }

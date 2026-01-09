@@ -1848,9 +1848,99 @@ async function closePositionInSupabase(positionId, exitPrice, realizedPnL) {
   });
 }
 
-// Open position based on AI signal - WITH REAL ORDER EXECUTION
+// Check risk limits from trading_config
+async function checkRiskLimits() {
+  return new Promise((resolve) => {
+    const urlParts = new URL(CONFIG.SUPABASE_URL);
+    const options = {
+      hostname: urlParts.hostname,
+      path: '/rest/v1/trading_config?select=global_kill_switch_enabled,max_daily_drawdown_percent,max_position_size&limit=1',
+      method: 'GET',
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    https.get(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const configs = JSON.parse(data);
+          const config = configs?.[0] || {};
+          resolve({
+            killSwitchEnabled: config.global_kill_switch_enabled === true,
+            maxDailyDrawdown: config.max_daily_drawdown_percent || 10,
+            maxPositionSize: config.max_position_size || 500
+          });
+        } catch {
+          resolve({ killSwitchEnabled: false, maxDailyDrawdown: 10, maxPositionSize: 500 });
+        }
+      });
+    }).on('error', () => resolve({ killSwitchEnabled: false, maxDailyDrawdown: 10, maxPositionSize: 500 }));
+  });
+}
+
+// Get today's total PnL for daily loss check
+async function getTodaysPnL() {
+  return new Promise((resolve) => {
+    const today = new Date().toISOString().split('T')[0];
+    const urlParts = new URL(CONFIG.SUPABASE_URL);
+    const options = {
+      hostname: urlParts.hostname,
+      path: '/rest/v1/trading_journal?select=pnl&closed_at=gte.' + today + 'T00:00:00Z',
+      method: 'GET',
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    https.get(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const trades = JSON.parse(data);
+          const totalPnL = trades.reduce((sum, t) => sum + (parseFloat(t.pnl) || 0), 0);
+          resolve(totalPnL);
+        } catch {
+          resolve(0);
+        }
+      });
+    }).on('error', () => resolve(0));
+  });
+}
+
+// Open position based on AI signal - WITH REAL ORDER EXECUTION AND RISK MANAGEMENT
 async function openPosition(signal, credentials) {
   const symbol = signal.symbol.includes('USDT') ? signal.symbol : signal.symbol + 'USDT';
+  
+  // ============== RISK MANAGEMENT CHECKS ==============
+  const riskConfig = await checkRiskLimits();
+  
+  // Check global kill switch
+  if (riskConfig.killSwitchEnabled) {
+    console.log('[🐟 PIRANHA] ⛔ KILL SWITCH ENABLED - All trading suspended');
+    return null;
+  }
+  
+  // Check daily drawdown limit
+  const todaysPnL = await getTodaysPnL();
+  if (todaysPnL < 0) {
+    const currentBalance = 1000; // TODO: Get actual balance
+    const drawdownPercent = Math.abs(todaysPnL) / currentBalance * 100;
+    if (drawdownPercent >= riskConfig.maxDailyDrawdown) {
+      console.log('[🐟 PIRANHA] ⛔ DAILY DRAWDOWN LIMIT HIT: ' + drawdownPercent.toFixed(1) + '% >= ' + riskConfig.maxDailyDrawdown + '%');
+      console.log('[🐟 PIRANHA]   Today\\'s PnL: $' + todaysPnL.toFixed(2));
+      return null;
+    }
+  }
+  
+  // ============== ORIGINAL LOGIC CONTINUES ==============
   
   // SPOT MODE: Skip short signals (user configured spot-only)
   if (signal.recommended_side === 'short') {

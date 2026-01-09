@@ -397,19 +397,128 @@ serve(async (req) => {
           throw new Error('Contabo credentials not configured');
         }
 
-        console.log('[provision-vps] Contabo requires OAuth2 API - credentials stored for manual setup');
+        console.log('[provision-vps] Invoking contabo-cloud function for OAuth2 deployment');
         
-        // Contabo uses OAuth2 - store credentials and mark for manual setup
+        // Call the contabo-cloud function with OAuth2 authentication
+        const { data: contaboData, error: contaboError } = await supabase.functions.invoke('contabo-cloud', {
+          body: {
+            action: 'deploy-instance',
+            clientId,
+            clientSecret,
+            region: optimalRegion === 'EU' ? 'EU' : 'US-central',
+            instanceType: credentials.instanceType || 'V45'
+          }
+        });
+
+        if (contaboError || !contaboData?.success) {
+          throw new Error(contaboData?.error || contaboError?.message || 'Contabo deployment failed');
+        }
+
         result = {
           success: true,
-          instanceId: `contabo-pending-${Date.now()}`,
-          publicIp: 'Manual Setup Required'
+          instanceId: contaboData.instanceId,
+          publicIp: contaboData.publicIp || 'Provisioning...'
+        };
+        break;
+      }
+
+      case 'linode': {
+        const token = credentials.token;
+        
+        if (!token) {
+          throw new Error('Linode API token not configured');
+        }
+
+        console.log('[provision-vps] Invoking linode-cloud function for deployment');
+        
+        // Call the linode-cloud function
+        const { data: linodeData, error: linodeError } = await supabase.functions.invoke('linode-cloud', {
+          body: {
+            action: 'deploy-instance',
+            token,
+            region: optimalRegion === 'ap-northeast-1' ? 'ap-northeast' : 'us-east',
+            instanceType: credentials.instanceType || 'g6-nanode-1'
+          }
+        });
+
+        if (linodeError || !linodeData?.success) {
+          throw new Error(linodeData?.error || linodeError?.message || 'Linode deployment failed');
+        }
+
+        result = {
+          success: true,
+          instanceId: linodeData.instanceId,
+          publicIp: linodeData.publicIp || 'Provisioning...'
+        };
+        break;
+      }
+
+      case 'bitlaunch': {
+        const apiKey = credentials.apiKey;
+        
+        if (!apiKey) {
+          throw new Error('BitLaunch API key not configured');
+        }
+
+        console.log('[provision-vps] Invoking bitlaunch-cloud function for deployment');
+        
+        // Call the bitlaunch-cloud function
+        const { data: bitlaunchData, error: bitlaunchError } = await supabase.functions.invoke('bitlaunch-cloud', {
+          body: {
+            action: 'deploy-instance',
+            apiKey,
+            region: optimalRegion === 'ap-northeast-1' ? 'tokyo' : 'new-york',
+            provider: credentials.provider || 'vultr' // BitLaunch supports multiple underlying providers
+          }
+        });
+
+        if (bitlaunchError || !bitlaunchData?.success) {
+          throw new Error(bitlaunchData?.error || bitlaunchError?.message || 'BitLaunch deployment failed');
+        }
+
+        result = {
+          success: true,
+          instanceId: bitlaunchData.instanceId,
+          publicIp: bitlaunchData.publicIp || 'Provisioning...'
+        };
+        break;
+      }
+
+      case 'cloudways': {
+        const email = credentials.email;
+        const apiKey = credentials.apiKey;
+        
+        if (!email || !apiKey) {
+          throw new Error('Cloudways credentials not configured (email, apiKey required)');
+        }
+
+        console.log('[provision-vps] Invoking cloudways-cloud function for deployment');
+        
+        // Call the cloudways-cloud function
+        const { data: cloudwaysData, error: cloudwaysError } = await supabase.functions.invoke('cloudways-cloud', {
+          body: {
+            action: 'deploy-instance',
+            email,
+            apiKey,
+            region: optimalRegion === 'ap-northeast-1' ? 'tokyo' : 'us-east-1',
+            provider: credentials.provider || 'vultr' // Cloudways supports multiple cloud providers
+          }
+        });
+
+        if (cloudwaysError || !cloudwaysData?.success) {
+          throw new Error(cloudwaysData?.error || cloudwaysError?.message || 'Cloudways deployment failed');
+        }
+
+        result = {
+          success: true,
+          instanceId: cloudwaysData.instanceId,
+          publicIp: cloudwaysData.publicIp || 'Provisioning...'
         };
         break;
       }
 
       default:
-        result = { success: false, error: `Provider ${provider} not yet implemented` };
+        result = { success: false, error: `Provider ${provider} not yet implemented. Supported: vultr, digitalocean, aws, gcp, oracle, alibaba, azure, contabo, linode, bitlaunch, cloudways` };
     }
 
     if (result.success && result.publicIp) {
