@@ -4,6 +4,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import { ResetDataButton } from './ResetDataButton';
 
 // Forward ref button component for tooltip compatibility
 const IndicatorButton = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<'button'>>(
@@ -242,6 +243,17 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
             Refresh health status
+          </TooltipContent>
+        </Tooltip>
+        
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <ResetDataButton variant="compact" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Reset all trading data
           </TooltipContent>
         </Tooltip>
       </div>
