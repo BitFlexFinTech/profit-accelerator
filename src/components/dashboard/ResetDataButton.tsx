@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { AlertTriangle, RotateCcw, Trash2 } from 'lucide-react';
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -12,7 +11,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAppStore } from '@/store/useAppStore';
@@ -23,16 +21,10 @@ interface ResetDataButtonProps {
 
 export function ResetDataButton({ variant = 'default' }: ResetDataButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [confirmText, setConfirmText] = useState('');
   const [isResetting, setIsResetting] = useState(false);
   const syncFromDatabase = useAppStore((state) => state.syncFromDatabase);
 
   const handleReset = async () => {
-    if (confirmText !== 'RESET') {
-      toast.error('Please type RESET to confirm');
-      return;
-    }
-
     setIsResetting(true);
     
     try {
@@ -54,17 +46,16 @@ export function ResetDataButton({ variant = 'default' }: ResetDataButtonProps) {
       await syncFromDatabase();
 
       toast.success(
-        `Reset complete: ${data.summary.tables_cleared} tables cleared, ${data.summary.tables_reset} tables reset`,
+        `Reset complete: ${data.summary.tables_cleared} tables cleared`,
         { id: 'reset-data' }
       );
 
       setIsOpen(false);
-      setConfirmText('');
 
       // Reload the page to ensure all components refresh
       setTimeout(() => {
         window.location.reload();
-      }, 1500);
+      }, 1000);
 
     } catch (error) {
       console.error('[RESET] Error:', error);
@@ -99,11 +90,11 @@ export function ResetDataButton({ variant = 'default' }: ResetDataButtonProps) {
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2 text-destructive">
             <AlertTriangle className="h-5 w-5" />
-            Reset All Trading Data
+            Reset All Trading Data?
           </AlertDialogTitle>
           <AlertDialogDescription className="space-y-3">
             <p className="font-medium text-foreground">
-              This action will permanently delete:
+              This will permanently delete:
             </p>
             <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
               <li>All trade history and journal entries</li>
@@ -111,30 +102,15 @@ export function ResetDataButton({ variant = 'default' }: ResetDataButtonProps) {
               <li>Balance history and portfolio snapshots</li>
               <li>Simulation progress (reset to 0/20)</li>
               <li>AI decision logs and performance metrics</li>
-              <li>All system notifications and alerts</li>
             </ul>
             <p className="font-medium text-foreground mt-3">
-              The following will be preserved:
+              Your settings will be preserved:
             </p>
             <ul className="text-sm space-y-1 list-disc list-inside text-green-600 dark:text-green-400">
               <li>Exchange API connections</li>
               <li>VPS instances and configurations</li>
-              <li>Cloud credentials and settings</li>
-              <li>Strategy configurations</li>
-              <li>Telegram and alert settings</li>
+              <li>Cloud credentials and strategies</li>
             </ul>
-            <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-              <p className="text-sm font-medium text-destructive">
-                Type <span className="font-mono bg-destructive/20 px-1 rounded">RESET</span> to confirm:
-              </p>
-              <Input
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
-                placeholder="Type RESET"
-                className="mt-2 font-mono"
-                disabled={isResetting}
-              />
-            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -142,7 +118,7 @@ export function ResetDataButton({ variant = 'default' }: ResetDataButtonProps) {
           <Button
             variant="destructive"
             onClick={handleReset}
-            disabled={confirmText !== 'RESET' || isResetting}
+            disabled={isResetting}
             className="gap-2"
           >
             {isResetting ? (
