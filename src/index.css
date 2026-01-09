@@ -781,3 +781,137 @@
 .theme-bw .recharts-text {
   fill: hsl(0 0% 70%) !important;
 }
+
+/* Noir Mode - Tab hover visibility fix */
+.theme-bw nav button:hover,
+.theme-bw [role="tab"]:hover,
+.theme-bw .group:hover {
+  background-color: hsl(0 0% 100%) !important;
+  color: hsl(0 0% 0%) !important;
+}
+
+.theme-bw nav button:hover *,
+.theme-bw [role="tab"]:hover * {
+  color: hsl(0 0% 0%) !important;
+}
+
+/* Sunshine Pop Theme - Bright white with vibrant flat colors */
+.theme-light {
+  --background: 0 0% 98%;
+  --foreground: 220 15% 15%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 220 15% 15%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 15% 15%;
+
+  --primary: 270 95% 60%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 15% 92%;
+  --secondary-foreground: 220 15% 25%;
+
+  --muted: 220 15% 95%;
+  --muted-foreground: 220 10% 45%;
+
+  --accent: 185 100% 40%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 85% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 155 85% 40%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 40 95% 50%;
+  --warning-foreground: 0 0% 0%;
+
+  --profit: 155 85% 40%;
+  --loss: 0 85% 55%;
+
+  --border: 220 15% 88%;
+  --input: 220 15% 92%;
+  --ring: 270 95% 60%;
+
+  /* Vibrant flat accent colors */
+  --color-cyan: 185 100% 40%;
+  --color-magenta: 320 85% 55%;
+  --color-yellow: 45 100% 50%;
+  --color-green: 155 85% 45%;
+  --color-orange: 25 95% 55%;
+  --color-purple: 270 85% 60%;
+  --color-pink: 340 85% 60%;
+  --color-blue: 215 95% 55%;
+  --color-red: 0 85% 55%;
+  --color-teal: 175 85% 40%;
+
+  --glass-bg: 0 0% 100% / 0.95;
+  --glass-border: 220 15% 85% / 0.8;
+  --glass-shadow: 220 15% 50% / 0.15;
+
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 220 15% 25%;
+  --sidebar-primary: 270 95% 60%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 15% 95%;
+  --sidebar-accent-foreground: 220 15% 25%;
+  --sidebar-border: 220 15% 88%;
+  --sidebar-ring: 270 95% 60%;
+
+  --chart-1: 270 95% 60%;
+  --chart-2: 185 100% 40%;
+  --chart-3: 155 85% 45%;
+  --chart-4: 25 95% 55%;
+  --chart-5: 340 85% 60%;
+}
+
+.theme-light body,
+.theme-light #root {
+  background: hsl(0 0% 98%) !important;
+}
+
+.theme-light .glass-card,
+.theme-light .card-cyan,
+.theme-light .card-green,
+.theme-light .card-purple,
+.theme-light .card-magenta,
+.theme-light .card-yellow,
+.theme-light .card-orange,
+.theme-light .card-pink,
+.theme-light .card-blue,
+.theme-light .card-red,
+.theme-light .card-teal {
+  background: hsl(0 0% 100%) !important;
+  border-color: hsl(220 15% 88%) !important;
+  box-shadow: 0 2px 8px hsl(220 15% 50% / 0.08);
+}
+
+.theme-light .glass-card:hover {
+  box-shadow: 0 4px 16px hsl(220 15% 50% / 0.12);
+}
+
+/* Light theme status indicators */
+.theme-light .status-online {
+  background: hsl(155 85% 45%);
+  box-shadow: 0 0 8px hsl(155 85% 45% / 0.5);
+}
+
+.theme-light .status-warning {
+  background: hsl(45 100% 50%);
+  box-shadow: 0 0 8px hsl(45 100% 50% / 0.5);
+}
+
+.theme-light .status-offline {
+  background: hsl(0 85% 55%);
+  box-shadow: 0 0 8px hsl(0 85% 55% / 0.5);
+}
+
+/* Light theme chart adjustments */
+.theme-light .recharts-cartesian-grid line {
+  stroke: hsl(220 15% 90%) !important;
+}
+
+.theme-light .recharts-text {
+  fill: hsl(220 10% 45%) !important;
+}
