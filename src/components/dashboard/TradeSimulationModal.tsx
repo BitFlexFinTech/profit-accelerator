@@ -186,22 +186,19 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       console.log('[Trade] Fetching real prices from trade-engine...');
       
       try {
-        const { data: priceData, error: priceError } = await Promise.race([
-          supabase.functions.invoke('trade-engine', { body: { action: 'get-prices' } }),
-          new Promise<{ data: null; error: Error }>((resolve) => 
-            setTimeout(() => resolve({ data: null, error: new Error('Price fetch timeout') }), 5000)
-          )
-        ]);
+        const priceResponse = await supabase.functions.invoke('trade-engine', { 
+          body: { action: 'get-prices' } 
+        });
         
-        if (priceError) {
-          console.log('[Trade] Price fetch error:', priceError.message || priceError);
-        } else if (priceData && typeof priceData === 'object' && 'prices' in priceData) {
-          const prices = priceData.prices as Record<string, { price: number }>;
+        if (priceResponse.error) {
+          console.log('[Trade] Price fetch error:', priceResponse.error);
+        } else if (priceResponse.data?.success && priceResponse.data?.prices) {
           const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '').toUpperCase();
-          realEntryPrice = prices[symbolBase]?.price || 0;
-          console.log('[Trade] Got real price for', symbolBase, ':', realEntryPrice);
-        } else {
-          console.log('[Trade] Invalid price response structure:', priceData);
+          const priceInfo = priceResponse.data.prices[symbolBase];
+          if (priceInfo?.price) {
+            realEntryPrice = priceInfo.price;
+            console.log('[Trade] Got real price for', symbolBase, ':', realEntryPrice);
+          }
         }
       } catch (e) {
         console.log('[Trade] Price fetch exception, using fallback:', e);
@@ -229,44 +226,66 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       
       // Execute trade based on mode
       if (config.tradingMode === 'live') {
-        console.log('[Trade] Executing LIVE order...');
+        console.log('[Trade] Executing LIVE order via trade-engine...');
         const quantity = config.amountPerPosition / entryPriceForCalc;
         const { data: orderData, error: orderError } = await supabase.functions.invoke('trade-engine', {
           body: {
-            action: 'execute-order',
+            action: 'place-order',
             exchangeName: selectedExchange,
             symbol: selectedSymbol,
             side: selectedSide === 'long' ? 'buy' : 'sell',
             quantity,
-            type: 'market'
+            orderType: 'market'
           }
         });
         
         if (orderError) {
-          throw { stage: 'trade-open', message: `Order failed: ${orderError.message}`, fix: 'Check exchange API keys and balance' };
+          throw { stage: 'trade-open', message: `Live order failed: ${orderError.message}`, fix: 'Check exchange API keys and balance' };
         }
-        console.log('[Trade] Live order executed:', orderData);
+        
+        if (!orderData?.success) {
+          throw { stage: 'trade-open', message: orderData?.error || 'Order execution failed', fix: 'Check exchange connection and permissions' };
+        }
+        
+        console.log('[Trade] ✅ Live order executed successfully:', orderData);
+        toast.success(`Live order placed: ${selectedSide.toUpperCase()} ${selectedSymbol}`);
+        
       } else if (config.tradingMode === 'paper') {
-        console.log('[Trade] Logging PAPER trade...');
-        const { error: insertError } = await supabase.from('trading_journal').insert({
-          exchange: selectedExchange,
-          symbol: selectedSymbol,
-          side: selectedSide === 'long' ? 'buy' : 'sell',
-          entry_price: entryPriceForCalc,
-          quantity: config.amountPerPosition / entryPriceForCalc,
-          status: 'open',
-          ai_reasoning: `Paper trade via ${config.strategy} strategy`,
-          paper_trade: true
-        });
+        console.log('[Trade] Executing PAPER trade...');
+        const quantity = config.amountPerPosition / entryPriceForCalc;
+        
+        const { data: insertedTrade, error: insertError } = await supabase
+          .from('trading_journal')
+          .insert({
+            exchange: selectedExchange,
+            symbol: selectedSymbol,
+            side: selectedSide === 'long' ? 'buy' : 'sell',
+            entry_price: entryPriceForCalc,
+            quantity: quantity,
+            status: 'open',
+            ai_reasoning: `Paper trade via ${config.strategy} strategy`,
+            paper_trade: true
+          })
+          .select()
+          .single();
         
         if (insertError) {
-          console.error('[Trade] Paper trade insert failed:', insertError);
-          // Continue anyway - don't block simulation for logging failure
-        } else {
-          console.log('[Trade] Paper trade logged to trading_journal');
+          console.error('[Trade] Paper trade insert FAILED:', insertError);
+          throw { 
+            stage: 'trade-open', 
+            message: `Paper trade failed: ${insertError.message}`, 
+            fix: 'Check database permissions or RLS policies' 
+          };
         }
+        
+        console.log('[Trade] ✅ Paper trade logged successfully:', insertedTrade?.id);
+        toast.success(`Paper trade opened: ${selectedSide.toUpperCase()} ${selectedSymbol}`);
+        
+        // Update simulation progress
+        await supabase.rpc('increment_paper_trade');
+        
       } else {
-        console.log('[Trade] Simulation mode - no actual trade logged');
+        console.log('[Trade] Simulation mode - no actual trade executed');
       }
       
       await new Promise(r => setTimeout(r, 500));
