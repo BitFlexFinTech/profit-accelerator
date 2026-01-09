@@ -241,6 +241,47 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: String(err) }));
       }
     });
+  } else if (req.url === '/update-strategy' && req.method === 'POST') {
+    // New endpoint to update strategy.js remotely
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { code, secret } = JSON.parse(body);
+        const updateSecret = process.env.BOT_UPDATE_SECRET || 'hft-update-2024';
+        if (secret !== updateSecret) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ success: false, error: 'Invalid secret' }));
+          return;
+        }
+        if (!code) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Missing code' }));
+          return;
+        }
+        const tempPath = '/app/strategy.js.new';
+        const mainPath = '/app/strategy.js';
+        fs.writeFileSync(tempPath, code);
+        try { new Function(code); } catch (e) {
+          fs.unlinkSync(tempPath);
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: 'Syntax error: ' + e.message }));
+          return;
+        }
+        fs.renameSync(tempPath, mainPath);
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, message: 'Strategy updated, restarting...', version: BOT_VERSION }));
+        // Signal supervisor to restart strategy process
+        setTimeout(() => {
+          console.log('[PIRANHA] Strategy updated, signaling restart...');
+          // Write a restart signal file that supervisor can detect
+          fs.writeFileSync('/app/data/.strategy-restart', Date.now().toString());
+        }, 200);
+      } catch (err) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: String(err) }));
+      }
+    });
   } else if (req.url === '/ping-exchanges' && req.method === 'GET') {
     const exchanges = [
       { name: 'binance', url: 'https://api.binance.com/api/v3/ping' },
