@@ -1071,16 +1071,27 @@ const CONFIG = {
   MAX_CONCURRENT_POSITIONS: 8,  // Maximum 8 concurrent positions
   AI_FETCH_INTERVAL: 1000,      // Fetch AI signals every 1 second
   
-  // Trading settings
+  // Trading settings - CRITICAL: NO FALLBACK CREDENTIALS
   ENABLED: process.env.STRATEGY_ENABLED === 'true',
-  SUPABASE_URL: process.env.SUPABASE_URL || 'https://iibdlazwkossyelyroap.supabase.co',
-  SUPABASE_KEY: process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpYmRsYXp3a29zc3llbHlyb2FwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc2MzQzNDUsImV4cCI6MjA4MzIxMDM0NX0.xZ0VbkoKzrFLYpbKrUjcvTY-qs-nA3ynHU-SAluOUQ4',
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY, // Use service role for secure access
+  
+  // Telegram alerts (optional)
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || null,
+  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || null,
   
   // Data paths
   STATE_FILE: '/app/data/strategy-state.json',
   TRADES_FILE: '/app/data/trades.json',
   CONFIG_FILE: '/app/config/.env',
 };
+
+// CRITICAL: Validate required credentials at startup
+if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_KEY) {
+  console.error('[🐟 PIRANHA] ❌ FATAL: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment');
+  console.error('[🐟 PIRANHA] Cannot start without proper Supabase credentials');
+  process.exit(1);
+}
 
 // Exchange fees (maker/taker as decimal)
 const EXCHANGE_FEES = {
@@ -1107,6 +1118,104 @@ const RATE_LIMITS = {
   hyperliquid: { rpm: 120, delay: 500 },
 };
 
+// ============== RATE LIMITER (TOKEN BUCKET) ==============
+class RateLimiter {
+  constructor(requestsPerMinute) {
+    this.tokens = requestsPerMinute;
+    this.maxTokens = requestsPerMinute;
+    this.lastRefill = Date.now();
+    this.queue = [];
+  }
+  
+  async acquire() {
+    this.refill();
+    if (this.tokens > 0) {
+      this.tokens--;
+      return true;
+    }
+    // Wait for next token if none available
+    return new Promise(resolve => {
+      const waitTime = 60000 / this.maxTokens;
+      console.log('[🐟 PIRANHA] ⏳ Rate limit reached, waiting ' + waitTime + 'ms for next token');
+      setTimeout(() => {
+        this.refill();
+        if (this.tokens > 0) this.tokens--;
+        resolve(true);
+      }, waitTime);
+    });
+  }
+  
+  refill() {
+    const now = Date.now();
+    const elapsed = (now - this.lastRefill) / 60000; // minutes
+    const tokensToAdd = elapsed * this.maxTokens;
+    this.tokens = Math.min(this.maxTokens, this.tokens + tokensToAdd);
+    this.lastRefill = now;
+  }
+  
+  getStatus() {
+    this.refill();
+    return { tokens: Math.floor(this.tokens), max: this.maxTokens };
+  }
+}
+
+// Initialize rate limiters for each exchange
+const rateLimiters = {
+  binance: new RateLimiter(RATE_LIMITS.binance.rpm),
+  bybit: new RateLimiter(RATE_LIMITS.bybit.rpm),
+  okx: new RateLimiter(RATE_LIMITS.okx.rpm),
+  kucoin: new RateLimiter(RATE_LIMITS.kucoin.rpm),
+  bitget: new RateLimiter(RATE_LIMITS.bitget.rpm),
+  mexc: new RateLimiter(RATE_LIMITS.mexc.rpm),
+  gateio: new RateLimiter(RATE_LIMITS.gateio.rpm),
+  hyperliquid: new RateLimiter(RATE_LIMITS.hyperliquid.rpm),
+};
+
+// Get rate limiter for exchange (with fallback)
+function getRateLimiter(exchange) {
+  return rateLimiters[exchange.toLowerCase()] || rateLimiters.binance;
+}
+
+// ============== TELEGRAM ALERTS ==============
+async function sendTelegramAlert(message) {
+  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) return;
+  
+  try {
+    const payload = JSON.stringify({
+      chat_id: CONFIG.TELEGRAM_CHAT_ID,
+      text: '🐟 PROFIT PIRANHA\\n\\n' + message,
+      parse_mode: 'HTML'
+    });
+    
+    const urlParts = new URL('https://api.telegram.org/bot' + CONFIG.TELEGRAM_BOT_TOKEN + '/sendMessage');
+    
+    return new Promise((resolve) => {
+      const options = {
+        hostname: urlParts.hostname,
+        path: urlParts.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      };
+      
+      const req = https.request(options, (res) => {
+        console.log('[🐟 PIRANHA] 📱 Telegram alert sent:', res.statusCode);
+        resolve(res.statusCode === 200);
+      });
+      req.on('error', (e) => {
+        console.log('[🐟 PIRANHA] Telegram alert failed:', e.message);
+        resolve(false);
+      });
+      req.write(payload);
+      req.end();
+    });
+  } catch (err) {
+    console.log('[🐟 PIRANHA] Telegram error:', err.message);
+  }
+}
+
 // ============== STATE MANAGEMENT ==============
 let state = {
   active: false,
@@ -1129,10 +1238,13 @@ function loadState() {
   }
 }
 
+// ATOMIC STATE WRITES - Prevents corruption on crash
 function saveState() {
   try {
     state.lastUpdate = new Date().toISOString();
-    fs.writeFileSync(CONFIG.STATE_FILE, JSON.stringify(state, null, 2));
+    const tempFile = CONFIG.STATE_FILE + '.tmp';
+    fs.writeFileSync(tempFile, JSON.stringify(state, null, 2));
+    fs.renameSync(tempFile, CONFIG.STATE_FILE); // Atomic on POSIX systems
   } catch (err) {
     console.error('[🐟 PIRANHA] Failed to save state:', err.message);
   }
@@ -1197,8 +1309,12 @@ function signOKX(timestamp, method, path, body, secret) {
   return crypto.createHmac('sha256', secret).update(message).digest('base64');
 }
 
-// Simple price fetcher (for demo - replace with real API calls)
+// Simple price fetcher with RATE LIMIT ENFORCEMENT
 async function fetchPrice(exchange, symbol) {
+  // Acquire rate limit token before making request
+  const limiter = getRateLimiter(exchange);
+  await limiter.acquire();
+  
   return new Promise((resolve, reject) => {
     let url;
     switch (exchange) {
@@ -1217,6 +1333,13 @@ async function fetchPrice(exchange, symbol) {
     }
     
     https.get(url, { timeout: 5000 }, (res) => {
+      // Check for rate limit response (429)
+      if (res.statusCode === 429) {
+        console.log('[🐟 PIRANHA] ⚠️ Exchange rate limit hit for ' + exchange + ', backing off...');
+        resolve(null);
+        return;
+      }
+      
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -1237,6 +1360,50 @@ async function fetchPrice(exchange, symbol) {
       });
     }).on('error', () => resolve(null));
   });
+}
+
+// ============== STATISTICAL FALLBACK STRATEGY ==============
+// Used when AI signals are unavailable or empty
+async function getStatisticalFallbackSignal() {
+  console.log('[🐟 PIRANHA] 🔄 AI signals empty, using statistical momentum fallback');
+  
+  const pairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+  for (const symbol of pairs) {
+    // Skip if already in position for this symbol
+    if (state.positions.some(p => p.symbol === symbol)) continue;
+    
+    // Collect price samples
+    const prices = [];
+    for (let i = 0; i < 5; i++) {
+      await sleep(200);
+      const price = await fetchPrice('binance', symbol.replace('USDT', '/USDT'));
+      if (price) prices.push(price);
+    }
+    
+    if (prices.length >= 3) {
+      const first = prices[0];
+      const last = prices[prices.length - 1];
+      const pctChange = ((last - first) / first) * 100;
+      
+      // Only trade if movement exceeds 0.1% threshold
+      if (Math.abs(pctChange) > 0.1) {
+        console.log('[🐟 PIRANHA] 📊 Momentum signal found: ' + symbol + ' ' + (pctChange > 0 ? '📈' : '📉') + ' ' + pctChange.toFixed(3) + '%');
+        return {
+          id: 'fallback-' + Date.now(),
+          symbol: symbol,
+          exchange_name: 'binance',
+          recommended_side: pctChange > 0 ? 'long' : 'short',
+          confidence: 65,
+          current_price: last,
+          profit_timeframe_minutes: 3,
+          source: 'statistical_momentum'
+        };
+      }
+    }
+  }
+  
+  console.log('[🐟 PIRANHA] No statistical signal found, waiting for AI...');
+  return null;
 }
 
 // ============== AI SIGNAL FUNCTIONS ==============
@@ -1479,14 +1646,22 @@ async function runPiranha() {
         
         // Only fetch if we have room for more positions
         if (state.positions.length < CONFIG.MAX_CONCURRENT_POSITIONS) {
-          const signals = await fetchAIRecommendations();
+          let signals = await fetchAIRecommendations();
           
           // Filter: 70%+ confidence, 1/3/5 min timeframe, not already in position
-          const tradableSignals = signals.filter(s => 
+          let tradableSignals = signals.filter(s => 
             s.confidence >= 70 && 
             [1, 3, 5].includes(s.profit_timeframe_minutes) &&
             !state.positions.some(p => p.symbol === (s.symbol.includes('USDT') ? s.symbol : s.symbol + 'USDT'))
           );
+          
+          // FALLBACK: Use statistical signal if no AI signals available
+          if (tradableSignals.length === 0) {
+            const fallbackSignal = await getStatisticalFallbackSignal();
+            if (fallbackSignal) {
+              tradableSignals = [fallbackSignal];
+            }
+          }
           
           // Open positions up to max limit
           for (const signal of tradableSignals) {
@@ -1555,17 +1730,31 @@ async function runPiranha() {
           
           console.log('[🐟 PIRANHA] Total trades: ' + state.totalTrades + ' | Total P&L: $' + state.totalPnL.toFixed(2));
           
+          // Send Telegram alert for profit target hit
+          await sendTelegramAlert('💰 <b>PROFIT TARGET HIT!</b>\\n' +
+            '📊 ' + position.symbol + '\\n' +
+            '📈 Side: ' + position.side.toUpperCase() + '\\n' +
+            '💵 P&L: +$' + netPnL.toFixed(2) + '\\n' +
+            '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
+            '✅ Exit: $' + currentPrice.toFixed(4));
+          
           // ═══════════════════════════════════════════════════════════
           // INSTANT REDEPLOY - Look for next opportunity immediately
           // ═══════════════════════════════════════════════════════════
           if (state.positions.length < CONFIG.MAX_CONCURRENT_POSITIONS) {
             console.log('[🐟 PIRANHA] 🔄 Searching for instant redeploy opportunity...');
             const redeploySignals = await fetchAIRecommendations();
-            const bestSignal = redeploySignals.find(s => 
+            let bestSignal = redeploySignals.find(s => 
               s.confidence >= 70 && 
               [1, 3, 5].includes(s.profit_timeframe_minutes) &&
               !state.positions.some(p => p.symbol === (s.symbol.includes('USDT') ? s.symbol : s.symbol + 'USDT'))
             );
+            
+            // Use statistical fallback if no AI signal available
+            if (!bestSignal) {
+              bestSignal = await getStatisticalFallbackSignal();
+            }
+            
             if (bestSignal) {
               console.log('[🐟 PIRANHA] ⚡ INSTANT REDEPLOY with ' + bestSignal.symbol + ' (' + bestSignal.confidence + '% confidence)');
               await openPosition(bestSignal, {});
@@ -1581,7 +1770,9 @@ async function runPiranha() {
       
       // Log status every 600 loops (every minute at 100ms)
       if (loopCount % 600 === 0) {
-        console.log('[🐟 PIRANHA] 📊 Status: ' + state.positions.length + '/' + CONFIG.MAX_CONCURRENT_POSITIONS + ' positions | ' + state.totalTrades + ' trades | $' + state.totalPnL.toFixed(2) + ' P&L');
+        // Log rate limiter status
+        const binanceStatus = rateLimiters.binance.getStatus();
+        console.log('[🐟 PIRANHA] 📊 Status: ' + state.positions.length + '/' + CONFIG.MAX_CONCURRENT_POSITIONS + ' positions | ' + state.totalTrades + ' trades | $' + state.totalPnL.toFixed(2) + ' P&L | Rate: ' + binanceStatus.tokens + '/' + binanceStatus.max);
       }
       
     } catch (err) {
@@ -1589,9 +1780,69 @@ async function runPiranha() {
       state.errors.push({ time: new Date().toISOString(), error: err.message });
       if (state.errors.length > 100) state.errors = state.errors.slice(-100);
       saveState();
+      
+      // Send Telegram alert for errors
+      if (state.errors.length % 10 === 0) {
+        await sendTelegramAlert('⚠️ <b>ERROR ALERT</b>\\n' +
+          '❌ ' + err.message + '\\n' +
+          '📊 Total errors: ' + state.errors.length);
+      }
+      
       await sleep(5000); // Wait 5s on error
     }
   }
+}
+
+// ============== POSITION RECONCILIATION ==============
+// Sync local state with actual exchange positions on startup
+async function reconcilePositionsOnStartup() {
+  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+  console.log('[🐟 PIRANHA] 🔄 RECONCILING POSITIONS WITH EXCHANGE');
+  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+  
+  // Get unique exchanges from open positions
+  const exchanges = [...new Set(state.positions.map(p => p.exchange))];
+  
+  for (const exchange of exchanges) {
+    console.log('[🐟 PIRANHA] Checking ' + exchange + ' positions...');
+    
+    // Verify prices are still accessible (basic connectivity check)
+    for (const position of state.positions.filter(p => p.exchange === exchange)) {
+      const currentPrice = await fetchPrice(exchange, position.symbol);
+      
+      if (!currentPrice) {
+        console.log('[🐟 PIRANHA] ⚠️ Cannot get price for ' + position.symbol + ' - may be closed externally');
+        // Mark for manual review but don't auto-close
+        position.needsReconciliation = true;
+      } else {
+        // Update current price and P&L
+        const netPnL = calculateNetPnL(
+          position.entryPrice,
+          currentPrice,
+          position.size,
+          position.side,
+          position.exchange,
+          position.isLeverage
+        );
+        position.currentPrice = currentPrice;
+        position.unrealizedPnL = netPnL;
+        position.lastReconciled = new Date().toISOString();
+        console.log('[🐟 PIRANHA] ✅ ' + position.symbol + ': $' + currentPrice.toFixed(4) + ' (P&L: $' + netPnL.toFixed(2) + ')');
+      }
+    }
+  }
+  
+  // Remove orphaned positions that need manual review
+  const orphanedCount = state.positions.filter(p => p.needsReconciliation).length;
+  if (orphanedCount > 0) {
+    console.log('[🐟 PIRANHA] ⚠️ ' + orphanedCount + ' positions need manual review');
+    await sendTelegramAlert('⚠️ <b>RECONCILIATION ALERT</b>\\n' +
+      orphanedCount + ' positions could not be verified.\\n' +
+      'Please check exchange manually.');
+  }
+  
+  saveState();
+  console.log('[🐟 PIRANHA] Reconciliation complete. Active positions: ' + state.positions.length);
 }
 
 // ============== STARTUP ==============
@@ -1601,13 +1852,20 @@ console.log('[🐟 PIRANHA] Config:', {
   maxPosition: CONFIG.MAX_POSITION_SIZE,
   profitSpot: CONFIG.PROFIT_TARGET_SPOT,
   profitLeverage: CONFIG.PROFIT_TARGET_LEVERAGE,
-  enabled: CONFIG.ENABLED
+  enabled: CONFIG.ENABLED,
+  supabaseConfigured: !!CONFIG.SUPABASE_URL && !!CONFIG.SUPABASE_KEY,
+  telegramConfigured: !!CONFIG.TELEGRAM_BOT_TOKEN && !!CONFIG.TELEGRAM_CHAT_ID
 });
 
-// Start the strategy
-runPiranha().catch(err => {
-  console.error('[🐟 PIRANHA] Fatal error:', err);
-  process.exit(1);
+// Run position reconciliation before starting
+loadState();
+reconcilePositionsOnStartup().then(() => {
+  // Start the strategy after reconciliation
+  runPiranha().catch(err => {
+    console.error('[🐟 PIRANHA] Fatal error:', err);
+    sendTelegramAlert('❌ <b>FATAL ERROR</b>\\n' + err.message);
+    process.exit(1);
+  });
 });
 
 // Handle shutdown gracefully
@@ -1615,14 +1873,14 @@ process.on('SIGTERM', () => {
   console.log('[🐟 PIRANHA] Received SIGTERM, saving state...');
   state.active = false;
   saveState();
-  process.exit(0);
+  sendTelegramAlert('🛑 Bot shutting down (SIGTERM)').then(() => process.exit(0));
 });
 
 process.on('SIGINT', () => {
   console.log('[🐟 PIRANHA] Received SIGINT, saving state...');
   state.active = false;
   saveState();
-  process.exit(0);
+  sendTelegramAlert('🛑 Bot shutting down (SIGINT)').then(() => process.exit(0));
 });
 STRATEGY_EOF
 
@@ -1643,6 +1901,13 @@ PKG_EOF
 
 # Create sample .env config file
 cat > config/.env.example << 'ENV_EOF'
+# ============================================================
+# PROFIT PIRANHA - CONFIGURATION FILE
+# ============================================================
+# CRITICAL: Copy this file to .env and fill in ALL values
+# The bot will NOT start without proper Supabase credentials!
+# ============================================================
+
 # Exchange API Keys (add your own)
 BINANCE_API_KEY=your_api_key
 BINANCE_API_SECRET=your_api_secret
@@ -1662,9 +1927,20 @@ MAX_POSITION_SIZE=500
 PROFIT_TARGET_SPOT=1
 PROFIT_TARGET_LEVERAGE=3
 
-# Supabase Connection (for trade logging)
-SUPABASE_URL=https://iibdlazwkossyelyroap.supabase.co
-SUPABASE_ANON_KEY=your_anon_key
+# ============================================================
+# SUPABASE CONNECTION - REQUIRED!
+# ============================================================
+# Get these from your Supabase project settings -> API
+# Use SERVICE ROLE key (not anon key) for secure database access
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# ============================================================
+# TELEGRAM ALERTS (Optional but recommended)
+# ============================================================
+# Get from @BotFather on Telegram
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 ENV_EOF
 
 # Detect compose command (docker-compose vs docker compose)

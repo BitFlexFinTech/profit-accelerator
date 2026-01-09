@@ -2598,6 +2598,7 @@ export type Database = {
     }
     Functions: {
       increment_live_trade: { Args: { profit?: number }; Returns: boolean }
+      is_service_role: { Args: never; Returns: boolean }
       reset_ai_provider_daily_usage: { Args: never; Returns: undefined }
       reset_ai_provider_usage: { Args: never; Returns: undefined }
     }
