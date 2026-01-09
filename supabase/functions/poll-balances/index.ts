@@ -38,16 +38,72 @@ interface ExchangeBalance {
   lastUpdated: string;
 }
 
-async function fetchExchangeBalance(
+// Fetch balance through VPS proxy to use whitelisted IP
+async function fetchBalanceViaVPSProxy(
+  vpsIP: string,
   exchangeName: string,
   apiKey: string,
   apiSecret: string,
   passphrase?: string
 ): Promise<ExchangeBalance | null> {
+  console.log(`[poll-balances] Routing ${exchangeName} through VPS proxy ${vpsIP}...`);
+  
+  try {
+    const response = await fetch(`http://${vpsIP}:8080/balance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        exchange: exchangeName,
+        apiKey,
+        apiSecret,
+        passphrase: passphrase || null
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`VPS proxy error: ${response.status} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'VPS proxy returned error');
+    }
+    
+    console.log(`[poll-balances] ${exchangeName} via VPS: $${data.totalUSDT?.toFixed(2) || 0}`);
+    
+    return {
+      exchange: exchangeName,
+      totalUSDT: data.totalUSDT || 0,
+      assets: data.assets || [],
+      lastUpdated: new Date().toISOString()
+    };
+  } catch (error: any) {
+    console.error(`[poll-balances] VPS proxy error for ${exchangeName}:`, error.message);
+    // Fall through to direct fetch
+    return null;
+  }
+}
+
+async function fetchExchangeBalance(
+  exchangeName: string,
+  apiKey: string,
+  apiSecret: string,
+  passphrase?: string,
+  vpsIP?: string
+): Promise<ExchangeBalance | null> {
+  // Try VPS proxy first if available (uses whitelisted static IP)
+  if (vpsIP) {
+    const vpsResult = await fetchBalanceViaVPSProxy(vpsIP, exchangeName, apiKey, apiSecret, passphrase);
+    if (vpsResult) return vpsResult;
+    console.log(`[poll-balances] VPS proxy failed, falling back to direct for ${exchangeName}`);
+  }
+  
   try {
     const exchangeId = EXCHANGE_MAP[exchangeName.toLowerCase()] || exchangeName.toLowerCase();
     
-    console.log(`[poll-balances] Fetching real balance for ${exchangeName} via CCXT...`);
+    console.log(`[poll-balances] Fetching balance for ${exchangeName} directly via CCXT...`);
     
     // Dynamic import CCXT
     const ccxt = await import('https://esm.sh/ccxt@4.5.31');
@@ -145,7 +201,7 @@ async function fetchExchangeBalance(
     throw {
       exchangeName,
       message: error.message,
-      isIPError: error.message?.includes('-2015') || error.message?.includes('Invalid API-key'),
+      isIPError: error.message?.includes('-2015') || error.message?.includes('Invalid API-key') || error.message?.includes('whitelist'),
       isPassphraseError: error.message?.includes('requires "password"') || error.message?.includes('passphrase')
     };
   }
@@ -163,6 +219,21 @@ serve(async (req) => {
     );
 
     console.log('[poll-balances] Starting real balance poll...');
+
+    // Check for running VPS to use as proxy (whitelisted IP)
+    const { data: vpsInstance } = await supabase
+      .from('vps_instances')
+      .select('ip_address, status')
+      .eq('status', 'running')
+      .limit(1)
+      .single();
+    
+    const vpsIP = vpsInstance?.ip_address || null;
+    if (vpsIP) {
+      console.log(`[poll-balances] Using VPS proxy: ${vpsIP} (whitelisted IP)`);
+    } else {
+      console.log('[poll-balances] No running VPS found, using direct connection');
+    }
 
     // Get all connected exchanges with API credentials
     const { data: connections, error: connError } = await supabase
@@ -228,11 +299,13 @@ serve(async (req) => {
       }
 
       try {
+        // Pass VPS IP to enable proxy routing for whitelisted IP
         const balance = await fetchExchangeBalance(
           conn.exchange_name,
           apiKey,
           apiSecret,
-          passphrase || undefined
+          passphrase || undefined,
+          vpsIP || undefined
         );
 
         if (balance) {
@@ -258,7 +331,7 @@ serve(async (req) => {
         let userMessage = err.message || 'Unknown error';
         
         if (err.isIPError) {
-          userMessage = 'API key rejected - check IP whitelist settings';
+          userMessage = 'API key rejected - check IP whitelist or use VPS proxy';
         } else if (err.isPassphraseError) {
           userMessage = 'Passphrase required - please reconnect with passphrase';
         }
