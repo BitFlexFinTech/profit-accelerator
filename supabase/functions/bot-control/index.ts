@@ -139,6 +139,7 @@ serve(async (req) => {
     }
 
     // Build .env.exchanges content for Docker - ALWAYS LIVE MODE
+    // CRITICAL: Include Supabase credentials for DB sync and exchange credentials for trading
     let envFileContent = '';
     if (action === 'start' || action === 'restart') {
       const { data: exchanges } = await supabase
@@ -146,20 +147,34 @@ serve(async (req) => {
         .select('exchange_name, api_key, api_secret, api_passphrase')
         .eq('is_connected', true);
       
+      // Always include Supabase and Telegram config
+      const envLines: string[] = [
+        'STRATEGY_ENABLED=true',
+        'TRADE_MODE=LIVE',
+        `SUPABASE_URL=${supabaseUrl}`,
+        `SUPABASE_SERVICE_ROLE_KEY=${supabaseServiceKey}`
+      ];
+      
+      // Add Telegram config if available
+      const telegramToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
+      const telegramChatId = Deno.env.get('TELEGRAM_CHAT_ID');
+      if (telegramToken) envLines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
+      if (telegramChatId) envLines.push(`TELEGRAM_CHAT_ID=${telegramChatId}`);
+      
+      // Add exchange credentials
       if (exchanges?.length) {
-        const envLines: string[] = [
-          'STRATEGY_ENABLED=true',
-          'TRADE_MODE=LIVE'
-        ];
         for (const ex of exchanges) {
           const name = ex.exchange_name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
           if (ex.api_key) envLines.push(`${name}_API_KEY=${ex.api_key}`);
           if (ex.api_secret) envLines.push(`${name}_API_SECRET=${ex.api_secret}`);
           if (ex.api_passphrase) envLines.push(`${name}_PASSPHRASE=${ex.api_passphrase}`);
         }
-        envFileContent = envLines.join('\\n');
-        console.log(`[bot-control] Prepared .env.exchanges for ${exchanges.length} exchanges in LIVE mode`);
+        console.log(`[bot-control] Prepared .env.exchanges with Supabase + ${exchanges.length} exchanges in LIVE mode`);
+      } else {
+        console.log(`[bot-control] ⚠️ No connected exchanges found! Bot will not be able to trade.`);
       }
+      
+      envFileContent = envLines.join('\\n');
     }
     
     // ═══════════════════════════════════════════════════════════

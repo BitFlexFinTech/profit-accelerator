@@ -1511,17 +1511,311 @@ async function incrementLiveTradeProgress() {
   });
 }
 
-// Open position based on AI signal
+// ============== EXCHANGE CREDENTIALS LOADER ==============
+function loadExchangeCredentials() {
+  return {
+    binance: {
+      apiKey: process.env.BINANCE_API_KEY || '',
+      apiSecret: process.env.BINANCE_API_SECRET || ''
+    },
+    okx: {
+      apiKey: process.env.OKX_API_KEY || '',
+      apiSecret: process.env.OKX_API_SECRET || '',
+      passphrase: process.env.OKX_PASSPHRASE || ''
+    }
+  };
+}
+
+// Check if credentials are configured for an exchange
+function hasCredentials(exchange) {
+  const creds = loadExchangeCredentials();
+  if (exchange === 'binance') {
+    return creds.binance.apiKey && creds.binance.apiSecret;
+  }
+  if (exchange === 'okx') {
+    return creds.okx.apiKey && creds.okx.apiSecret && creds.okx.passphrase;
+  }
+  return false;
+}
+
+// ============== REAL ORDER EXECUTION ==============
+async function executeOrder(exchange, symbol, side, quantity, orderType, creds) {
+  const startTime = Date.now();
+  console.log('[🐟 PIRANHA] 📤 Executing REAL order: ' + exchange + ' ' + symbol + ' ' + side + ' qty=' + quantity);
+  
+  return new Promise((resolve) => {
+    if (exchange === 'binance') {
+      // Binance order execution with HMAC-SHA256 signing
+      const timestamp = Date.now();
+      const binanceSymbol = symbol.replace('/', '').replace('-', '');
+      let queryString = 'symbol=' + binanceSymbol + '&side=' + side.toUpperCase() + '&type=' + orderType.toUpperCase() + '&quantity=' + quantity.toFixed(6) + '&timestamp=' + timestamp;
+      
+      const signature = signBinance(queryString, creds.apiSecret);
+      const fullQuery = queryString + '&signature=' + signature;
+      
+      const options = {
+        hostname: 'api.binance.com',
+        path: '/api/v3/order',
+        method: 'POST',
+        headers: {
+          'X-MBX-APIKEY': creds.apiKey,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(fullQuery)
+        }
+      };
+      
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            const latency = Date.now() - startTime;
+            console.log('[🐟 PIRANHA] Binance response: status=' + json.status + ' orderId=' + json.orderId + ' latency=' + latency + 'ms');
+            
+            if (json.orderId) {
+              resolve({
+                success: true,
+                orderId: json.orderId.toString(),
+                executedPrice: parseFloat(json.price || json.fills?.[0]?.price || 0),
+                executedQty: parseFloat(json.executedQty || quantity),
+                status: json.status,
+                latencyMs: latency
+              });
+            } else {
+              console.error('[🐟 PIRANHA] ❌ Binance order failed:', json.msg || json.code);
+              resolve({ success: false, error: json.msg || 'Order failed', latencyMs: latency });
+            }
+          } catch (e) {
+            resolve({ success: false, error: 'Parse error: ' + data, latencyMs: Date.now() - startTime });
+          }
+        });
+      });
+      req.on('error', (e) => resolve({ success: false, error: e.message, latencyMs: Date.now() - startTime }));
+      req.setTimeout(10000, () => { req.destroy(); resolve({ success: false, error: 'Timeout', latencyMs: Date.now() - startTime }); });
+      req.write(fullQuery);
+      req.end();
+      
+    } else if (exchange === 'okx') {
+      // OKX order execution
+      const timestamp = new Date().toISOString();
+      const instId = symbol.includes('-') ? symbol : symbol.replace('USDT', '-USDT');
+      const orderBody = JSON.stringify({
+        instId,
+        tdMode: 'cash',
+        side: side.toLowerCase(),
+        ordType: orderType.toLowerCase() === 'market' ? 'market' : 'limit',
+        sz: quantity.toFixed(6)
+      });
+      
+      const sign = signOKX(timestamp, 'POST', '/api/v5/trade/order', orderBody, creds.apiSecret);
+      
+      const options = {
+        hostname: 'www.okx.com',
+        path: '/api/v5/trade/order',
+        method: 'POST',
+        headers: {
+          'OK-ACCESS-KEY': creds.apiKey,
+          'OK-ACCESS-SIGN': sign,
+          'OK-ACCESS-TIMESTAMP': timestamp,
+          'OK-ACCESS-PASSPHRASE': creds.passphrase || '',
+          'Content-Type': 'application/json'
+        }
+      };
+      
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            const latency = Date.now() - startTime;
+            console.log('[🐟 PIRANHA] OKX response: code=' + json.code + ' orderId=' + json.data?.[0]?.ordId + ' latency=' + latency + 'ms');
+            
+            if (json.code === '0' && json.data?.[0]?.ordId) {
+              resolve({
+                success: true,
+                orderId: json.data[0].ordId,
+                executedPrice: 0, // OKX doesn't return price immediately for market orders
+                executedQty: parseFloat(quantity),
+                latencyMs: latency
+              });
+            } else {
+              console.error('[🐟 PIRANHA] ❌ OKX order failed:', json.msg || json.data?.[0]?.sMsg);
+              resolve({ success: false, error: json.msg || json.data?.[0]?.sMsg || 'Order failed', latencyMs: latency });
+            }
+          } catch (e) {
+            resolve({ success: false, error: 'Parse error: ' + data, latencyMs: Date.now() - startTime });
+          }
+        });
+      });
+      req.on('error', (e) => resolve({ success: false, error: e.message, latencyMs: Date.now() - startTime }));
+      req.setTimeout(10000, () => { req.destroy(); resolve({ success: false, error: 'Timeout', latencyMs: Date.now() - startTime }); });
+      req.write(orderBody);
+      req.end();
+      
+    } else {
+      resolve({ success: false, error: 'Unsupported exchange: ' + exchange, latencyMs: 0 });
+    }
+  });
+}
+
+// ============== SUPABASE ORDER/POSITION SYNC ==============
+async function recordOrderToSupabase(order) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({
+      exchange_name: order.exchange,
+      symbol: order.symbol,
+      side: order.side,
+      amount: order.quantity,
+      type: order.orderType || 'market',
+      price: order.executedPrice || null,
+      status: order.status || 'filled',
+      exchange_order_id: order.orderId,
+      client_order_id: order.clientOrderId || null
+    });
+    
+    const urlParts = new URL(CONFIG.SUPABASE_URL);
+    const options = {
+      hostname: urlParts.hostname,
+      path: '/rest/v1/orders',
+      method: 'POST',
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        console.log('[🐟 PIRANHA] Order synced to Supabase: ' + res.statusCode);
+        try {
+          const result = JSON.parse(data);
+          resolve(result?.[0]?.id || null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', (e) => { console.log('[🐟 PIRANHA] Order sync error:', e.message); resolve(null); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function recordPositionToSupabase(position, status) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({
+      exchange_name: position.exchange,
+      symbol: position.symbol,
+      side: position.side,
+      size: position.quantity,
+      entry_price: position.entryPrice,
+      current_price: position.currentPrice || position.entryPrice,
+      unrealized_pnl: position.unrealizedPnL || 0,
+      realized_pnl: position.netPnL || null,
+      status: status,
+      leverage: position.isLeverage ? (position.leverage || 1) : null
+    });
+    
+    const urlParts = new URL(CONFIG.SUPABASE_URL);
+    const options = {
+      hostname: urlParts.hostname,
+      path: '/rest/v1/positions',
+      method: 'POST',
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        console.log('[🐟 PIRANHA] Position synced to Supabase: ' + res.statusCode);
+        try {
+          const result = JSON.parse(data);
+          resolve(result?.[0]?.id || null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', (e) => { console.log('[🐟 PIRANHA] Position sync error:', e.message); resolve(null); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function closePositionInSupabase(positionId, exitPrice, realizedPnL) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({
+      status: 'closed',
+      current_price: exitPrice,
+      realized_pnl: realizedPnL
+    });
+    
+    const urlParts = new URL(CONFIG.SUPABASE_URL);
+    const options = {
+      hostname: urlParts.hostname,
+      path: '/rest/v1/positions?id=eq.' + positionId,
+      method: 'PATCH',
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      console.log('[🐟 PIRANHA] Position closed in Supabase: ' + res.statusCode);
+      resolve(res.statusCode === 200 || res.statusCode === 204);
+    });
+    req.on('error', (e) => { console.log('[🐟 PIRANHA] Position close error:', e.message); resolve(false); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// Open position based on AI signal - WITH REAL ORDER EXECUTION
 async function openPosition(signal, credentials) {
-  const exchange = (signal.exchange_name || 'binance').toLowerCase();
   const symbol = signal.symbol.includes('USDT') ? signal.symbol : signal.symbol + 'USDT';
   
-  // Check for duplicate position
-  const existingPosition = state.positions.find(
-    p => p.symbol === symbol && p.exchange === exchange
-  );
+  // SPOT MODE: Skip short signals (user configured spot-only)
+  if (signal.recommended_side === 'short') {
+    console.log('[🐟 PIRANHA] ⏭️ Skipping SHORT signal - SPOT MODE ONLY');
+    console.log('[🐟 PIRANHA]   Symbol: ' + symbol + ' | Confidence: ' + signal.confidence + '%');
+    return null;
+  }
+  
+  // Only proceed with LONG signals (BUY for spot)
+  const side = 'long';
+  const orderSide = 'buy'; // For spot, long = buy
+  
+  // Check for duplicate position on ANY exchange
+  const existingPosition = state.positions.find(p => p.symbol === symbol);
   if (existingPosition) {
     console.log('[🐟 PIRANHA] Already have position in', symbol);
+    return null;
+  }
+  
+  // Load credentials
+  const creds = loadExchangeCredentials();
+  
+  // Determine which exchanges to trade on (user selected: BOTH)
+  const exchangesToTrade = [];
+  if (hasCredentials('binance')) exchangesToTrade.push('binance');
+  if (hasCredentials('okx')) exchangesToTrade.push('okx');
+  
+  if (exchangesToTrade.length === 0) {
+    console.log('[🐟 PIRANHA] ❌ No exchange credentials configured! Skipping trade.');
     return null;
   }
   
@@ -1531,53 +1825,112 @@ async function openPosition(signal, credentials) {
     CONFIG.MAX_POSITION_SIZE
   );
   
-  // Determine side from AI recommendation
-  const side = signal.recommended_side === 'short' ? 'short' : 'long';
-  
   // Get current price
-  const currentPrice = signal.current_price || await fetchPrice(exchange, symbol);
+  const currentPrice = signal.current_price || await fetchPrice('binance', symbol);
   if (!currentPrice) {
     console.log('[🐟 PIRANHA] Could not get price for', symbol);
     return null;
   }
   
-  const quantity = positionSize / currentPrice;
+  // Split position across configured exchanges
+  const sizePerExchange = positionSize / exchangesToTrade.length;
+  const quantityPerExchange = sizePerExchange / currentPrice;
   
   console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-  console.log('[🐟 PIRANHA] 🎯 OPENING POSITION FROM AI SIGNAL');
-  console.log('[🐟 PIRANHA]   Exchange: ' + exchange.toUpperCase());
+  console.log('[🐟 PIRANHA] 🎯 EXECUTING REAL ENTRY ORDER');
   console.log('[🐟 PIRANHA]   Symbol: ' + symbol);
-  console.log('[🐟 PIRANHA]   Side: ' + side.toUpperCase());
-  console.log('[🐟 PIRANHA]   Size: $' + positionSize.toFixed(2));
-  console.log('[🐟 PIRANHA]   Entry: $' + currentPrice.toFixed(4));
-  console.log('[🐟 PIRANHA]   Quantity: ' + quantity.toFixed(6));
+  console.log('[🐟 PIRANHA]   Side: ' + side.toUpperCase() + ' (BUY)');
+  console.log('[🐟 PIRANHA]   Exchanges: ' + exchangesToTrade.join(', ').toUpperCase());
+  console.log('[🐟 PIRANHA]   Total Size: $' + positionSize.toFixed(2));
+  console.log('[🐟 PIRANHA]   Size/Exchange: $' + sizePerExchange.toFixed(2));
+  console.log('[🐟 PIRANHA]   Entry Price: $' + currentPrice.toFixed(4));
+  console.log('[🐟 PIRANHA]   Quantity/Exchange: ' + quantityPerExchange.toFixed(6));
   console.log('[🐟 PIRANHA]   AI Confidence: ' + signal.confidence + '%');
-  console.log('[🐟 PIRANHA]   AI Timeframe: ' + signal.profit_timeframe_minutes + ' min');
   console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
   
-  // Create position record
-  const position = {
-    id: crypto.randomUUID(),
-    exchange: exchange,
-    symbol: symbol,
-    side: side,
-    size: positionSize,
-    quantity: quantity,
-    entryPrice: currentPrice,
-    entryTime: new Date().toISOString(),
-    isLeverage: false,
-    aiSignalId: signal.id,
-    aiConfidence: signal.confidence,
-    aiTimeframe: signal.profit_timeframe_minutes
-  };
+  // Execute orders on ALL configured exchanges CONCURRENTLY
+  const orderPromises = exchangesToTrade.map(async (exchange) => {
+    const exchangeCreds = creds[exchange];
+    const result = await executeOrder(exchange, symbol, orderSide, quantityPerExchange, 'market', exchangeCreds);
+    return { exchange, ...result };
+  });
   
-  state.positions.push(position);
+  const orderResults = await Promise.all(orderPromises);
+  
+  // Process results
+  const successfulOrders = orderResults.filter(r => r.success);
+  const failedOrders = orderResults.filter(r => !r.success);
+  
+  if (failedOrders.length > 0) {
+    for (const failed of failedOrders) {
+      console.error('[🐟 PIRANHA] ❌ Order failed on ' + failed.exchange + ': ' + failed.error);
+    }
+  }
+  
+  if (successfulOrders.length === 0) {
+    console.error('[🐟 PIRANHA] ❌ ALL ORDERS FAILED - No position opened');
+    return null;
+  }
+  
+  // Create positions for successful orders
+  const positions = [];
+  for (const order of successfulOrders) {
+    const position = {
+      id: crypto.randomUUID(),
+      exchange: order.exchange,
+      symbol: symbol,
+      side: side,
+      size: sizePerExchange,
+      quantity: quantityPerExchange,
+      entryPrice: order.executedPrice || currentPrice,
+      entryTime: new Date().toISOString(),
+      isLeverage: false,
+      aiSignalId: signal.id,
+      aiConfidence: signal.confidence,
+      aiTimeframe: signal.profit_timeframe_minutes,
+      orderId: order.orderId,
+      latencyMs: order.latencyMs
+    };
+    
+    state.positions.push(position);
+    positions.push(position);
+    
+    // Record to Supabase orders table
+    await recordOrderToSupabase({
+      exchange: order.exchange,
+      symbol: symbol,
+      side: orderSide,
+      quantity: quantityPerExchange,
+      orderType: 'market',
+      executedPrice: order.executedPrice || currentPrice,
+      status: 'filled',
+      orderId: order.orderId,
+      clientOrderId: position.id
+    });
+    
+    // Record position to Supabase
+    const supabasePositionId = await recordPositionToSupabase(position, 'open');
+    if (supabasePositionId) {
+      position.supabaseId = supabasePositionId;
+    }
+    
+    console.log('[🐟 PIRANHA] ✅ Position opened on ' + order.exchange.toUpperCase() + ' | OrderId: ' + order.orderId + ' | Latency: ' + order.latencyMs + 'ms');
+  }
+  
   saveState();
   
-  // Note: paper_trade flag will be set at trade close based on IS_LIVE_MODE
-  // For open trades, we record to Supabase without the flag (will be updated on close)
-  console.log('[🐟 PIRANHA] ✅ Position opened! Total positions: ' + state.positions.length + '/' + CONFIG.MAX_CONCURRENT_POSITIONS);
-  return position;
+  // Send Telegram alert
+  await sendTelegramAlert('🎯 <b>POSITION OPENED</b>\\n' +
+    '📊 ' + symbol + '\\n' +
+    '📈 Side: LONG (BUY)\\n' +
+    '💰 Size: $' + (sizePerExchange * successfulOrders.length).toFixed(2) + '\\n' +
+    '🏦 Exchanges: ' + successfulOrders.map(o => o.exchange.toUpperCase()).join(', ') + '\\n' +
+    '🎯 Entry: $' + currentPrice.toFixed(4) + '\\n' +
+    '🤖 AI: ' + signal.confidence + '% confidence');
+  
+  console.log('[🐟 PIRANHA] ✅ ' + successfulOrders.length + '/' + exchangesToTrade.length + ' orders filled! Total positions: ' + state.positions.length + '/' + CONFIG.MAX_CONCURRENT_POSITIONS);
+  
+  return positions.length > 0 ? positions[0] : null;
 }
 
 // ============== MAIN STRATEGY LOOP ==============
@@ -1696,30 +2049,78 @@ async function runPiranha() {
         // Check if profit target reached
         if (isProfitTargetReached(netPnL, position.isLeverage)) {
           console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-          console.log('[🐟 PIRANHA] 💰 PROFIT TARGET HIT!');
+          console.log('[🐟 PIRANHA] 💰 PROFIT TARGET HIT - EXECUTING EXIT ORDER');
           console.log('[🐟 PIRANHA]   Symbol: ' + position.symbol);
+          console.log('[🐟 PIRANHA]   Exchange: ' + position.exchange.toUpperCase());
           console.log('[🐟 PIRANHA]   Side: ' + position.side.toUpperCase());
           console.log('[🐟 PIRANHA]   Entry: $' + position.entryPrice);
           console.log('[🐟 PIRANHA]   Exit: $' + currentPrice);
           console.log('[🐟 PIRANHA]   Net P&L: $' + netPnL.toFixed(2));
           console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
           
+          // EXECUTE REAL SELL ORDER TO CLOSE POSITION
+          const creds = loadExchangeCredentials();
+          const exchangeCreds = creds[position.exchange];
+          
+          if (!exchangeCreds || !exchangeCreds.apiKey) {
+            console.error('[🐟 PIRANHA] ❌ No credentials for ' + position.exchange + ' - cannot close position!');
+            continue;
+          }
+          
+          // Execute sell order (spot mode: long positions close with SELL)
+          const exitResult = await executeOrder(
+            position.exchange,
+            position.symbol,
+            'sell',
+            position.quantity,
+            'market',
+            exchangeCreds
+          );
+          
+          if (!exitResult.success) {
+            console.error('[🐟 PIRANHA] ❌ EXIT ORDER FAILED: ' + exitResult.error);
+            console.error('[🐟 PIRANHA] Position remains open - will retry on next loop');
+            continue; // Don't remove position, try again later
+          }
+          
+          console.log('[🐟 PIRANHA] ✅ EXIT ORDER FILLED | OrderId: ' + exitResult.orderId + ' | Latency: ' + exitResult.latencyMs + 'ms');
+          
+          // Record exit order to Supabase
+          await recordOrderToSupabase({
+            exchange: position.exchange,
+            symbol: position.symbol,
+            side: 'sell',
+            quantity: position.quantity,
+            orderType: 'market',
+            executedPrice: exitResult.executedPrice || currentPrice,
+            status: 'filled',
+            orderId: exitResult.orderId,
+            clientOrderId: position.id + '-exit'
+          });
+          
           // Log the completed trade
           const completedTrade = {
             ...position,
-            exitPrice: currentPrice,
+            exitPrice: exitResult.executedPrice || currentPrice,
             exitTime: new Date().toISOString(),
             netPnL: netPnL,
-            status: 'closed'
+            status: 'closed',
+            exitOrderId: exitResult.orderId,
+            exitLatencyMs: exitResult.latencyMs
           };
           logTrade(completedTrade);
           
-          // Sync closed trade to Supabase
+          // Sync closed trade to Supabase trading_journal
           await recordTradeToSupabase(completedTrade, 'closed');
+          
+          // Close position in Supabase positions table
+          if (position.supabaseId) {
+            await closePositionInSupabase(position.supabaseId, currentPrice, netPnL);
+          }
           
           // Track live trade progress
           await incrementLiveTradeProgress();
-          console.log('[🐟 PIRANHA] 💰 Live trade progress synced to dashboard');
+          console.log('[🐟 PIRANHA] 💰 Live trade closed and synced to dashboard');
           
           // Update totals
           state.totalTrades++;
@@ -1728,15 +2129,22 @@ async function runPiranha() {
           // Remove from positions
           state.positions = state.positions.filter(p => p.id !== position.id);
           
-          console.log('[🐟 PIRANHA] Total trades: ' + state.totalTrades + ' | Total P&L: $' + state.totalPnL.toFixed(2));
+          console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+          console.log('[🐟 PIRANHA] 📊 TRADE COMPLETE');
+          console.log('[🐟 PIRANHA]   Total trades: ' + state.totalTrades);
+          console.log('[🐟 PIRANHA]   Total P&L: $' + state.totalPnL.toFixed(2));
+          console.log('[🐟 PIRANHA]   Open positions: ' + state.positions.length);
+          console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
           
           // Send Telegram alert for profit target hit
-          await sendTelegramAlert('💰 <b>PROFIT TARGET HIT!</b>\\n' +
+          await sendTelegramAlert('💰 <b>TRADE CLOSED - PROFIT!</b>\\n' +
             '📊 ' + position.symbol + '\\n' +
+            '🏦 Exchange: ' + position.exchange.toUpperCase() + '\\n' +
             '📈 Side: ' + position.side.toUpperCase() + '\\n' +
             '💵 P&L: +$' + netPnL.toFixed(2) + '\\n' +
             '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
-            '✅ Exit: $' + currentPrice.toFixed(4));
+            '✅ Exit: $' + currentPrice.toFixed(4) + '\\n' +
+            '⚡ Latency: ' + exitResult.latencyMs + 'ms');
           
           // ═══════════════════════════════════════════════════════════
           // INSTANT REDEPLOY - Look for next opportunity immediately
@@ -1747,12 +2155,16 @@ async function runPiranha() {
             let bestSignal = redeploySignals.find(s => 
               s.confidence >= 70 && 
               [1, 3, 5].includes(s.profit_timeframe_minutes) &&
+              s.recommended_side !== 'short' && // SPOT MODE: Skip shorts
               !state.positions.some(p => p.symbol === (s.symbol.includes('USDT') ? s.symbol : s.symbol + 'USDT'))
             );
             
             // Use statistical fallback if no AI signal available
             if (!bestSignal) {
-              bestSignal = await getStatisticalFallbackSignal();
+              const fallback = await getStatisticalFallbackSignal();
+              if (fallback && fallback.recommended_side !== 'short') {
+                bestSignal = fallback;
+              }
             }
             
             if (bestSignal) {
