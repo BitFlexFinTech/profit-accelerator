@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-type BotStatus = 'idle' | 'running' | 'stopped';
+type BotStatus = 'idle' | 'running' | 'stopped' | 'error';
 
 interface TradingConfig {
   bot_status: BotStatus;
@@ -229,6 +229,31 @@ export function BotControlPanel() {
     }
   };
 
+  const handleClearError = async () => {
+    try {
+      await supabase.from('trading_config')
+        .update({ 
+          bot_status: 'stopped', 
+          updated_at: new Date().toISOString()
+        })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      await supabase.from('hft_deployments')
+        .update({ bot_status: 'stopped', updated_at: new Date().toISOString() })
+        .eq('bot_status', 'error');
+      
+      await supabase.from('vps_instances')
+        .update({ bot_status: 'stopped', updated_at: new Date().toISOString() })
+        .eq('bot_status', 'error');
+      
+      setBotStatus('stopped');
+      toast.success('Error state cleared - bot ready to start');
+    } catch (error) {
+      console.error('[BotControl] Clear error failed:', error);
+      toast.error('Failed to clear error state');
+    }
+  };
+
   const getStatusBadge = () => {
     switch (botStatus) {
       case 'running':
@@ -245,6 +270,13 @@ export function BotControlPanel() {
         return (
           <Badge className="bg-destructive/20 text-destructive border-destructive/40">
             STOPPED
+          </Badge>
+        );
+      case 'error':
+        return (
+          <Badge className="bg-warning/20 text-warning border-warning/40 gap-1.5">
+            <AlertTriangle className="w-3 h-3" />
+            ERROR
           </Badge>
         );
       default:
@@ -311,6 +343,31 @@ export function BotControlPanel() {
                 )}
                 STOP BOT
               </ActionButton>
+            ) : botStatus === 'error' ? (
+              <>
+                <ActionButton 
+                  tooltip="Clear error state and reset bot"
+                  variant="outline"
+                  onClick={handleClearError}
+                  className="gap-2 border-warning text-warning hover:bg-warning/10"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Clear Error
+                </ActionButton>
+                <ActionButton 
+                  tooltip={BUTTON_TOOLTIPS.startBot}
+                  onClick={handleStartClick}
+                  disabled={isStarting}
+                  className="gap-2 bg-destructive hover:bg-destructive/90"
+                >
+                  {isStarting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                  Restart Bot
+                </ActionButton>
+              </>
             ) : (
               <ActionButton 
                 tooltip={BUTTON_TOOLTIPS.startBot}
