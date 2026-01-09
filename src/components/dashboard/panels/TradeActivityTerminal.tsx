@@ -82,8 +82,11 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
   }, [fetchTrades, lastUpdate]);
 
   useEffect(() => {
+    // Use consistent channel name to avoid creating multiple channels
+    const channelName = 'trade-terminal-realtime';
+    
     const channel = supabase
-      .channel('trade-terminal-realtime-' + Date.now())
+      .channel(channelName)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -94,6 +97,9 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
       })
       .subscribe((status) => {
         console.log('[TradeActivityTerminal] Subscription status:', status);
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[TradeActivityTerminal] Channel error - connection issues');
+        }
       });
 
     return () => {

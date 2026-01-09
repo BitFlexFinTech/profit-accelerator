@@ -47,6 +47,9 @@ export function useTradeNotifications() {
       )
       .subscribe((status) => {
         console.log('[useTradeNotifications] Subscription status:', status);
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[useTradeNotifications] Channel error - will retry on next mount');
+        }
       });
 
     return () => {
