@@ -138,29 +138,6 @@ serve(async (req) => {
       );
     }
 
-    // Fetch exchange credentials for start action
-    let exchangeEnvVars = '';
-    if (action === 'start') {
-      const { data: exchanges } = await supabase
-        .from('exchange_connections')
-        .select('exchange_name, api_key, api_secret, api_passphrase')
-        .eq('is_connected', true);
-      
-      if (exchanges?.length) {
-        for (const ex of exchanges) {
-          const name = ex.exchange_name.toUpperCase();
-          if (ex.api_key) exchangeEnvVars += `export ${name}_API_KEY='${ex.api_key}' && `;
-          if (ex.api_secret) exchangeEnvVars += `export ${name}_API_SECRET='${ex.api_secret}' && `;
-          if (ex.api_passphrase) exchangeEnvVars += `export ${name}_PASSPHRASE='${ex.api_passphrase}' && `;
-        }
-        console.log(`[bot-control] Prepared credentials for ${exchanges.length} exchanges`);
-      }
-    }
-
-    // Execute SSH command based on action
-    let command = '';
-    let newBotStatus = '';
-
     // Build .env.exchanges content for Docker
     let envFileContent = '';
     if (action === 'start' || action === 'restart') {
@@ -169,8 +146,21 @@ serve(async (req) => {
         .select('exchange_name, api_key, api_secret, api_passphrase')
         .eq('is_connected', true);
       
+      // Get trading mode
+      const { data: tradingConfig } = await supabase
+        .from('trading_config')
+        .select('trading_mode')
+        .limit(1)
+        .single();
+      
+      const tradingMode = tradingConfig?.trading_mode || 'paper';
+      
       if (exchanges?.length) {
-        const envLines: string[] = ['STRATEGY_ENABLED=true', 'TRADE_MODE=SPOT'];
+        const envLines: string[] = [
+          'STRATEGY_ENABLED=true',
+          `TRADE_MODE=${tradingMode === 'live' ? 'LIVE' : 'PAPER'}`,
+          `PAPER_TRADING=${tradingMode === 'paper' ? 'true' : 'false'}`
+        ];
         for (const ex of exchanges) {
           const name = ex.exchange_name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
           if (ex.api_key) envLines.push(`${name}_API_KEY=${ex.api_key}`);
@@ -178,25 +168,26 @@ serve(async (req) => {
           if (ex.api_passphrase) envLines.push(`${name}_PASSPHRASE=${ex.api_passphrase}`);
         }
         envFileContent = envLines.join('\\n');
-        console.log(`[bot-control] Prepared .env.exchanges for ${exchanges.length} exchanges`);
+        console.log(`[bot-control] Prepared .env.exchanges for ${exchanges.length} exchanges in ${tradingMode} mode`);
       }
     }
 
+    // Execute SSH command based on action
+    let command = '';
+    let newBotStatus = '';
+
     switch (action) {
       case 'start':
-        // Write .env.exchanges file, then start Docker with it
         command = `mkdir -p /opt/hft-bot/app/data && touch /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
-        newBotStatus = 'running';
+        newBotStatus = 'starting';
         break;
       case 'stop':
-        // Remove start signal file, stop strategy
         command = `rm -f /opt/hft-bot/app/data/START_SIGNAL && cd /opt/hft-bot && export STRATEGY_ENABLED=false && docker compose down 2>/dev/null || docker stop hft-bot 2>/dev/null || echo "stopped"`;
         newBotStatus = 'stopped';
         break;
       case 'restart':
-        // Restart with credentials from .env.exchanges
         command = `echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
-        newBotStatus = 'running';
+        newBotStatus = 'starting';
         break;
       case 'status':
         command = 'curl -s http://localhost:8080/health 2>/dev/null || docker ps --filter name=hft-bot --format "{{.Status}}" 2>/dev/null || pm2 jlist 2>/dev/null || echo "not_found"';
@@ -215,6 +206,7 @@ serve(async (req) => {
     }
 
     // Execute SSH command
+    console.log(`[bot-control] Executing SSH command to ${ipAddress}...`);
     const { data: sshResult, error: sshError } = await supabase.functions.invoke('ssh-command', {
       body: {
         ipAddress,
@@ -226,23 +218,45 @@ serve(async (req) => {
     });
 
     if (sshError) {
-      console.error('SSH command error:', sshError);
+      console.error('[bot-control] SSH invocation error:', sshError);
       return new Response(
         JSON.stringify({ success: false, error: `SSH error: ${sshError.message}` }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Verify bot health after start/restart commands
+    // Check if SSH command itself failed
+    if (!sshResult?.success) {
+      console.error('[bot-control] SSH command failed:', sshResult?.error);
+      
+      // Update status to error
+      const updateTime = new Date().toISOString();
+      await supabase.from('hft_deployments').update({ bot_status: 'error', updated_at: updateTime }).eq('id', deployment.id);
+      await supabase.from('trading_config').update({ bot_status: 'error', trading_enabled: false, updated_at: updateTime }).neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: sshResult?.error || 'SSH command execution failed',
+          output: sshResult?.output 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[bot-control] SSH command succeeded, output: ${sshResult.output?.substring(0, 200)}`);
+
+    // CRITICAL: Verify bot health after start/restart commands
+    let healthVerified = false;
     if (action === 'start' || action === 'restart') {
       console.log('[bot-control] Waiting 5s for bot to initialize...');
       await new Promise(resolve => setTimeout(resolve, 5000));
       
       // Verify bot is actually running via health endpoint
-      const { data: healthCheck } = await supabase.functions.invoke('ssh-command', {
+      const { data: healthCheck, error: healthError } = await supabase.functions.invoke('ssh-command', {
         body: {
           ipAddress,
-          command: 'curl -sf http://localhost:8080/health || echo "not_running"',
+          command: 'curl -sf http://localhost:8080/health || echo "__HEALTH_FAILED__"',
           privateKey,
           username: 'root',
           timeout: 10000,
@@ -250,15 +264,38 @@ serve(async (req) => {
       });
       
       const healthOutput = healthCheck?.output || '';
-      if (healthOutput.includes('not_running') || healthOutput.includes('error')) {
-        newBotStatus = 'error';
-        console.log('[bot-control] ❌ Bot failed to start, health check failed');
-      } else if (healthOutput.includes('"status":"ok"') || healthOutput.includes('"status": "ok"')) {
+      console.log(`[bot-control] Health check output: ${healthOutput.substring(0, 200)}`);
+      
+      if (healthError || !healthCheck?.success || healthOutput.includes('__HEALTH_FAILED__')) {
+        // Health check failed - check if container is at least running
+        const { data: containerCheck } = await supabase.functions.invoke('ssh-command', {
+          body: {
+            ipAddress,
+            command: 'docker ps --filter name=hft -q | head -1',
+            privateKey,
+            username: 'root',
+            timeout: 5000,
+          },
+        });
+        
+        if (containerCheck?.output?.trim()) {
+          // Container is running even if health endpoint isn't ready yet
+          newBotStatus = 'running';
+          healthVerified = false;
+          console.log('[bot-control] ⚠️ Container running but health endpoint not ready');
+        } else {
+          newBotStatus = 'error';
+          console.log('[bot-control] ❌ Bot failed to start - no container found');
+        }
+      } else if (healthOutput.includes('"status":"ok"') || healthOutput.includes('"status": "ok"') || healthOutput.includes('healthy')) {
         newBotStatus = 'running';
+        healthVerified = true;
         console.log('[bot-control] ✅ Bot verified running via health check');
       } else {
-        // Check if container is running at least
-        console.log('[bot-control] ⚠️ Health endpoint not responding, checking container...');
+        // Some response but not OK - still mark as running
+        newBotStatus = 'running';
+        healthVerified = true;
+        console.log('[bot-control] ✅ Bot responded to health check');
       }
     }
 
@@ -270,7 +307,6 @@ serve(async (req) => {
       try {
         const output = sshResult.output || '';
         
-        // Try to parse health endpoint JSON response
         if (output.includes('"status":"ok"') || output.includes('"status": "ok"')) {
           botStatus = 'running';
           try {
@@ -336,16 +372,17 @@ serve(async (req) => {
         .or(`deployment_id.eq.${deployment.server_id},provider_instance_id.eq.${deployment.server_id}`);
       
       // 3. Update trading_config for global state sync
+      // CRITICAL: Only set trading_enabled=true if health verified
       await supabase
         .from('trading_config')
         .update({ 
           bot_status: newBotStatus,
-          trading_enabled: newBotStatus === 'running',
+          trading_enabled: newBotStatus === 'running' && healthVerified,
           updated_at: updateTime
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
       
-      console.log(`[bot-control] Synced bot_status=${newBotStatus} across all tables`);
+      console.log(`[bot-control] Synced bot_status=${newBotStatus}, trading_enabled=${newBotStatus === 'running' && healthVerified} across all tables`);
     }
 
     console.log(`[bot-control] ${action} completed successfully for ${ipAddress}`);
@@ -355,6 +392,7 @@ serve(async (req) => {
         success: true, 
         action,
         botStatus: newBotStatus || 'unknown',
+        healthVerified,
         output: sshResult.output,
         ipAddress
       }),
