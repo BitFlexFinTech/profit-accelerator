@@ -49,11 +49,14 @@ async function fetchBalanceViaVPSProxy(
   console.log(`[poll-balances] Routing ${exchangeName} through VPS proxy ${vpsIP}...`);
   
   try {
+    // Normalize exchange name to lowercase for VPS proxy compatibility
+    const normalizedExchange = EXCHANGE_MAP[exchangeName.toLowerCase()] || exchangeName.toLowerCase();
+    
     const response = await fetch(`http://${vpsIP}:8080/balance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        exchange: exchangeName,
+        exchange: normalizedExchange,
         apiKey,
         apiSecret,
         passphrase: passphrase || null
@@ -71,12 +74,16 @@ async function fetchBalanceViaVPSProxy(
       throw new Error(data.error || 'VPS proxy returned error');
     }
     
-    console.log(`[poll-balances] ${exchangeName} via VPS: $${data.totalUSDT?.toFixed(2) || 0}`);
+    // VPS proxy returns { success: true, balance: number, exchange: string }
+    // Convert to our expected format
+    const totalUSDT = data.totalUSDT || data.balance || 0;
+    
+    console.log(`[poll-balances] ${exchangeName} via VPS: $${totalUSDT.toFixed(2)}`);
     
     return {
       exchange: exchangeName,
-      totalUSDT: data.totalUSDT || 0,
-      assets: data.assets || [],
+      totalUSDT,
+      assets: data.assets || [{ symbol: 'USDT', amount: totalUSDT, valueUSDT: totalUSDT }],
       lastUpdated: new Date().toISOString()
     };
   } catch (error: any) {
