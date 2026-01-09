@@ -266,15 +266,15 @@ serve(async (req) => {
         }
       }
 
-      // Insert metrics into vps_metrics
-      const { error: insertError } = await supabase.from('vps_metrics').insert({
+      // Upsert metrics into vps_metrics (one row per provider)
+      const { error: insertError } = await supabase.from('vps_metrics').upsert({
         provider,
         cpu_percent: cpuPercent,
         ram_percent: ramPercent,
         disk_percent: diskPercent,
         latency_ms: latencyMs,
         recorded_at: new Date().toISOString()
-      });
+      }, { onConflict: 'provider' });
 
       if (insertError) {
         console.error(`[scheduled-vps-health] Failed to insert metrics for ${provider}:`, insertError.message);

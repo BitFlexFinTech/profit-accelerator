@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
             uptimeSeconds = healthData.uptime;
           }
 
-          const { error: metricsError } = await supabase.from('vps_metrics').insert({
+          const { error: metricsError } = await supabase.from('vps_metrics').upsert({
             provider: provider || 'vultr',
             cpu_percent: cpuPercent,
             ram_percent: ramPercent,
@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
             network_out_mbps: 0,
             uptime_seconds: uptimeSeconds,
             recorded_at: new Date().toISOString(),
-          });
+          }, { onConflict: 'provider' });
 
           if (metricsError) {
             console.error('[check-vps-health] Failed to insert metrics:', metricsError);

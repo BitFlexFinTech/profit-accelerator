@@ -112,12 +112,12 @@ serve(async (req) => {
         details: { latency: result.latency, consecutive_failures: newConsecutiveFailures }
       });
 
-      // Update vps_metrics with latency data
-      await supabase.from('vps_metrics').insert({
+      // Update vps_metrics with latency data (upsert one row per provider)
+      await supabase.from('vps_metrics').upsert({
         provider: config.provider,
         latency_ms: result.latency,
         recorded_at: new Date().toISOString(),
-      });
+      }, { onConflict: 'provider' });
 
       // Log to vps_timeline_events
       await supabase.from('vps_timeline_events').insert({

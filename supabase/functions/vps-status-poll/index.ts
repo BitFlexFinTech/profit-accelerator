@@ -112,15 +112,15 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Insert new metrics record
-    await supabase.from('vps_metrics').insert({
+    // Upsert metrics record (one row per provider)
+    await supabase.from('vps_metrics').upsert({
       provider,
       cpu_percent: result.cpu_percent,
       ram_percent: result.memory_percent,
       latency_ms: result.latency_ms,
       uptime_seconds: result.uptime_seconds,
       recorded_at: result.checked_at,
-    });
+    }, { onConflict: 'provider' });
 
     // Update failover config with latest health check
     await supabase.from('failover_config').update({
