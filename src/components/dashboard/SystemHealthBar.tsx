@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, forwardRef, ComponentPropsWithoutRef } from 'react';
+import { useState, useEffect, useRef, forwardRef, ComponentPropsWithoutRef, useMemo } from 'react';
 import { Brain, Activity, Server, Loader2, RefreshCw } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
@@ -16,12 +16,42 @@ interface SystemHealthBarProps {
   onNavigateToSettings?: () => void;
 }
 
+// Format time ago for last check display
+function formatTimeAgo(date: Date | null): string {
+  if (!date) return 'Never';
+  
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  
+  if (diffSeconds < 5) return 'Just now';
+  if (diffSeconds < 60) return `${diffSeconds}s ago`;
+  
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  
+  const diffHours = Math.floor(diffMinutes / 60);
+  return `${diffHours}h ago`;
+}
+
 export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) {
-  const { checkHealth, isLoading: statusLoading, ...status } = useSystemStatus();
+  const { checkHealth, isLoading: statusLoading, lastHealthCheck, isHealthChecking, ...status } = useSystemStatus();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [flashingIndicators, setFlashingIndicators] = useState<Set<string>>(new Set());
   const [botStatus, setBotStatus] = useState<string>('idle');
+  const [timeAgo, setTimeAgo] = useState<string>('Never');
   const prevStatusRef = useRef(status);
+
+  // Update time ago every second
+  useEffect(() => {
+    const updateTimeAgo = () => {
+      setTimeAgo(formatTimeAgo(lastHealthCheck));
+    };
+    
+    updateTimeAgo();
+    const interval = setInterval(updateTimeAgo, 1000);
+    return () => clearInterval(interval);
+  }, [lastHealthCheck]);
 
   // Fetch bot status to control pulse
   useEffect(() => {
@@ -99,12 +129,12 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
 
   const vpsColorState = getVpsColorState();
 
-  const getVpsTooltip = () => {
+  const getVpsTooltip = useMemo(() => {
     if (hasError) {
-      return 'VPS Error - Clear error in Bot Control panel';
+      return `VPS Error - Clear error in Bot Control panel • Checked ${timeAgo}`;
     }
     if (isReadyForSetup) {
-      return 'Ready for Setup - Configure VPS in Settings';
+      return `Ready for Setup - Configure VPS in Settings • Checked ${timeAgo}`;
     }
     if (vpsColorState === 'connected' && status.vps.ip) {
       const provider = status.vps.provider 
@@ -112,16 +142,16 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
         : '';
       const botInfo = status.vps.botStatus === 'running' ? ' • Bot Running' : 
                       status.vps.botStatus === 'stopped' ? ' • Bot Stopped' : '';
-      return `Connected - ${status.vps.ip}${provider ? ` (${provider})` : ''}${botInfo}`;
+      return `Connected - ${status.vps.ip}${provider ? ` (${provider})` : ''}${botInfo} • Checked ${timeAgo}`;
     }
     if (status.vps.status === 'deploying') {
-      return 'Deploying instance...';
+      return `Deploying instance... • Checked ${timeAgo}`;
     }
     if (vpsColorState === 'warning') {
-      return 'VPS starting...';
+      return `VPS starting... • Checked ${timeAgo}`;
     }
-    return 'VPS not connected';
-  };
+    return `VPS not connected • Checked ${timeAgo}`;
+  }, [hasError, isReadyForSetup, vpsColorState, status.vps, timeAgo]);
 
   const indicators = [
     {
@@ -153,7 +183,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       isActive: vpsColorState === 'connected',
       isDeploying: isDeploying,
       colorState: vpsColorState,
-      tooltip: getVpsTooltip(),
+      tooltip: getVpsTooltip,
     },
   ] as const;
 
@@ -162,6 +192,9 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
     await checkHealth();
     setIsRefreshing(false);
   };
+
+  // Combined refreshing state
+  const isCurrentlyRefreshing = isRefreshing || isHealthChecking;
 
   if (statusLoading) {
     return (
@@ -239,18 +272,20 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
           <TooltipTrigger asChild>
             <IndicatorButton
               onClick={handleRefresh}
-              disabled={isRefreshing}
+              disabled={isCurrentlyRefreshing}
               className={cn(
                 'flex items-center justify-center h-7 w-7 rounded-full text-xs transition-all',
                 'border hover:scale-105 active:scale-95',
-                'bg-muted/50 border-border text-muted-foreground hover:text-foreground'
+                isCurrentlyRefreshing
+                  ? 'bg-primary/10 border-primary/30 text-primary'
+                  : 'bg-muted/50 border-border text-muted-foreground hover:text-foreground'
               )}
             >
-              <RefreshCw className={cn('h-3 w-3', isRefreshing && 'animate-spin')} />
+              <RefreshCw className={cn('h-3 w-3', isCurrentlyRefreshing && 'animate-spin')} />
             </IndicatorButton>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
-            Refresh health status
+            {isCurrentlyRefreshing ? 'Checking health...' : `Refresh • Last: ${timeAgo}`}
           </TooltipContent>
         </Tooltip>
         
