@@ -746,20 +746,53 @@ serve(async (req) => {
             
             providersUsed.add(result.provider);
             
-            const m = result.content.match(/\{[\s\S]*\}/);
-            if (!m) {
+            // Robust JSON extraction with multiple fallback strategies
+            const extractJSON = (content: string): Record<string, unknown> | null => {
+              const jsonMatch = content.match(/\{[\s\S]*\}/);
+              if (!jsonMatch) return null;
+              
+              // Strategy 1: Direct parse
+              try {
+                return JSON.parse(jsonMatch[0]);
+              } catch {
+                // Strategy 2: Clean common AI issues
+                let cleaned = jsonMatch[0]
+                  .replace(/'/g, '"')
+                  .replace(/(\w+)\s*:/g, '"$1":')
+                  .replace(/,\s*}/g, '}')
+                  .replace(/,\s*]/g, ']');
+                
+                try {
+                  return JSON.parse(cleaned);
+                } catch {
+                  // Strategy 3: Extract individual fields via regex
+                  const sentiment = content.match(/sentiment['":\s]+['"]?([A-Z]+)['"]?/i)?.[1] || 'NEUTRAL';
+                  const confidence = parseInt(content.match(/confidence['":\s]+(\d+)/i)?.[1] || '70');
+                  const insight = content.match(/insight['":\s]+['"]([^'"]+)['"]/i)?.[1] || 'Market signal';
+                  const support = parseFloat(content.match(/support['":\s]+(\d+\.?\d*)/i)?.[1] || '0');
+                  const resistance = parseFloat(content.match(/resistance['":\s]+(\d+\.?\d*)/i)?.[1] || '0');
+                  const timeframe = parseInt(content.match(/profit_timeframe_minutes['":\s]+(\d+)/i)?.[1] || '5');
+                  const side = content.match(/recommended_side['":\s]+['"]?(long|short)['"]?/i)?.[1] || 'long';
+                  const move = parseFloat(content.match(/expected_move_percent['":\s]+(\d+\.?\d*)/i)?.[1] || '0.25');
+                  
+                  return { sentiment, confidence, insight, support, resistance, profit_timeframe_minutes: timeframe, recommended_side: side, expected_move_percent: move };
+                }
+              }
+            };
+            
+            const a = extractJSON(result.content);
+            if (!a) {
+              console.error(`[ai-analyze] Failed to parse JSON for ${cleanSymbol}:`, result.content.substring(0, 100));
               totalErrors++;
               continue;
             }
             
-            const a = JSON.parse(m[0]);
-            
-            let profitTimeframe = parseInt(a.profit_timeframe_minutes) || 5;
+            let profitTimeframe = parseInt(String(a.profit_timeframe_minutes)) || 5;
             if (![1, 3, 5].includes(profitTimeframe)) profitTimeframe = 5;
             const recommendedSide = a.recommended_side === 'short' ? 'short' : 'long';
-            let expectedMove = parseFloat(a.expected_move_percent) || 0.25;
+            let expectedMove = parseFloat(String(a.expected_move_percent)) || 0.25;
             expectedMove = Math.max(0.1, Math.min(2.0, expectedMove));
-            let confidence = parseInt(a.confidence) || 70;
+            let confidence = parseInt(String(a.confidence)) || 70;
             confidence = Math.max(50, Math.min(95, confidence));
             
             const { error: upsertError } = await supabase.from('ai_market_updates').upsert({
