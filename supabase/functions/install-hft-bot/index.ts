@@ -1286,6 +1286,31 @@ function saveState() {
   }
 }
 
+// CRITICAL: Reload runtime environment after /control writes credentials
+function reloadRuntimeEnv() {
+  const RUNTIME_ENV_FILE = '/app/data/.env.runtime';
+  if (fs.existsSync(RUNTIME_ENV_FILE)) {
+    try {
+      const envContent = fs.readFileSync(RUNTIME_ENV_FILE, 'utf8');
+      envContent.split('\\n').forEach(line => {
+        const idx = line.indexOf('=');
+        if (idx > 0) {
+          const key = line.substring(0, idx);
+          const value = line.substring(idx + 1);
+          process.env[key] = value;
+        }
+      });
+      console.log('[🐟 PIRANHA] ✅ Reloaded runtime environment from .env.runtime');
+      return true;
+    } catch (err) {
+      console.error('[🐟 PIRANHA] Failed to reload runtime env:', err.message);
+      return false;
+    }
+  }
+  console.log('[🐟 PIRANHA] ⚠️ No .env.runtime file found');
+  return false;
+}
+
 function logTrade(trade) {
   try {
     let trades = [];
@@ -1999,6 +2024,25 @@ async function runPiranha() {
     // Log waiting status every 30 seconds
     console.log('[🐟 PIRANHA] ⏳ Waiting for start command... (check every 10s)');
     await sleep(10000);
+  }
+  
+  // CRITICAL: Reload credentials that were written by /control endpoint
+  console.log('[🐟 PIRANHA] 🔄 Reloading credentials from .env.runtime...');
+  reloadRuntimeEnv();
+  
+  // Verify credentials are loaded
+  const creds = loadExchangeCredentials();
+  const binanceReady = creds.binance?.apiKey && creds.binance?.apiSecret;
+  const okxReady = creds.okx?.apiKey && creds.okx?.apiSecret;
+  console.log('[🐟 PIRANHA] ════════════════════════════════════════════');
+  console.log('[🐟 PIRANHA] 🔐 CREDENTIALS STATUS:');
+  console.log('[🐟 PIRANHA]    Binance: ' + (binanceReady ? '✅ READY' : '❌ MISSING'));
+  console.log('[🐟 PIRANHA]    OKX: ' + (okxReady ? '✅ READY' : '❌ MISSING'));
+  console.log('[🐟 PIRANHA] ════════════════════════════════════════════');
+  
+  if (!binanceReady && !okxReady) {
+    console.error('[🐟 PIRANHA] ❌ NO EXCHANGE CREDENTIALS LOADED!');
+    console.error('[🐟 PIRANHA] Bot will wait for credentials via /control endpoint...');
   }
   
   loadState();
