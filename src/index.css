@@ -150,6 +150,56 @@
     --chart-4: 45 100% 60%;
     --chart-5: 155 90% 48%;
   }
+
+  /* Light Theme */
+  .theme-light {
+    --background: 0 0% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 270 70% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 185 80% 42%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 155 70% 36%;
+    --warning: 45 93% 47%;
+    --profit: 155 70% 36%;
+    --loss: 0 84% 60%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 270 70% 50%;
+    --glass-bg: 0 0% 100% / 0.9;
+    --glass-border: 220 13% 85% / 0.6;
+    --glass-shadow: 220 20% 60% / 0.1;
+  }
+
+  .theme-light body {
+    background: linear-gradient(145deg, hsl(220 20% 97%) 0%, hsl(220 14% 96%) 50%, hsl(220 20% 98%) 100%);
+  }
+}
+
+/* Smooth theme transitions */
+html,
+html *,
+html *::before,
+html *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Disable transitions during theme switch to prevent flash */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
 }
 
 @layer base {

@@ -28,6 +28,8 @@ import { NotificationCenter } from './NotificationCenter';
 import { KillSwitchDialog } from './KillSwitchDialog';
 import { SystemHealthBar } from './SystemHealthBar';
 import { NotificationDropdown } from './NotificationDropdown';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { WidgetCustomizer } from './WidgetCustomizer';
 import { initializeAppStore } from '@/store/useAppStore';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -179,6 +181,8 @@ export function DashboardLayout() {
 
         {/* Right Actions */}
         <div className="flex items-center gap-2">
+          {activeTab === 'dashboard' && <WidgetCustomizer dashboardId="live" />}
+          <ThemeToggle />
           <NotificationDropdown />
           <Button
             variant="ghost"
