@@ -12,7 +12,8 @@ import {
   X,
   Zap,
   ArrowLeftRight,
-  Bell
+  Bell,
+  UserCog
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -184,6 +185,15 @@ export function DashboardLayout() {
           {activeTab === 'dashboard' && <WidgetCustomizer dashboardId="live" />}
           <ThemeToggle />
           <NotificationDropdown />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/settings')}
+            className="text-muted-foreground hover:text-foreground hover:bg-accent/20"
+            title="User Settings"
+          >
+            <UserCog className="w-5 h-5" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"

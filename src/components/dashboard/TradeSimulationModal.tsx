@@ -522,7 +522,7 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
             const { error: notifError } = await supabase.from('system_notifications').insert({
               type: 'mode_unlock',
               title: 'Live Trading Unlocked!',
-              message: 'Congratulations! You completed 50 profitable paper trades. Live trading is now available.',
+              message: 'Congratulations! You completed 20 profitable paper trades. Live trading is now available.',
               severity: 'achievement',
               category: 'unlock'
             });

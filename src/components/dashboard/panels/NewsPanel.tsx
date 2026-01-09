@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, forwardRef } from 'react';
 import { Newspaper, ExternalLink, TrendingUp, TrendingDown, Minus, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -22,22 +22,24 @@ function analyzeSentiment(title: string): 'bullish' | 'bearish' | 'neutral' {
   return 'neutral';
 }
 
-function SentimentBadge({ sentiment }: { sentiment: 'bullish' | 'bearish' | 'neutral' }) {
-  const config = {
-    bullish: { icon: TrendingUp, color: 'text-emerald-400' },
-    bearish: { icon: TrendingDown, color: 'text-rose-400' },
-    neutral: { icon: Minus, color: 'text-muted-foreground' },
-  };
-  
-  const { icon: Icon, color } = config[sentiment];
-  
-  // Tiny icon-only badge - no text label to save space
-  return (
-    <span className={cn('flex-shrink-0', color)}>
-      <Icon className="w-3 h-3" />
-    </span>
-  );
-}
+const SentimentBadge = forwardRef<HTMLSpanElement, { sentiment: 'bullish' | 'bearish' | 'neutral' }>(
+  ({ sentiment }, ref) => {
+    const config = {
+      bullish: { icon: TrendingUp, color: 'text-emerald-400' },
+      bearish: { icon: TrendingDown, color: 'text-rose-400' },
+      neutral: { icon: Minus, color: 'text-muted-foreground' },
+    };
+    
+    const { icon: Icon, color } = config[sentiment];
+    
+    return (
+      <span ref={ref} className={cn('flex-shrink-0', color)}>
+        <Icon className="w-3 h-3" />
+      </span>
+    );
+  }
+);
+SentimentBadge.displayName = 'SentimentBadge';
 
 export function NewsPanel() {
   const { news, isLoading, lastUpdate, refetch } = useCryptoNews(300000);
