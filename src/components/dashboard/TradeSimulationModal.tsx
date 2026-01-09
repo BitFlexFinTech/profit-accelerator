@@ -131,8 +131,17 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       updateStage('pair-selection', { status: 'running' });
       
       const selectedExchange = exchanges[0].exchange_name;
-      const selectedSymbol = aiSignals?.[0]?.symbol || 'BTC/USDT';
-      const selectedSide = aiSignals?.[0]?.recommended_side || 'long';
+      
+      // Filter for tradeable symbols (exclude stablecoins like USDC, FDUSD)
+      const tradeableSymbols = ['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA', 'AVAX', 'LINK'];
+      const tradeableSignal = aiSignals?.find(s => 
+        tradeableSymbols.some(t => s.symbol?.toUpperCase().includes(t))
+      );
+      const selectedSymbol = tradeableSignal?.symbol 
+        ? `${tradeableSignal.symbol.toUpperCase().replace('/USDT', '').replace('USDT', '')}/USDT`
+        : 'BTC/USDT';
+      const selectedSide = tradeableSignal?.recommended_side || 'long';
+      console.log('[Trade] Selected symbol:', selectedSymbol, 'from signal:', tradeableSignal?.symbol);
       
       setSimulationData(prev => ({ ...prev, exchange: selectedExchange, symbol: selectedSymbol, side: selectedSide }));
       
@@ -172,16 +181,21 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         console.log('[Trade] Price fetch failed, using fallback:', e);
       }
       
-      // Fallback to realistic market price if fetch failed
+      // Fallback to realistic market prices for all supported symbols
       if (!realEntryPrice) {
-        if (selectedSymbol.includes('BTC')) {
-          realEntryPrice = 95000 + Math.random() * 2000;
-        } else if (selectedSymbol.includes('ETH')) {
-          realEntryPrice = 3400 + Math.random() * 100;
-        } else {
-          realEntryPrice = 100 + Math.random() * 50;
-        }
-        console.log('[Trade] Using fallback price:', realEntryPrice);
+        const fallbackPrices: Record<string, number> = {
+          'BTC': 91000 + Math.random() * 1000,
+          'ETH': 3100 + Math.random() * 50,
+          'SOL': 138 + Math.random() * 5,
+          'XRP': 2.1 + Math.random() * 0.1,
+          'DOGE': 0.14 + Math.random() * 0.01,
+          'ADA': 0.9 + Math.random() * 0.05,
+          'AVAX': 35 + Math.random() * 2,
+          'LINK': 22 + Math.random() * 1,
+        };
+        const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '').toUpperCase();
+        realEntryPrice = fallbackPrices[symbolBase] || 100 + Math.random() * 10;
+        console.log('[Trade] Using fallback price for', symbolBase, ':', realEntryPrice);
       }
       
       const entryPriceForCalc = realEntryPrice;
