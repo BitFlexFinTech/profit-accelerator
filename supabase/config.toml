@@ -180,3 +180,6 @@ verify_jwt = false
 
 [functions.bot-signal-receiver]
 verify_jwt = false
+
+[functions.scheduled-ai-reset]
+verify_jwt = false

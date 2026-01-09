@@ -11,7 +11,7 @@ import CloudCredentials from "./pages/CloudCredentials";
 import VPSSetup from "./pages/VPSSetup";
 import UserSettings from "./pages/UserSettings";
 import NotFound from "./pages/NotFound";
-import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ErrorBoundaryWrapper } from "./components/ErrorBoundary";
 import { initializeAppStore, useAppStore } from "@/store/useAppStore";
 import { useCrossTabSync } from "@/hooks/useCrossTabSync";
 
@@ -59,7 +59,7 @@ const App = () => {
   }, []);
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundaryWrapper>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
@@ -67,7 +67,7 @@ const App = () => {
           <AppContent />
         </TooltipProvider>
       </QueryClientProvider>
-    </ErrorBoundary>
+    </ErrorBoundaryWrapper>
   );
 };
 

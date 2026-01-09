@@ -1,6 +1,7 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import React, { Component, ErrorInfo, ReactNode, useState, useEffect } from 'react';
+import { AlertTriangle, RefreshCw, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Props {
   children: ReactNode;
@@ -9,6 +10,68 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+}
+
+// Network Status Hook
+function useNetworkStatus() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [supabaseConnected, setSupabaseConnected] = useState(true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    const checkConnection = async () => {
+      try {
+        const { error } = await supabase.from('trading_config').select('id').limit(1);
+        setSupabaseConnected(!error);
+      } catch {
+        setSupabaseConnected(false);
+      }
+    };
+    
+    checkConnection();
+    const interval = setInterval(checkConnection, 30000);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
+  }, []);
+
+  return { isOnline, supabaseConnected };
+}
+
+// Connection Status Banner
+function ConnectionStatusBanner() {
+  const { isOnline, supabaseConnected } = useNetworkStatus();
+  
+  if (isOnline && supabaseConnected) return null;
+  
+  return (
+    <div className="fixed top-0 left-0 right-0 z-50 bg-warning text-warning-foreground px-4 py-2 flex items-center justify-center gap-2 text-sm">
+      <WifiOff className="w-4 h-4" />
+      <span>
+        {!isOnline 
+          ? 'You are offline. Some features may not work.' 
+          : 'Connection to server lost. Attempting to reconnect...'}
+      </span>
+    </div>
+  );
+}
+
+// Wrapper that includes connection status
+export function ErrorBoundaryWrapper({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <ConnectionStatusBanner />
+      <ErrorBoundary>{children}</ErrorBoundary>
+    </>
+  );
 }
 
 export class ErrorBoundary extends Component<Props, State> {
