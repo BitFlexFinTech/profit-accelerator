@@ -287,6 +287,72 @@ serve(async (req) => {
         return new Response(JSON.stringify({ success: true, ip: vpsConfig[0].outbound_ip }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      case 'verify-vps-order-endpoint': {
+        // Check if VPS is running and accessible for order execution
+        const { data: vpsConfig } = await supabase
+          .from('vps_config')
+          .select('outbound_ip, status, provider')
+          .eq('status', 'running')
+          .not('outbound_ip', 'is', null)
+          .limit(1);
+
+        if (!vpsConfig?.length) {
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: 'No running VPS found',
+            vpsAvailable: false,
+            healthEndpoint: null,
+            orderEndpoint: null
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const vpsIp = vpsConfig[0].outbound_ip;
+        const healthUrl = `http://${vpsIp}:8080/health`;
+        const orderUrl = `http://${vpsIp}:8080/place-order`;
+        
+        let healthStatus = 'unknown';
+        let healthLatencyMs = 0;
+        let orderEndpointReady = false;
+
+        // Test health endpoint
+        try {
+          const healthStart = Date.now();
+          const healthResp = await fetch(healthUrl, {
+            method: 'GET',
+            signal: AbortSignal.timeout(5000)
+          });
+          healthLatencyMs = Date.now() - healthStart;
+          
+          if (healthResp.ok) {
+            const healthData = await healthResp.json();
+            healthStatus = healthData.status || 'ok';
+            orderEndpointReady = true;
+            console.log(`[trade-engine] VPS health check passed: ${healthStatus} (${healthLatencyMs}ms)`);
+          } else {
+            healthStatus = `error-${healthResp.status}`;
+            console.log(`[trade-engine] VPS health check failed: HTTP ${healthResp.status}`);
+          }
+        } catch (err) {
+          healthStatus = `unreachable: ${err instanceof Error ? err.message : 'timeout'}`;
+          console.log(`[trade-engine] VPS health check failed: ${healthStatus}`);
+        }
+
+        return new Response(JSON.stringify({
+          success: orderEndpointReady,
+          vpsAvailable: true,
+          vpsIp,
+          provider: vpsConfig[0].provider,
+          healthEndpoint: healthUrl,
+          orderEndpoint: orderUrl,
+          healthStatus,
+          healthLatencyMs,
+          orderEndpointReady,
+          message: orderEndpointReady 
+            ? 'VPS order endpoint is accessible and ready for live trades'
+            : 'VPS is running but order endpoint is not responding'
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       case 'diagnose-outbound': {
         const { data: vpsConfig } = await supabase
           .from('vps_config')
@@ -369,14 +435,21 @@ serve(async (req) => {
         }
         
         // Increment paper trade counter and check for live unlock
-        const { data: unlocked } = await supabase.rpc('increment_paper_trade_v2', { profit: simulatedPnl });
+        const { data: unlocked, error: rpcError } = await supabase.rpc('increment_paper_trade_v2', { profit: simulatedPnl });
+        
+        if (rpcError) {
+          console.error(`[trade-engine] RPC increment_paper_trade_v2 failed:`, rpcError.message);
+        } else {
+          console.log(`[trade-engine] Paper trade recorded. Live unlock: ${unlocked}`);
+        }
         
         return new Response(JSON.stringify({ 
           success: true, 
           tradeId: trade?.id,
           entryPrice: realPrice,
           pnl: simulatedPnl,
-          liveUnlocked: unlocked
+          liveUnlocked: unlocked,
+          rpcError: rpcError?.message
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
