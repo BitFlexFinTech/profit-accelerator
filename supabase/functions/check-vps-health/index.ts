@@ -173,23 +173,43 @@ Deno.serve(async (req) => {
             .eq('provider', provider);
         }
         
-        // CRITICAL FIX: Only update HEALTH metrics - NEVER auto-set bot_status
-        // Bot must be started manually by user action only
+        // Update HEALTH metrics and clear 'error' bot_status when VPS is healthy
         const now = new Date().toISOString();
         
-        console.log(`[check-vps-health] Updating HEALTH metrics only (not bot_status) for IP=${targetIp}`);
+        console.log(`[check-vps-health] Updating health metrics for IP=${targetIp}`);
         
-        // Update vps_instances health status ONLY (no bot_status)
+        // Update vps_instances health status and clear 'error' bot_status
         await supabase
           .from('vps_instances')
           .update({ 
             last_health_check: now,
             health_status: isHealthy ? 'healthy' : 'unhealthy',
+            status: isHealthy ? 'running' : 'offline',
             updated_at: now 
           })
           .eq('ip_address', targetIp);
         
-        // Update hft_deployments health status ONLY (no bot_status)
+        // Clear 'error' bot_status to 'stopped' when health is OK (don't set 'running' - user must start)
+        if (isHealthy) {
+          await supabase
+            .from('vps_instances')
+            .update({ bot_status: 'stopped', updated_at: now })
+            .eq('ip_address', targetIp)
+            .eq('bot_status', 'error');
+          
+          await supabase
+            .from('hft_deployments')
+            .update({ bot_status: 'stopped', updated_at: now })
+            .eq('ip_address', targetIp)
+            .eq('bot_status', 'error');
+          
+          await supabase
+            .from('trading_config')
+            .update({ bot_status: 'stopped', updated_at: now })
+            .eq('bot_status', 'error');
+        }
+        
+        // Update hft_deployments health status
         await supabase
           .from('hft_deployments')
           .update({ 
@@ -206,7 +226,7 @@ Deno.serve(async (req) => {
           consecutive_failures: 0
         });
         
-        console.log(`[check-vps-health] VPS health updated (bot_status NOT changed)`);
+        console.log(`[check-vps-health] VPS health updated, cleared error states if present`);
       }
     } catch (fetchError) {
       console.error('[check-vps-health] Fetch failed:', fetchError);
