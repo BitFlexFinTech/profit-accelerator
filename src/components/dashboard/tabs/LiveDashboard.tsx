@@ -10,6 +10,7 @@ import { AIProviderHealthDashboard } from '../panels/AIProviderHealthDashboard';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
+import { useRateLimitRecovery } from '@/hooks/useRateLimitRecovery';
 import { ModeProgressTracker } from '../panels/ModeProgressTracker';
 import { MobileDashboard } from '../MobileDashboard';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -17,6 +18,7 @@ import { useWidgetStore } from '@/store/useWidgetStore';
 
 export function LiveDashboard() {
   useTradeNotifications();
+  useRateLimitRecovery(); // Auto-clears expired cooldowns every 5 minutes
   const isMobile = useIsMobile();
   const { sync } = useExchangeWebSocket();
   const { startPolling, stopPolling } = useLiveBalancePolling(60);
