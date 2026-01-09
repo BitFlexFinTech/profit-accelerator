@@ -216,18 +216,16 @@ serve(async (req) => {
           );
         }
       } catch (httpErr) {
-        // Control API not available - this is expected if VPS doesn't have the control endpoint yet
-        // Log a warning but return success so the UI flow continues
+        // Control API not available - return actual failure, not simulated success
         const errMsg = httpErr instanceof Error ? httpErr.message : String(httpErr);
-        console.warn(`[ssh-command] Control API not available (${errMsg}), simulating success`);
+        console.error(`[ssh-command] Control API failed: ${errMsg}`);
         
-        // Return simulated success - the actual bot state will be verified via health check
         return new Response(
           JSON.stringify({
-            success: true,
-            exitCode: 0,
-            output: `[Simulated] Bot ${action} command logged. Note: VPS control API not available at ${ipAddress}:8080/control. Deploy control API for actual SSH command execution.`,
-            simulated: true
+            success: false,
+            exitCode: 1,
+            output: `VPS control API not available at ${ipAddress}:8080/control`,
+            error: `Control API failed: ${errMsg}. Redeploy VPS with updated bot code.`
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );

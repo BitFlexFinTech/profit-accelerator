@@ -11,7 +11,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAppStore } from '@/store/useAppStore';
 import { RiskManager } from '@/lib/riskManager';
 import { OrderManager } from '@/lib/orderManager';
-import { PaperTradingManager } from '@/lib/paperTrading';
 import { toast } from 'sonner';
 import { ActionButton } from '@/components/ui/ActionButton';
 import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
@@ -163,27 +162,17 @@ export function OrderForm() {
 
     setIsSubmitting(true);
     try {
-      if (paperTradingMode) {
-        await PaperTradingManager.getInstance().executePaperOrder({
-          exchangeName: exchange,
-          symbol,
-          side,
-          type: orderType,
-          amount: parseFloat(amount),
-          price: price ? parseFloat(price) : undefined
-        });
-        toast.success(`Paper ${side} order placed for ${amount} ${symbol}`);
-      } else {
-        await OrderManager.getInstance().placeOrder({
-          exchangeName: exchange,
-          symbol,
-          side,
-          type: orderType,
-          amount: parseFloat(amount),
-          price: price ? parseFloat(price) : undefined
-        });
-        toast.success(`${side.toUpperCase()} order placed for ${amount} ${symbol}`);
-      }
+      // All trading now goes through OrderManager which routes to VPS bot
+      // Paper/Simulation vs Live is determined by trading_config.trading_mode
+      await OrderManager.getInstance().placeOrder({
+        exchangeName: exchange,
+        symbol,
+        side,
+        type: orderType,
+        amount: parseFloat(amount),
+        price: price ? parseFloat(price) : undefined
+      });
+      toast.success(`${paperTradingMode ? 'Paper ' : ''}${side.toUpperCase()} order placed for ${amount} ${symbol}`);
 
       // Reset form
       setAmount('');

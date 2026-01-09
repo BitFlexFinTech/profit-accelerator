@@ -383,74 +383,18 @@ serve(async (req) => {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      // REMOVED: paper-order case - All trading now goes through VPS bot only
+      // The VPS bot handles simulation, paper, and live modes with identical logic
+      // Only difference: Live mode places real exchange orders, Paper/Simulation do not
       case 'paper-order': {
-        const { symbol, side, quantity, strategy } = params;
-        
-        // Fetch real price from Binance
-        const symbolFormatted = symbol.replace('/', '').replace('-', '');
-        let realPrice = 0;
-        
-        try {
-          const priceResp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbolFormatted}USDT`);
-          if (priceResp.ok) {
-            const priceData = await priceResp.json();
-            realPrice = parseFloat(priceData?.price || '0');
-          }
-        } catch (e) {
-          console.log('[trade-engine] Paper order price fetch error:', e);
-        }
-        
-        if (!realPrice) {
-          // Fallback prices
-          const fallbacks: Record<string, number> = { BTC: 91000, ETH: 3100, SOL: 138, DOGE: 0.34, XRP: 2.1, BNB: 680 };
-          const base = symbol.replace('/USDT', '').replace('USDT', '').toUpperCase();
-          realPrice = fallbacks[base] || 100;
-        }
-        
-        // Calculate simulated PnL (0.1% - 0.5% profit)
-        const profitPercent = 0.1 + Math.random() * 0.4;
-        const simulatedPnl = (quantity * realPrice * profitPercent) / 100;
-        
-        // Insert paper trade
-        const { data: trade, error: insertError } = await supabase
-          .from('trading_journal')
-          .insert({
-            exchange: 'paper',
-            symbol,
-            side,
-            quantity,
-            entry_price: realPrice,
-            exit_price: realPrice * (1 + profitPercent / 100),
-            pnl: simulatedPnl,
-            status: 'closed',
-            ai_reasoning: `Paper trade via ${strategy || 'manual'} strategy`,
-            paper_trade: true
-          })
-          .select()
-          .single();
-        
-        if (insertError) {
-          return new Response(JSON.stringify({ success: false, error: insertError.message }), 
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-        
-        // Increment paper trade counter and check for live unlock
-        const { data: unlocked, error: rpcError } = await supabase.rpc('increment_paper_trade_v2', { profit: simulatedPnl });
-        
-        if (rpcError) {
-          console.error(`[trade-engine] RPC increment_paper_trade_v2 failed:`, rpcError.message);
-        } else {
-          console.log(`[trade-engine] Paper trade recorded. Live unlock: ${unlocked}`);
-        }
-        
         return new Response(JSON.stringify({ 
-          success: true, 
-          tradeId: trade?.id,
-          entryPrice: realPrice,
-          pnl: simulatedPnl,
-          liveUnlocked: unlocked,
-          rpcError: rpcError?.message
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          success: false, 
+          error: 'DISABLED: All trading now goes through VPS bot. Use bot-control to start/stop trading.',
+          action_required: 'Use the dashboard Start button to begin trading via VPS bot.'
+        }), { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
       }
 
       case 'test-connection': {

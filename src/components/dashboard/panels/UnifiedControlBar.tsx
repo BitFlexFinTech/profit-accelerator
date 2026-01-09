@@ -169,39 +169,10 @@ export function UnifiedControlBar() {
       // Subscribe to first trade
       const channel = subscribeToFirstTrade();
       
-      // Execute paper trade smoke test if in paper mode
-      if (isPaperMode) {
-        console.log('[UnifiedControlBar] Executing paper trade smoke test...');
-        setStartupProgress(70);
-        
-        try {
-          const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('trade-engine', {
-            body: {
-              action: 'paper-order',
-              symbol: 'BTC/USDT',
-              side: 'BUY',
-              quantity: 0.001,
-              strategy: 'smoke-test-startup',
-              exchange: 'binance'
-            }
-          });
-          
-          if (tradeResult?.success) {
-            console.log('[UnifiedControlBar] ✅ Paper trade smoke test passed:', tradeResult);
-            setStartupProgress(100);
-            setStartupStage('active');
-            toast.success('Paper trading is active!');
-            syncFromDatabase();
-            supabase.removeChannel(channel);
-            return;
-          } else {
-            console.warn('[UnifiedControlBar] Paper trade smoke test returned no success:', tradeResult);
-          }
-        } catch (smokeErr) {
-          console.warn('[UnifiedControlBar] Paper trade smoke test failed:', smokeErr);
-          // Continue anyway - bot is running
-        }
-      }
+      // VPS bot now handles all trading - no smoke test needed
+      // Bot will start filling positions automatically based on AI signals
+      setStartupProgress(80);
+      console.log('[UnifiedControlBar] VPS bot is now active and will fill positions from AI signals');
       
       // Timeout after 60 seconds - transition to active regardless
       setTimeout(() => {

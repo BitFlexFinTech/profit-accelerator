@@ -11,7 +11,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { StrategyWizard } from '../wizards/StrategyWizard';
-import { PaperTradingManager } from '@/lib/paperTrading';
 import { ActionButton } from '@/components/ui/ActionButton';
 import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 import { cn } from '@/lib/utils';
@@ -255,24 +254,13 @@ export function StrategyBuilder() {
       const effectiveLeverage = tradingMode === 'futures' ? (strategy.leverage || leverage) : 1;
       const quantity = (strategy.position_size * effectiveLeverage) / price;
       
-      // Execute paper order using PaperTradingManager
-      const paperManager = PaperTradingManager.getInstance();
-      await paperManager.executePaperOrder({
-        exchangeName: 'Binance',
-        symbol,
-        side: 'buy',
-        type: 'market',
-        amount: quantity,
-        strategyId: strategy.id,
-        leverage: effectiveLeverage
-      });
-      
-      toast.success(
+      // Paper test trades are now handled by VPS bot
+      // Notify user that trading is managed by the bot
+      toast.info(
         <div className="flex flex-col gap-1">
-          <span className="font-semibold">Paper Trade Executed</span>
+          <span className="font-semibold">Strategy Test</span>
           <span className="text-xs text-muted-foreground">
-            Bought {quantity.toFixed(6)} BTC at ${price.toFixed(2)}
-            {effectiveLeverage > 1 && ` (${effectiveLeverage}x leverage)`}
+            Strategy trading is managed by the VPS bot. Start the bot from the dashboard to begin trading.
           </span>
         </div>
       );
