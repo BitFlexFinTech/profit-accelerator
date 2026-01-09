@@ -183,3 +183,9 @@ verify_jwt = false
 
 [functions.scheduled-ai-reset]
 verify_jwt = false
+
+[functions.push-strategy-fix]
+verify_jwt = false
+
+[functions.push-vps-fix]
+verify_jwt = false
