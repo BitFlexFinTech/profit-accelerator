@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, TrendingUp, TrendingDown, X, Loader2 } from 'lucide-react';
+import { Target, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -22,14 +22,12 @@ interface Position {
 }
 
 export function PositionsPanel() {
-  const paperTradingMode = useAppStore(state => state.paperTradingMode);
   const lastUpdate = useAppStore(state => state.lastUpdate);
   const [positions, setPositions] = useState<Position[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [closingId, setClosingId] = useState<string | null>(null);
 
   const fetchPositions = useCallback(async () => {
-    // All positions now stored in 'positions' table - VPS bot handles all modes
     const { data, error } = await supabase
       .from('positions')
       .select('*')
@@ -41,7 +39,7 @@ export function PositionsPanel() {
     setIsLoading(false);
   }, []);
 
-  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
+  // Use SSOT lastUpdate to trigger refetch
   useEffect(() => {
     fetchPositions();
   }, [fetchPositions, lastUpdate]);
@@ -49,18 +47,8 @@ export function PositionsPanel() {
   const handleClosePosition = async (position: Position) => {
     setClosingId(position.id);
     try {
-      // All position management now goes through OrderManager which uses VPS bot
-      if (paperTradingMode) {
-        // In paper mode, positions are managed by VPS bot - just notify user
-        toast.info('Paper positions are managed automatically by the trading bot');
-        setClosingId(null);
-        return;
-      } else {
-        // For live trading, use OrderManager to place offsetting order
-        await OrderManager.getInstance().closePosition(position.id);
-        toast.success(`Position closed for ${position.symbol}`);
-      }
-      
+      await OrderManager.getInstance().closePosition(position.id);
+      toast.success(`Position closed for ${position.symbol}`);
       fetchPositions();
     } catch (error: any) {
       console.error('Failed to close position:', error);
@@ -85,87 +73,84 @@ export function PositionsPanel() {
         <CardTitle className="text-base flex items-center gap-2">
           <Target className="w-4 h-4 text-primary" />
           Open Positions
-          {paperTradingMode && (
-            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">PAPER</span>
-          )}
+          <span className="text-xs bg-destructive/20 text-destructive px-2 py-0.5 rounded">LIVE</span>
           <Badge variant="outline" className="ml-auto">{positions.length}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : positions.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <TrendingUp className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            <p className="text-sm">No open positions</p>
-            <p className="text-xs mt-1">Your active trades will appear here</p>
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            No open positions
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs">Symbol</TableHead>
-                <TableHead className="text-xs">Side</TableHead>
-                <TableHead className="text-xs text-right">Size</TableHead>
-                <TableHead className="text-xs text-right">Entry</TableHead>
-                <TableHead className="text-xs text-right">Current</TableHead>
-                <TableHead className="text-xs text-right">P&L</TableHead>
-                <TableHead className="text-xs w-10"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {positions.map(pos => (
-                <TableRow key={pos.id}>
-                  <TableCell className="font-medium text-sm">
-                    {pos.symbol}
-                    <span className="text-xs text-muted-foreground ml-1">{pos.exchange_name}</span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge 
-                      variant="outline" 
-                      className={pos.side === 'long' 
-                        ? 'text-success border-success/50' 
-                        : 'text-destructive border-destructive/50'
-                      }
-                    >
-                      {pos.side === 'long' ? (
-                        <TrendingUp className="w-3 h-3 mr-1" />
-                      ) : (
-                        <TrendingDown className="w-3 h-3 mr-1" />
-                      )}
-                      {pos.side.toUpperCase()}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right text-sm">{pos.size}</TableCell>
-                  <TableCell className="text-right text-sm">${pos.entry_price?.toFixed(2)}</TableCell>
-                  <TableCell className="text-right text-sm">
-                    {pos.current_price ? `$${pos.current_price.toFixed(2)}` : '-'}
-                  </TableCell>
-                  <TableCell className="text-right text-sm font-medium">
-                    {formatPnl(pos.unrealized_pnl)}
-                  </TableCell>
-                  <TableCell>
-                    <ActionButton
-                      tooltip={BUTTON_TOOLTIPS.closePosition}
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      onClick={() => handleClosePosition(pos)}
-                      disabled={closingId === pos.id}
-                    >
-                      {closingId === pos.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <X className="w-3 h-3" />
-                      )}
-                    </ActionButton>
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Exchange</TableHead>
+                  <TableHead className="text-xs">Symbol</TableHead>
+                  <TableHead className="text-xs">Side</TableHead>
+                  <TableHead className="text-xs text-right">Size</TableHead>
+                  <TableHead className="text-xs text-right">Entry</TableHead>
+                  <TableHead className="text-xs text-right">Current</TableHead>
+                  <TableHead className="text-xs text-right">P&L</TableHead>
+                  <TableHead className="text-xs text-right">Action</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {positions.map((position) => (
+                  <TableRow key={position.id}>
+                    <TableCell className="text-xs">{position.exchange_name}</TableCell>
+                    <TableCell className="text-xs font-medium">{position.symbol}</TableCell>
+                    <TableCell>
+                      <div className={`flex items-center gap-1 text-xs ${position.side === 'buy' || position.side === 'long' ? 'text-success' : 'text-destructive'}`}>
+                        {position.side === 'buy' || position.side === 'long' ? (
+                          <TrendingUp className="w-3 h-3" />
+                        ) : (
+                          <TrendingDown className="w-3 h-3" />
+                        )}
+                        {position.side.toUpperCase()}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-right">
+                      ${position.size.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell className="text-xs text-right">
+                      ${position.entry_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell className="text-xs text-right">
+                      {position.current_price 
+                        ? `$${position.current_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                        : '-'}
+                    </TableCell>
+                    <TableCell className="text-xs text-right font-medium">
+                      {formatPnl(position.unrealized_pnl)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <ActionButton
+                        tooltip={BUTTON_TOOLTIPS.closePosition}
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleClosePosition(position)}
+                        disabled={closingId === position.id}
+                      >
+                        {closingId === position.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          'Close'
+                        )}
+                      </ActionButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </CardContent>
     </Card>

@@ -11,7 +11,6 @@ import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
 import { useRateLimitRecovery } from '@/hooks/useRateLimitRecovery';
-import { ModeProgressTracker } from '../panels/ModeProgressTracker';
 import { MobileDashboard } from '../MobileDashboard';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useWidgetStore } from '@/store/useWidgetStore';
@@ -46,9 +45,6 @@ export function LiveDashboard() {
     <div className="h-full flex flex-col gap-1.5 overflow-hidden">
       {/* Scrolling Price Ticker - Very Top */}
       {isVisible('ticker') && <ScrollingPriceTicker />}
-      
-      {/* Mode Progress Tracker - Temporary cards until live mode unlocked */}
-      {isVisible('mode-progress') && <ModeProgressTracker />}
       
       {/* Top Control Bar - Merged Bot Status + Quick Actions */}
       {isVisible('control-bar') && <UnifiedControlBar />}

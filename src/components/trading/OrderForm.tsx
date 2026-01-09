@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ShoppingCart, TrendingUp, TrendingDown, Loader2, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -23,7 +22,6 @@ interface ExchangeBalance {
 }
 
 export function OrderForm() {
-  const paperTradingMode = useAppStore(state => state.paperTradingMode);
   const vpsStatus = useAppStore(state => state.vpsStatus);
   const [exchanges, setExchanges] = useState<string[]>([]);
   const [exchangeBalances, setExchangeBalances] = useState<Record<string, number>>({});
@@ -39,7 +37,7 @@ export function OrderForm() {
 
   // Check if VPS is available for live trading (required for HFT)
   const isVpsOnline = Object.values(vpsStatus).some(v => v.status === 'healthy' && v.publicIp);
-  const vpsRequiredForLive = !paperTradingMode && !isVpsOnline;
+  const vpsRequiredForLive = !isVpsOnline;
 
   // Get available balance for selected exchange
   const availableBalance = useMemo(() => {
@@ -47,10 +45,9 @@ export function OrderForm() {
     return exchangeBalances[exchange] || 0;
   }, [exchange, exchangeBalances]);
 
-  // Fetch connected exchanges with balances (live or paper mode)
+  // Fetch connected exchanges with balances
   useEffect(() => {
     const fetchExchanges = async () => {
-      // Always fetch exchange names
       const { data: exchangeData } = await supabase
         .from('exchange_connections')
         .select('exchange_name, balance_usdt')
@@ -61,33 +58,12 @@ export function OrderForm() {
         setExchanges(names);
         setExchange(names[0]);
 
-        if (paperTradingMode) {
-          // Fetch paper balance from paper_balance_history
-          const { data: paperData } = await supabase
-            .from('paper_balance_history')
-            .select('exchange_name, total_equity')
-            .order('created_at', { ascending: false })
-            .limit(10);
-          
-          const balances: Record<string, number> = {};
-          // Default paper balance if none exists
-          names.forEach(name => { balances[name] = 10000; });
-          
-          // Override with actual paper balances
-          paperData?.forEach((p) => {
-            if (names.includes(p.exchange_name)) {
-              balances[p.exchange_name] = p.total_equity || 10000;
-            }
-          });
-          setExchangeBalances(balances);
-        } else {
-          // Live mode: use real exchange balances
-          const balances: Record<string, number> = {};
-          exchangeData.forEach((e: ExchangeBalance) => {
-            balances[e.exchange_name] = e.balance_usdt || 0;
-          });
-          setExchangeBalances(balances);
-        }
+        // Live mode: use real exchange balances
+        const balances: Record<string, number> = {};
+        exchangeData.forEach((e: ExchangeBalance) => {
+          balances[e.exchange_name] = e.balance_usdt || 0;
+        });
+        setExchangeBalances(balances);
       }
     };
     fetchExchanges();
@@ -98,16 +74,16 @@ export function OrderForm() {
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
-        table: paperTradingMode ? 'paper_balance_history' : 'exchange_connections'
+        table: 'exchange_connections'
       }, () => {
-        fetchExchanges(); // Refetch on update
+        fetchExchanges();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [paperTradingMode]);
+  }, []);
 
   // Validate risk on amount/price change
   useEffect(() => {
@@ -162,8 +138,6 @@ export function OrderForm() {
 
     setIsSubmitting(true);
     try {
-      // All trading now goes through OrderManager which routes to VPS bot
-      // Paper/Simulation vs Live is determined by trading_config.trading_mode
       await OrderManager.getInstance().placeOrder({
         exchangeName: exchange,
         symbol,
@@ -172,7 +146,7 @@ export function OrderForm() {
         amount: parseFloat(amount),
         price: price ? parseFloat(price) : undefined
       });
-      toast.success(`${paperTradingMode ? 'Paper ' : ''}${side.toUpperCase()} order placed for ${amount} ${symbol}`);
+      toast.success(`${side.toUpperCase()} order placed for ${amount} ${symbol}`);
 
       // Reset form
       setAmount('');
@@ -190,9 +164,7 @@ export function OrderForm() {
         <CardTitle className="text-base flex items-center gap-2">
           <ShoppingCart className="w-4 h-4 text-primary" />
           Place Order
-          {paperTradingMode && (
-            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">PAPER</span>
-          )}
+          <span className="text-xs bg-destructive/20 text-destructive px-2 py-0.5 rounded">LIVE</span>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -270,8 +242,8 @@ export function OrderForm() {
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs">Amount (USDT)</Label>
-            <span className={`text-xs ${paperTradingMode ? 'text-primary' : 'text-muted-foreground'}`}>
-              {paperTradingMode ? '📝 Paper: ' : 'Available: '}${availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="text-xs text-muted-foreground">
+              Available: ${availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <Input
@@ -337,7 +309,7 @@ export function OrderForm() {
           <Alert className="border-destructive/50 bg-destructive/10">
             <AlertTriangle className="h-4 w-4 text-destructive" />
             <AlertDescription className="text-xs text-destructive">
-              VPS required for live HFT trading. Deploy a VPS or switch to Paper mode.
+              VPS required for live HFT trading. Deploy a VPS first.
             </AlertDescription>
           </Alert>
         )}
@@ -356,7 +328,7 @@ export function OrderForm() {
           ) : (
             <TrendingDown className="w-4 h-4 mr-2" />
           )}
-          {paperTradingMode ? 'Paper ' : ''}{side === 'buy' ? 'Buy' : 'Sell'} {symbol.split('/')[0]}
+          {side === 'buy' ? 'Buy' : 'Sell'} {symbol.split('/')[0]}
         </ActionButton>
       </CardContent>
     </Card>
