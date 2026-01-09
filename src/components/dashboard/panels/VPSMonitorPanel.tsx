@@ -166,14 +166,14 @@ export function VPSMonitorPanel() {
                 <h3 className="font-semibold">🌏 Contabo Singapore</h3>
                 <span className={cn(
                   "text-xs px-2 py-0.5 rounded-full transition-all duration-300",
-                  vpsConfig.status === 'running' 
+                  vpsConfig?.status === 'running' 
                     ? 'bg-emerald-500/20 text-emerald-400 animate-glow-pulse' 
                     : 'bg-muted text-muted-foreground'
                 )}>
-                  {vpsConfig.status === 'running' ? '● Online' : '○ Offline'}
+                  {vpsConfig?.status === 'running' ? '● Online' : '○ Offline'}
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground font-mono">{vpsConfig.outbound_ip || 'No IP'}</p>
+              <p className="text-sm text-muted-foreground font-mono">{vpsConfig?.outbound_ip || 'No IP'}</p>
             </div>
           </div>
           <Tooltip>
