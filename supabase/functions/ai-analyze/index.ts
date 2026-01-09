@@ -168,7 +168,7 @@ async function getNextAvailableProvider(supabase: any): Promise<{
   // Query enabled providers sorted by remaining daily capacity (highest first)
   const { data: providers } = await supabase
     .from('ai_providers')
-    .select('provider_name, rate_limit_rpm, current_usage, rate_limit_rpd, daily_usage, priority, secret_name')
+    .select('provider_name, rate_limit_rpm, current_usage, rate_limit_rpd, daily_usage, priority, secret_name, cooldown_until')
     .eq('is_enabled', true)
     .order('priority', { ascending: true });
 
@@ -195,6 +195,16 @@ async function getNextAvailableProvider(supabase: any): Promise<{
 
   // Find first provider under BOTH rate limits with valid API key
   for (const p of sortedProviders) {
+    // Check cooldown first (429 penalty period)
+    if (p.cooldown_until) {
+      const cooldownEnd = new Date(p.cooldown_until);
+      if (cooldownEnd > new Date()) {
+        const secsLeft = Math.round((cooldownEnd.getTime() - Date.now()) / 1000);
+        console.log(`[ai-analyze] Provider ${p.provider_name} in cooldown for ${secsLeft}s`);
+        continue;
+      }
+    }
+
     const minuteUsage = p.current_usage || 0;
     const minuteLimit = p.rate_limit_rpm || 30;
     const dailyUsage = p.daily_usage || 0;
@@ -414,23 +424,18 @@ async function analyzeWithRotation(
       await recordProviderMetrics(supabase, provider, false, 0, errorMsg);
       lastError = errorMsg;
 
-      // If rate limited (429), fetch the rate limit and set usage to exceed it
-      if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
-        // Get the provider's actual rate limit
-        const { data: providerData } = await supabase
-          .from('ai_providers')
-          .select('rate_limit_rpm')
-          .eq('provider_name', provider)
-          .single();
-        
-        const rateLimit = providerData?.rate_limit_rpm || 30;
+      // If rate limited (429), set a 60-second cooldown
+      if (errorMsg.includes('429') || errorMsg.includes('rate limit') || errorMsg.includes('Too Many Requests')) {
+        const cooldownUntil = new Date(Date.now() + 60 * 1000).toISOString(); // 60 sec cooldown
         await supabase
           .from('ai_providers')
           .update({ 
-            current_usage: rateLimit + 1, // Set to just over limit (not 9999)
-            last_error: `Rate limited at ${new Date().toISOString()}`
+            cooldown_until: cooldownUntil,
+            current_usage: 999, // Mark as over limit
+            last_error: `Rate limited, cooldown until ${cooldownUntil}`
           })
           .eq('provider_name', provider);
+        console.log(`[ai-analyze] Set 60s cooldown for ${provider} until ${cooldownUntil}`);
       }
     }
   }
