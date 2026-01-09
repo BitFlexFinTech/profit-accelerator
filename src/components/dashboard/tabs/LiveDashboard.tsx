@@ -6,6 +6,7 @@ import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
 import { ScrollingPriceTicker } from '../panels/ScrollingPriceTicker';
 import { NewsPanel } from '../panels/NewsPanel';
 import { InfrastructurePanel } from '../panels/InfrastructurePanel';
+import { AIProviderHealthDashboard } from '../panels/AIProviderHealthDashboard';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
@@ -69,7 +70,7 @@ export function LiveDashboard() {
           </div>
         )}
         
-        {/* RIGHT Column - News (LONG) + Infrastructure (SMALL) */}
+        {/* RIGHT Column - News + Infrastructure + AI Health */}
         <div className="flex flex-col gap-1 min-h-0 h-full">
           {/* News Panel - EXPANDED (takes most space) */}
           {isVisible('news') && (
@@ -78,9 +79,16 @@ export function LiveDashboard() {
             </div>
           )}
           
-          {/* Infrastructure Panel - Shows latency (180px fixed) */}
+          {/* AI Provider Health Dashboard */}
+          {isVisible('ai-health') && (
+            <div className="h-[200px] flex-shrink-0">
+              <AIProviderHealthDashboard />
+            </div>
+          )}
+          
+          {/* Infrastructure Panel - Shows latency */}
           {isVisible('infrastructure') && (
-            <div className="h-[180px] flex-shrink-0">
+            <div className="h-[140px] flex-shrink-0">
               <InfrastructurePanel />
             </div>
           )}

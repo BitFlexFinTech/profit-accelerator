@@ -46,6 +46,7 @@ import { FreqtradeWizard } from '../wizards/FreqtradeWizard';
 import { HummingbotWizard } from '../wizards/HummingbotWizard';
 import { OctoBotWizard } from '../wizards/OctoBotWizard';
 import { JesseWizard } from '../wizards/JesseWizard';
+import { VnpyWizard } from '../wizards/VnpyWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { SecurityVaultPanel } from '../panels/SecurityVaultPanel';
 import { LatencyComparisonChart } from '../panels/LatencyComparisonChart';
@@ -787,6 +788,17 @@ export function SettingsTab() {
             </div>
             <p className="text-xs text-muted-foreground">Algo Research</p>
           </button>
+          
+          <button
+            onClick={() => setActiveWizard('vnpy')}
+            className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 text-left group transition-all"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Zap className="w-6 h-6 text-purple-400" />
+              <span className="font-medium">vnpy</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Event-Driven</p>
+          </button>
         </div>
       </div>
 
@@ -1129,6 +1141,10 @@ export function SettingsTab() {
       <JesseWizard 
         open={activeWizard === 'jesse'} 
         onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <VnpyWizard 
+        isOpen={activeWizard === 'vnpy'} 
+        onClose={() => setActiveWizard(null)} 
       />
     </div>
   );
