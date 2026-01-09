@@ -64,6 +64,7 @@ const PROVIDER_COLORS: Record<string, { bg: string; text: string; abbr: string }
   openrouter: { bg: 'bg-purple-500/30', text: 'text-purple-400', abbr: 'ORT' },
   mistral: { bg: 'bg-amber-500/30', text: 'text-amber-400', abbr: 'MST' },
   gemini: { bg: 'bg-blue-500/30', text: 'text-blue-400', abbr: 'GMI' },
+  huggingface: { bg: 'bg-yellow-500/30', text: 'text-yellow-400', abbr: 'HF' },
   unknown: { bg: 'bg-gray-500/30', text: 'text-gray-400', abbr: 'AI' },
 };
 

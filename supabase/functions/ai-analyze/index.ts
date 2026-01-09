@@ -55,6 +55,13 @@ const AI_PROVIDER_CONFIG: Record<string, {
     envKey: 'GEMINI_API_KEY',
     model: 'gemini-1.5-flash',
     fastModel: 'gemini-1.5-flash'
+  },
+  huggingface: { 
+    type: 'openai', 
+    endpoint: 'https://api-inference.huggingface.co/v1/chat/completions', 
+    envKey: 'HUGGINGFACE_API_KEY',
+    model: 'meta-llama/Llama-3.1-8B-Instruct',
+    fastModel: 'meta-llama/Llama-3.1-8B-Instruct'
   }
 };
 
@@ -610,6 +617,32 @@ serve(async (req) => {
 
     if (action === 'market-scan') {
       console.log('[ai-analyze] market-scan start - multi-provider rotation');
+      
+      // Auto-reset daily limits at midnight UTC
+      try {
+        const todayMidnight = new Date();
+        todayMidnight.setUTCHours(0, 0, 0, 0);
+        
+        const { data: providersNeedingReset } = await supabase
+          .from('ai_providers')
+          .select('provider_name, last_daily_reset_at')
+          .or(`last_daily_reset_at.is.null,last_daily_reset_at.lt.${todayMidnight.toISOString()}`);
+        
+        for (const provider of providersNeedingReset || []) {
+          await supabase
+            .from('ai_providers')
+            .update({ 
+              daily_usage: 0, 
+              current_usage: 0,
+              cooldown_until: null,
+              last_daily_reset_at: new Date().toISOString() 
+            })
+            .eq('provider_name', provider.provider_name);
+          console.log(`[ai-analyze] Auto-reset daily usage for ${provider.provider_name}`);
+        }
+      } catch (e) {
+        console.log('[ai-analyze] Daily reset check error:', e);
+      }
       
       // Get ALL connected exchanges
       const { data: exchanges } = await supabase
