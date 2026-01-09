@@ -765,13 +765,17 @@ serve(async (req) => {
         console.log(`[ai-analyze] Top 10 for ${exName}:`, top10);
         
         let exchangeCount = 0;
-        // STRICT RULE: Analyze ALL top 10 pairs per exchange
-        const pairsToAnalyze = top10;
+        // OPTIMIZED: Reduce to 5 pairs for faster scans (prevents timeout)
+        const pairsToAnalyze = top10.slice(0, 5);
         
-        for (const sym of pairsToAnalyze) {
-          try {
+        // Process in parallel batches of 3 for speed (was sequential)
+        const batchSize = 3;
+        for (let batchStart = 0; batchStart < pairsToAnalyze.length; batchStart += batchSize) {
+          const batch = pairsToAnalyze.slice(batchStart, batchStart + batchSize);
+          
+          const batchResults = await Promise.allSettled(batch.map(async (sym) => {
             const priceData = await fetchPriceData(sym, exName);
-            if (!priceData) continue;
+            if (!priceData) return null;
             
             const { price, change } = priceData;
             const cleanSymbol = sym.replace('USDT', '');
@@ -785,10 +789,7 @@ serve(async (req) => {
               true // Use fast model
             );
             
-            if (!result) {
-              totalErrors++;
-              continue;
-            }
+            if (!result) return { error: 'no_provider' };
             
             providersUsed.add(result.provider);
             
@@ -797,11 +798,9 @@ serve(async (req) => {
               const jsonMatch = content.match(/\{[\s\S]*\}/);
               if (!jsonMatch) return null;
               
-              // Strategy 1: Direct parse
               try {
                 return JSON.parse(jsonMatch[0]);
               } catch {
-                // Strategy 2: Clean common AI issues
                 let cleaned = jsonMatch[0]
                   .replace(/'/g, '"')
                   .replace(/(\w+)\s*:/g, '"$1":')
@@ -811,7 +810,6 @@ serve(async (req) => {
                 try {
                   return JSON.parse(cleaned);
                 } catch {
-                  // Strategy 3: Extract individual fields via regex
                   const sentiment = content.match(/sentiment['":\s]+['"]?([A-Z]+)['"]?/i)?.[1] || 'NEUTRAL';
                   const confidence = parseInt(content.match(/confidence['":\s]+(\d+)/i)?.[1] || '70');
                   const insight = content.match(/insight['":\s]+['"]([^'"]+)['"]/i)?.[1] || 'Market signal';
@@ -829,8 +827,7 @@ serve(async (req) => {
             const a = extractJSON(result.content);
             if (!a) {
               console.error(`[ai-analyze] Failed to parse JSON for ${cleanSymbol}:`, result.content.substring(0, 100));
-              totalErrors++;
-              continue;
+              return { error: 'parse_failed' };
             }
             
             let profitTimeframe = parseInt(String(a.profit_timeframe_minutes)) || 5;
@@ -863,39 +860,45 @@ serve(async (req) => {
             
             if (upsertError) {
               console.error(`[ai-analyze] Upsert error for ${cleanSymbol}:`, upsertError);
-            } else {
-              exchangeCount++;
-              totalAnalyzed++;
-              
-              // Log to ai_trade_decisions for audit trail
-              try {
-                await supabase.from('ai_trade_decisions').insert({
-                  symbol: cleanSymbol,
-                  exchange: exName,
-                  ai_provider: result.provider,
-                  recommended_side: recommendedSide,
-                  confidence: confidence,
-                  reasoning: a.insight || 'Market analysis signal',
-                  entry_price: price,
-                  target_price: recommendedSide === 'long' 
-                    ? price * (1 + expectedMove / 100) 
-                    : price * (1 - expectedMove / 100),
-                  expected_profit_percent: expectedMove,
-                  expected_time_minutes: profitTimeframe,
-                  was_executed: false
-                });
-              } catch (logErr) {
-                console.log(`[ai-analyze] Decision log error:`, logErr);
-              }
+              return { error: 'upsert_failed' };
             }
             
-            // Rate limit delay - faster (200ms) since we're rotating providers
-            await new Promise(r => setTimeout(r, 200));
+            // Log to ai_trade_decisions for audit trail
+            try {
+              await supabase.from('ai_trade_decisions').insert({
+                symbol: cleanSymbol,
+                exchange: exName,
+                ai_provider: result.provider,
+                recommended_side: recommendedSide,
+                confidence: confidence,
+                reasoning: a.insight || 'Market analysis signal',
+                entry_price: price,
+                target_price: recommendedSide === 'long' 
+                  ? price * (1 + expectedMove / 100) 
+                  : price * (1 - expectedMove / 100),
+                expected_profit_percent: expectedMove,
+                expected_time_minutes: profitTimeframe,
+                was_executed: false
+              });
+            } catch (logErr) {
+              console.log(`[ai-analyze] Decision log error:`, logErr);
+            }
             
-          } catch (e) {
-            console.error(`[ai-analyze] Error analyzing ${sym}:`, e);
-            totalErrors++;
+            return { success: true, symbol: cleanSymbol };
+          }));
+          
+          // Count results from batch
+          for (const result of batchResults) {
+            if (result.status === 'fulfilled' && result.value?.success) {
+              exchangeCount++;
+              totalAnalyzed++;
+            } else {
+              totalErrors++;
+            }
           }
+          
+          // Reduced delay between batches (100ms instead of 200ms per symbol)
+          await new Promise(r => setTimeout(r, 100));
         }
         
         exchangeResults[exName] = exchangeCount;

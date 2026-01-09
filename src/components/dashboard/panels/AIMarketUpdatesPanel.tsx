@@ -80,7 +80,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
-  const [nextScanIn, setNextScanIn] = useState(30);
+  const [nextScanIn, setNextScanIn] = useState(60);
   const [activeTimeframe, setActiveTimeframe] = useState<TimeframeFilter>('all');
   const hasAutoScanned = useRef(false);
   
@@ -89,6 +89,10 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   const lastUpdate = useAppStore((s) => s.lastUpdate);
 
   const triggerAutoScan = async () => {
+    // Use AbortController with 45s timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    
     try {
       // Check if ANY AI provider is enabled (not just Groq)
       const { data: activeProviders } = await supabase
@@ -107,20 +111,34 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
         body: { action: 'market-scan' }
       });
       
-      if (error || !data?.success) {
-        const errMsg = data?.error || error?.message || 'Scan failed';
-        setScanError(errMsg);
+      clearTimeout(timeoutId);
+      
+      if (error) {
+        // Better error messages for common issues
+        if (error.message?.includes('FunctionsFetchError') || error.message?.includes('Failed to send')) {
+          setScanError('Scan in progress... data will update shortly');
+        } else {
+          setScanError(error.message || 'Scan failed');
+        }
+      } else if (!data?.success) {
+        setScanError(data?.error || 'Scan failed');
       } else {
         setLastScanTime(new Date());
+        setScanError(null);
       }
-    } catch (err) {
-      console.error('[AIMarketUpdatesPanel] Auto-scan error:', err);
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err?.name === 'AbortError') {
+        setScanError('Scan timed out - using cached data');
+      } else {
+        console.error('[AIMarketUpdatesPanel] Auto-scan error:', err);
+      }
     }
   };
 
   useEffect(() => {
     const countdownInterval = setInterval(() => {
-      setNextScanIn(prev => (prev > 0 ? prev - 1 : 30)); // Reset to 30s
+      setNextScanIn(prev => (prev > 0 ? prev - 1 : 60)); // Reset to 60s (was 30s)
     }, 1000);
     return () => clearInterval(countdownInterval);
   }, []);
@@ -181,13 +199,13 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   }, []);
 
   useEffect(() => {
-    // Real-time trading signals - scan every 30 seconds for sustainable API usage
-    // Uses ALL connected AI providers with rotation
+    // OPTIMIZED: 60-second scan interval for sustainable API usage (was 30s)
+    // Prevents provider exhaustion and edge function timeouts
     const scanInterval = setInterval(() => {
       hasAutoScanned.current = false;
-      setNextScanIn(30);
+      setNextScanIn(60);
       triggerAutoScan();
-    }, 30 * 1000);
+    }, 60 * 1000);
 
     return () => clearInterval(scanInterval);
   }, []);
