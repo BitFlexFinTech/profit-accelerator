@@ -1483,6 +1483,7 @@ export type Database = {
           realized_pnl: number | null
           side: string
           size: number
+          status: string | null
           symbol: string
           unrealized_pnl: number | null
           updated_at: string | null
@@ -1499,6 +1500,7 @@ export type Database = {
           realized_pnl?: number | null
           side: string
           size: number
+          status?: string | null
           symbol: string
           unrealized_pnl?: number | null
           updated_at?: string | null
@@ -1515,6 +1517,7 @@ export type Database = {
           realized_pnl?: number | null
           side?: string
           size?: number
+          status?: string | null
           symbol?: string
           unrealized_pnl?: number | null
           updated_at?: string | null

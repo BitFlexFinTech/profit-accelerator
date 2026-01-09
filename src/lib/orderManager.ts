@@ -269,7 +269,7 @@ export class OrderManager {
     return (data || []) as Order[];
   }
 
-  async getPositions(exchangeName?: string): Promise<any[]> {
+  async getPositions(exchangeName?: string, includesClosed = false): Promise<any[]> {
     let query = supabase
       .from('positions')
       .select('*')
@@ -277,6 +277,11 @@ export class OrderManager {
 
     if (exchangeName) {
       query = query.eq('exchange_name', exchangeName);
+    }
+    
+    // By default, only show open positions
+    if (!includesClosed) {
+      query = query.or('status.eq.open,status.is.null');
     }
 
     const { data, error } = await query;
@@ -336,6 +341,12 @@ export class OrderManager {
 
     if (error || !position) throw new Error('Position not found');
 
+    // Mark position as closing
+    await supabase
+      .from('positions')
+      .update({ status: 'closing', updated_at: new Date().toISOString() })
+      .eq('id', positionId);
+
     // Place closing order
     const closeSide = position.side === 'long' ? 'sell' : 'buy';
     await this.placeOrder({
@@ -354,8 +365,29 @@ export class OrderManager {
       ? (currentPrice - entryPrice) * size
       : (entryPrice - currentPrice) * size;
 
-    // Delete position
-    await supabase.from('positions').delete().eq('id', positionId);
+    // Log to trading_journal for historical record
+    await supabase.from('trading_journal').insert({
+      exchange: position.exchange_name,
+      symbol: position.symbol,
+      side: position.side,
+      quantity: size,
+      entry_price: entryPrice,
+      exit_price: currentPrice,
+      pnl: pnl,
+      status: 'closed',
+      closed_at: new Date().toISOString(),
+      ai_reasoning: `Position closed via OrderManager. PnL: $${pnl.toFixed(2)}`
+    });
+
+    // Mark position as closed (keep for audit trail instead of delete)
+    await supabase
+      .from('positions')
+      .update({ 
+        status: 'closed', 
+        realized_pnl: pnl,
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', positionId);
 
     await this.logTransaction('position_closed', position.exchange_name, position.symbol, {
       positionId,
