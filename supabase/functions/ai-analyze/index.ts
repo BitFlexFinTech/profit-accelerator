@@ -711,6 +711,27 @@ serve(async (req) => {
             } else {
               exchangeCount++;
               totalAnalyzed++;
+              
+              // Log to ai_trade_decisions for audit trail
+              try {
+                await supabase.from('ai_trade_decisions').insert({
+                  symbol: cleanSymbol,
+                  exchange: exName,
+                  ai_provider: result.provider,
+                  recommended_side: recommendedSide,
+                  confidence: confidence,
+                  reasoning: a.insight || 'Market analysis signal',
+                  entry_price: price,
+                  target_price: recommendedSide === 'long' 
+                    ? price * (1 + expectedMove / 100) 
+                    : price * (1 - expectedMove / 100),
+                  expected_profit_percent: expectedMove,
+                  expected_time_minutes: profitTimeframe,
+                  was_executed: false
+                });
+              } catch (logErr) {
+                console.log(`[ai-analyze] Decision log error:`, logErr);
+              }
             }
             
             // Rate limit delay - faster (200ms) since we're rotating providers
