@@ -136,17 +136,17 @@ export function ModeProgressTracker() {
                     </Badge>
                   </div>
                   <Badge variant="outline" className="text-xs">
-                    {progress.paperTrades}/50 trades
+                    {progress.paperTrades}/20 trades
                   </Badge>
                 </div>
                 <Progress 
-                  value={(progress.paperTrades / 50) * 100} 
+                  value={(progress.paperTrades / 20) * 100} 
                   className="h-2 mb-2" 
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Zap className="w-3 h-3" />
-                    {50 - progress.paperTrades} more to unlock Live Trading
+                    {20 - progress.paperTrades} more to unlock Live Trading
                   </span>
                   <span className="text-success">
                     +${progress.paperProfit.toFixed(2)} profit

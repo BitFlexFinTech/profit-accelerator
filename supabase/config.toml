@@ -174,3 +174,6 @@ verify_jwt = false
 
 [functions.balance-receiver]
 verify_jwt = false
+
+[functions.rate-limit-recovery]
+verify_jwt = false
