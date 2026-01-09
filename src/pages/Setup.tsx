@@ -185,14 +185,19 @@ export default function Setup() {
 
       const creds: CloudCredentials = {};
       for (const provider of CLOUD_PROVIDERS) {
-        const existing = data?.find(d => d.provider.toLowerCase() === provider.id);
+        const existing = data?.find(d => d.provider.toLowerCase() === provider.id.toLowerCase());
         const existingCreds = existing?.credentials as Record<string, string> | null;
         
+        // Mask saved credentials for display (show last 4 chars only)
+        const savedApiKey = existingCreds?.[provider.apiKeyField];
+        const savedSecret = existingCreds?.[provider.secretField || ''];
+        
         creds[provider.id] = {
-          apiKey: existingCreds?.[provider.apiKeyField] || '',
-          secret: provider.hasSecret ? (existingCreds?.[provider.secretField || ''] || '') : '',
-          isComplete: existing?.is_active || false,
+          apiKey: savedApiKey ? `••••••••${savedApiKey.slice(-4)}` : '',
+          secret: provider.hasSecret ? (savedSecret ? `••••••••${savedSecret.slice(-4)}` : '') : '',
+          isComplete: !!savedApiKey,
           isActive: existing?.is_active || false,
+          isSaving: false,
         };
       }
       setCredentials(creds);
@@ -260,16 +265,11 @@ export default function Setup() {
 
       if (error) throw error;
 
-      toast.success(`${provider.shortName} credentials saved`);
+      toast.success(`${provider.shortName} credentials saved successfully`);
       
-      setCredentials(prev => ({
-        ...prev,
-        [providerId]: { 
-          ...prev[providerId], 
-          isSaving: false,
-          isComplete: true 
-        }
-      }));
+      // Refresh credentials from database to ensure sync
+      await fetchExistingCredentials();
+      
     } catch (err: any) {
       console.error('Save error:', err);
       toast.error(`Failed to save ${provider.shortName}: ${err.message}`);

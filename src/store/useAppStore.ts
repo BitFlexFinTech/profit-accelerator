@@ -70,8 +70,8 @@ interface AppState {
   successfulPaperTrades: number;
   
   // Theme state
-  theme: 'colorful' | 'bw';
-  setTheme: (theme: 'colorful' | 'bw') => void;
+  theme: 'colorful' | 'bw' | 'light';
+  setTheme: (theme: 'colorful' | 'bw' | 'light') => void;
   
   // COMPUTED SELECTORS (single source of truth calculations)
   getTotalEquity: () => number;
@@ -124,15 +124,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   successfulPaperTrades: 0,
   
   // Theme state
-  theme: (typeof window !== 'undefined' && localStorage.getItem('app-theme') as 'colorful' | 'bw') || 'colorful',
+  theme: (typeof window !== 'undefined' && localStorage.getItem('app-theme') as 'colorful' | 'bw' | 'light') || 'colorful',
   
   setTheme: (theme) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('app-theme', theme);
+      // Remove all theme classes first
+      document.documentElement.classList.remove('theme-bw', 'theme-light');
+      // Add the appropriate theme class
       if (theme === 'bw') {
         document.documentElement.classList.add('theme-bw');
-      } else {
-        document.documentElement.classList.remove('theme-bw');
+      } else if (theme === 'light') {
+        document.documentElement.classList.add('theme-light');
       }
     }
     set({ theme });

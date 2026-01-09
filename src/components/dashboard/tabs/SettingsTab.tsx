@@ -331,23 +331,36 @@ export function SettingsTab() {
           <div className="flex items-center gap-1">
             <button
               onClick={() => setTheme('colorful')}
-              className={`px-2 py-1 text-xs rounded transition-all ${
+              className={`px-3 py-1.5 text-xs rounded transition-all ${
                 theme === 'colorful' 
                   ? 'bg-primary text-primary-foreground' 
-                  : 'text-muted-foreground hover:text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
               }`}
+              title="Deep navy with vibrant neon accents"
             >
-              Colorful
+              🌃 Neon Nights
             </button>
             <button
               onClick={() => setTheme('bw')}
-              className={`px-2 py-1 text-xs rounded transition-all ${
+              className={`px-3 py-1.5 text-xs rounded transition-all ${
                 theme === 'bw' 
                   ? 'bg-primary text-primary-foreground' 
-                  : 'text-muted-foreground hover:text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
               }`}
+              title="Pure black and white, no distractions"
             >
-              B&W
+              🎬 Noir Mode
+            </button>
+            <button
+              onClick={() => setTheme('light')}
+              className={`px-3 py-1.5 text-xs rounded transition-all ${
+                theme === 'light' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+              }`}
+              title="Bright white with vibrant flat colors"
+            >
+              ☀️ Sunshine Pop
             </button>
           </div>
         </div>

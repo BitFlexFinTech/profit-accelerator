@@ -25,10 +25,13 @@ function AppContent() {
   const theme = useAppStore((s) => s.theme);
   
   useEffect(() => {
+    // Remove all theme classes first
+    document.documentElement.classList.remove('theme-bw', 'theme-light');
+    // Add the appropriate theme class
     if (theme === 'bw') {
       document.documentElement.classList.add('theme-bw');
-    } else {
-      document.documentElement.classList.remove('theme-bw');
+    } else if (theme === 'light') {
+      document.documentElement.classList.add('theme-light');
     }
   }, [theme]);
 
