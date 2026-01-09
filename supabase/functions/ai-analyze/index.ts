@@ -278,6 +278,10 @@ async function recordProviderMetrics(
     if (success) {
       updates.success_count = (current.success_count || 0) + 1;
       updates.total_latency_ms = (current.total_latency_ms || 0) + latencyMs;
+      // CRITICAL FIX: Reset error count on successful call to allow provider recovery
+      updates.error_count = 0;
+      updates.last_error = null;
+      updates.cooldown_until = null;
     } else {
       updates.error_count = (current.error_count || 0) + 1;
       updates.last_error = errorMessage || 'Unknown error';
@@ -431,18 +435,29 @@ async function analyzeWithRotation(
       await recordProviderMetrics(supabase, provider, false, 0, errorMsg);
       lastError = errorMsg;
 
-      // If rate limited (429), set a 60-second cooldown
+      // If rate limited (429), use exponential backoff based on error_count
       if (errorMsg.includes('429') || errorMsg.includes('rate limit') || errorMsg.includes('Too Many Requests')) {
-        const cooldownUntil = new Date(Date.now() + 60 * 1000).toISOString(); // 60 sec cooldown
+        // Fetch current error count for exponential backoff
+        const { data: providerData } = await supabase
+          .from('ai_providers')
+          .select('error_count')
+          .eq('provider_name', provider)
+          .single();
+        
+        const errorCount = providerData?.error_count || 0;
+        // Exponential backoff: 1min, 2min, 3min, 4min, max 5min
+        const cooldownMinutes = Math.min(5, 1 + errorCount);
+        const cooldownUntil = new Date(Date.now() + cooldownMinutes * 60 * 1000).toISOString();
+        
         await supabase
           .from('ai_providers')
           .update({ 
             cooldown_until: cooldownUntil,
             current_usage: 999, // Mark as over limit
-            last_error: `Rate limited, cooldown until ${cooldownUntil}`
+            last_error: `Rate limited, cooldown ${cooldownMinutes}min until ${cooldownUntil}`
           })
           .eq('provider_name', provider);
-        console.log(`[ai-analyze] Set 60s cooldown for ${provider} until ${cooldownUntil}`);
+        console.log(`[ai-analyze] Set ${cooldownMinutes}min cooldown for ${provider} (errors: ${errorCount + 1})`);
       }
     }
   }

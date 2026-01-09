@@ -33,6 +33,7 @@ import { TelegramWizard } from '../wizards/TelegramWizard';
 import { ExchangeWizard } from '../wizards/ExchangeWizard';
 import { TradeCopierWizard } from '../wizards/TradeCopierWizard';
 import { GroqWizard } from '../wizards/GroqWizard';
+import { AIProviderWizard } from '../wizards/AIProviderWizard';
 import { ContaboWizard } from '../wizards/ContaboWizard';
 import { VultrWizard } from '../wizards/VultrWizard';
 import { AWSWizard } from '../wizards/AWSWizard';
@@ -489,7 +490,7 @@ export function SettingsTab() {
         </button>
 
         <button
-          onClick={() => setActiveWizard('groq')}
+          onClick={() => setActiveWizard('ai-providers')}
           className="glass-card-hover p-6 text-left group"
         >
           <div className="flex items-center gap-4 mb-3">
@@ -498,18 +499,18 @@ export function SettingsTab() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold">AI (Groq)</h3>
+                <h3 className="font-semibold">AI Providers</h3>
                 {aiIsActive && (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-success/20 text-success flex items-center gap-1">
                     <Check className="w-3 h-3" /> Active
                   </span>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">Trade analysis</p>
+              <p className="text-sm text-muted-foreground">5+ providers</p>
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            AI-powered sentiment via Telegram
+            Groq, Mistral, Cerebras, OpenRouter...
           </p>
         </button>
       </div>
@@ -1145,6 +1146,10 @@ export function SettingsTab() {
       <VnpyWizard 
         isOpen={activeWizard === 'vnpy'} 
         onClose={() => setActiveWizard(null)} 
+      />
+      <AIProviderWizard 
+        open={activeWizard === 'ai-providers'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
     </div>
   );
