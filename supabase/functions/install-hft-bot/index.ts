@@ -961,25 +961,42 @@ const server = http.createServer(async (req, res) => {
     });
   } else if (req.url === '/control' && req.method === 'POST') {
     // ========== BOT CONTROL ENDPOINT ==========
-    // Allows dashboard to start/stop the trading strategy
+    // Allows dashboard to start/stop the trading strategy with credentials
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', () => {
       try {
-        const { action, mode } = JSON.parse(body);
+        const { action, mode, env } = JSON.parse(body);
         const SIGNAL_FILE = '/app/data/START_SIGNAL';
+        const ENV_FILE = '/app/data/.env.runtime';
         
         if (action === 'start') {
-          // Create START_SIGNAL with trading mode info
+          // Apply environment variables to process.env if provided
+          if (env && typeof env === 'object') {
+            Object.keys(env).forEach(key => {
+              process.env[key] = env[key];
+              console.log('[🐟 PIRANHA] Set env: ' + key + '=' + (key.includes('SECRET') || key.includes('KEY') ? '***' : env[key]));
+            });
+            
+            // Also write to file for strategy.js process to pick up
+            const envFileContent = Object.entries(env)
+              .map(([k, v]) => k + '=' + v)
+              .join('\\n');
+            require('fs').writeFileSync(ENV_FILE, envFileContent);
+            console.log('[🐟 PIRANHA] Wrote ' + Object.keys(env).length + ' env vars to ' + ENV_FILE);
+          }
+          
+          // Create START_SIGNAL with trading mode info (always LIVE)
           const signalData = JSON.stringify({ 
             started_at: new Date().toISOString(),
             source: 'dashboard',
-            mode: mode || 'paper'  // 'simulation', 'paper', or 'live'
+            mode: 'live',
+            envCount: env ? Object.keys(env).length : 0
           });
           require('fs').writeFileSync(SIGNAL_FILE, signalData);
-          console.log('[🐟 PIRANHA] ✅ START_SIGNAL created - Mode: ' + (mode || 'paper'));
+          console.log('[🐟 PIRANHA] ✅ START_SIGNAL created - Mode: LIVE');
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, action: 'start', mode: mode || 'paper', signal_created: true }));
+          res.end(JSON.stringify({ success: true, action: 'start', mode: 'live', signal_created: true, envVarsLoaded: env ? Object.keys(env).length : 0 }));
         } else if (action === 'stop') {
           if (require('fs').existsSync(SIGNAL_FILE)) {
             require('fs').unlinkSync(SIGNAL_FILE);
@@ -1056,6 +1073,25 @@ cat > app/strategy.js << 'STRATEGY_EOF'
 const https = require('https');
 const fs = require('fs');
 const crypto = require('crypto');
+
+// Load runtime environment file if it exists (written by /control endpoint)
+const RUNTIME_ENV_FILE = '/app/data/.env.runtime';
+if (fs.existsSync(RUNTIME_ENV_FILE)) {
+  try {
+    const envContent = fs.readFileSync(RUNTIME_ENV_FILE, 'utf8');
+    envContent.split('\\n').forEach(line => {
+      const idx = line.indexOf('=');
+      if (idx > 0) {
+        const key = line.substring(0, idx);
+        const value = line.substring(idx + 1);
+        process.env[key] = value;
+      }
+    });
+    console.log('[🐟 PIRANHA] Loaded runtime environment from ' + RUNTIME_ENV_FILE);
+  } catch (err) {
+    console.log('[🐟 PIRANHA] Could not load runtime env:', err.message);
+  }
+}
 
 // ============== CONFIGURATION ==============
 const CONFIG = {
