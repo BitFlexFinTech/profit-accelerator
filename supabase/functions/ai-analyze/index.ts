@@ -414,11 +414,22 @@ async function analyzeWithRotation(
       await recordProviderMetrics(supabase, provider, false, 0, errorMsg);
       lastError = errorMsg;
 
-      // If rate limited (429), mark provider as at limit and try next
+      // If rate limited (429), fetch the rate limit and set usage to exceed it
       if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
+        // Get the provider's actual rate limit
+        const { data: providerData } = await supabase
+          .from('ai_providers')
+          .select('rate_limit_rpm')
+          .eq('provider_name', provider)
+          .single();
+        
+        const rateLimit = providerData?.rate_limit_rpm || 30;
         await supabase
           .from('ai_providers')
-          .update({ current_usage: 9999 }) // Max out usage to skip this provider
+          .update({ 
+            current_usage: rateLimit + 1, // Set to just over limit (not 9999)
+            last_error: `Rate limited at ${new Date().toISOString()}`
+          })
           .eq('provider_name', provider);
       }
     }

@@ -29,6 +29,7 @@ interface SimulationConfig {
   dailyProfitTarget: number;
   useLeverage: boolean;
   leverageAmount: number;
+  tradingMode: 'simulation' | 'paper' | 'live';
 }
 
 interface SimulationStage {
@@ -66,6 +67,7 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
     dailyProfitTarget: 10,
     useLeverage: false,
     leverageAmount: 5,
+    tradingMode: 'simulation',
   });
   const [stages, setStages] = useState<SimulationStage[]>(INITIAL_STAGES);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
@@ -149,14 +151,14 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         });
         
         if (priceError) {
-          console.log('[Simulation] Price fetch error:', priceError);
+          console.log('[Trade] Price fetch error:', priceError);
         } else if (priceData?.prices) {
           // Extract price for the selected symbol (e.g., BTC from BTC/USDT)
           const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '');
           realEntryPrice = priceData.prices[symbolBase]?.price || 0;
         }
       } catch (e) {
-        console.log('[Simulation] Using fallback price:', e);
+        console.log('[Trade] Using fallback price:', e);
       }
       
       // Fallback to realistic market price if fetch failed
@@ -174,8 +176,40 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       const entryPriceForCalc = realEntryPrice;
       setSimulationData(prev => ({ ...prev, entryPrice: entryPriceForCalc }));
       
+      // For LIVE mode, execute real trade via trade-engine
+      if (config.tradingMode === 'live') {
+        const quantity = config.amountPerPosition / entryPriceForCalc;
+        const { data: orderData, error: orderError } = await supabase.functions.invoke('trade-engine', {
+          body: {
+            action: 'execute-order',
+            exchangeName: selectedExchange,
+            symbol: selectedSymbol,
+            side: selectedSide === 'long' ? 'buy' : 'sell',
+            quantity,
+            type: 'market'
+          }
+        });
+        
+        if (orderError) {
+          throw { stage: 'trade-open', message: `Order failed: ${orderError.message}`, fix: 'Check exchange API keys and balance' };
+        }
+        
+        console.log('[Trade] Live order executed:', orderData);
+      } else if (config.tradingMode === 'paper') {
+        // Log paper trade to trading_journal
+        await supabase.from('trading_journal').insert({
+          exchange: selectedExchange,
+          symbol: selectedSymbol,
+          side: selectedSide === 'long' ? 'buy' : 'sell',
+          entry_price: entryPriceForCalc,
+          quantity: config.amountPerPosition / entryPriceForCalc,
+          status: 'open',
+          ai_reasoning: `Paper trade via ${config.strategy} strategy`
+        });
+      }
+      
       await new Promise(r => setTimeout(r, 800));
-      updateStage('trade-open', { status: 'success', data: { entryPrice: entryPriceForCalc } });
+      updateStage('trade-open', { status: 'success', data: { entryPrice: entryPriceForCalc, mode: config.tradingMode } });
 
       // Stage 4: Position Monitoring
       setCurrentStageIndex(3);
@@ -269,6 +303,36 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
+              {/* Trading Mode Selection */}
+              <div className="space-y-2">
+                <Label>Trading Mode</Label>
+                <Select value={config.tradingMode} onValueChange={(v) => setConfig(c => ({ ...c, tradingMode: v as SimulationConfig['tradingMode'] }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="simulation">
+                      <div className="flex flex-col">
+                        <span>Simulation</span>
+                        <span className="text-xs text-muted-foreground">Test with mock trades, no real orders</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="paper">
+                      <div className="flex flex-col">
+                        <span>Paper Trading</span>
+                        <span className="text-xs text-muted-foreground">Track with real prices, no real orders</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="live">
+                      <div className="flex flex-col">
+                        <span>Live Trading</span>
+                        <span className="text-xs text-destructive">Real orders on connected exchanges</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Strategy Selection */}
               <div className="space-y-2">
                 <Label>Trading Strategy</Label>
@@ -355,9 +419,18 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
                 )}
               </div>
 
-              <Button onClick={runSimulation} className="w-full" size="lg">
+              {config.tradingMode === 'live' && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+                  <p className="text-xs text-destructive flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    Live mode will execute real orders on your connected exchanges!
+                  </p>
+                </div>
+              )}
+
+              <Button onClick={runSimulation} className="w-full" size="lg" variant={config.tradingMode === 'live' ? 'destructive' : 'default'}>
                 <Zap className="w-4 h-4 mr-2" />
-                Start Simulation
+                {config.tradingMode === 'simulation' ? 'Start Simulation' : config.tradingMode === 'paper' ? 'Start Paper Trade' : 'Execute Live Trade'}
               </Button>
             </motion.div>
           )}
