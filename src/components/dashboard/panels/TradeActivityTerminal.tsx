@@ -84,28 +84,61 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
   useEffect(() => {
     // Use consistent channel name to avoid creating multiple channels
     const channelName = 'trade-terminal-realtime';
+    let retryCount = 0;
+    const maxRetries = 3;
+    let retryTimeout: NodeJS.Timeout | null = null;
+    let pollingInterval: NodeJS.Timeout | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'trading_journal'
-      }, (payload) => {
-        console.log('[TradeActivityTerminal] New trade received:', payload.new);
-        setTrades(prev => [payload.new as Trade, ...prev].slice(0, expanded ? 50 : 15));
-      })
-      .subscribe((status) => {
-        console.log('[TradeActivityTerminal] Subscription status:', status);
-        if (status === 'CHANNEL_ERROR') {
-          console.warn('[TradeActivityTerminal] Channel error - connection issues');
-        }
-      });
+    const setupSubscription = () => {
+      channel = supabase
+        .channel(channelName)
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'trading_journal'
+        }, (payload) => {
+          console.log('[TradeActivityTerminal] New trade received:', payload.new);
+          setTrades(prev => [payload.new as Trade, ...prev].slice(0, expanded ? 50 : 15));
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[TradeActivityTerminal] Realtime connected');
+            retryCount = 0;
+            // Clear polling if realtime works
+            if (pollingInterval) {
+              clearInterval(pollingInterval);
+              pollingInterval = null;
+            }
+          } else if (status === 'CHANNEL_ERROR') {
+            console.warn('[TradeActivityTerminal] Channel error - falling back to polling');
+            // Start polling as fallback
+            if (!pollingInterval) {
+              pollingInterval = setInterval(() => {
+                fetchTrades();
+              }, 10000); // Poll every 10 seconds
+            }
+            // Retry subscription with backoff
+            if (retryCount < maxRetries) {
+              retryCount++;
+              const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 30000);
+              retryTimeout = setTimeout(() => {
+                if (channel) supabase.removeChannel(channel);
+                setupSubscription();
+              }, backoffMs);
+            }
+          }
+        });
+    };
+    
+    setupSubscription();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
+      if (retryTimeout) clearTimeout(retryTimeout);
+      if (pollingInterval) clearInterval(pollingInterval);
     };
-  }, [expanded]);
+  }, [expanded, fetchTrades]);
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '--';

@@ -411,25 +411,65 @@ export function initializeAppStore() {
   // Initial sync
   store.syncFromDatabase();
   
-  // Subscribe to realtime updates with debouncing
-  const channel = supabase
-    .channel('app-store-sync')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_pulse' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_instances' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_snapshots' }, debouncedSync)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'balance_history' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_journal' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'hft_deployments' }, debouncedSync)
-    .subscribe();
+  let retryCount = 0;
+  const maxRetries = 3;
+  let retryTimeout: NodeJS.Timeout | null = null;
+  let pollingInterval: NodeJS.Timeout | null = null;
+  let channel: ReturnType<typeof supabase.channel> | null = null;
+  
+  const setupSubscription = () => {
+    // Subscribe to realtime updates with debouncing
+    channel = supabase
+      .channel('app-store-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_pulse' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_instances' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_snapshots' }, debouncedSync)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'balance_history' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_journal' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hft_deployments' }, debouncedSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_config' }, debouncedSync)
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[useAppStore] Realtime connected');
+          retryCount = 0;
+          // Clear polling if realtime works
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+          }
+        } else if (status === 'CHANNEL_ERROR') {
+          console.warn('[useAppStore] Channel error - falling back to polling');
+          // Start polling as fallback (sync every 15 seconds)
+          if (!pollingInterval) {
+            pollingInterval = setInterval(() => {
+              store.syncFromDatabase();
+            }, 15000);
+          }
+          // Retry subscription with backoff
+          if (retryCount < maxRetries) {
+            retryCount++;
+            const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 30000);
+            retryTimeout = setTimeout(() => {
+              if (channel) supabase.removeChannel(channel);
+              setupSubscription();
+            }, backoffMs);
+          }
+        }
+      });
+  };
+  
+  setupSubscription();
 
   return () => {
     if (realtimeDebounceTimer) {
       clearTimeout(realtimeDebounceTimer);
     }
-    supabase.removeChannel(channel);
+    if (retryTimeout) clearTimeout(retryTimeout);
+    if (pollingInterval) clearInterval(pollingInterval);
+    if (channel) supabase.removeChannel(channel);
   };
 }
