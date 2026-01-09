@@ -12,18 +12,27 @@ import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
 import { ModeProgressTracker } from '../panels/ModeProgressTracker';
 import { MobileDashboard } from '../MobileDashboard';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useWidgetStore } from '@/store/useWidgetStore';
 
 export function LiveDashboard() {
   useTradeNotifications();
   const isMobile = useIsMobile();
   const { sync } = useExchangeWebSocket();
   const { startPolling, stopPolling } = useLiveBalancePolling(60);
+  const { getLayout } = useWidgetStore();
+  const layout = getLayout('live');
 
   useEffect(() => {
     sync();
     startPolling();
     return () => stopPolling();
   }, [sync, startPolling, stopPolling]);
+
+  // Helper to check widget visibility
+  const isVisible = (id: string) => {
+    const widget = layout.find((w) => w.id === id);
+    return widget?.visible ?? true;
+  };
 
   // Mobile-responsive: swipeable panel navigation
   if (isMobile) {
@@ -33,40 +42,48 @@ export function LiveDashboard() {
   return (
     <div className="h-full flex flex-col gap-1.5 overflow-hidden">
       {/* Scrolling Price Ticker - Very Top */}
-      <ScrollingPriceTicker />
+      {isVisible('ticker') && <ScrollingPriceTicker />}
       
       {/* Mode Progress Tracker - Temporary cards until live mode unlocked */}
-      <ModeProgressTracker />
+      {isVisible('mode-progress') && <ModeProgressTracker />}
       
       {/* Top Control Bar - Merged Bot Status + Quick Actions */}
-      <UnifiedControlBar />
+      {isVisible('control-bar') && <UnifiedControlBar />}
       
       {/* Compact Metrics Bar */}
-      <CompactMetricsBar />
+      {isVisible('metrics') && <CompactMetricsBar />}
       
       {/* Main 3-Column Grid - No Scroll */}
       <div className="flex-1 grid grid-cols-[30%_40%_30%] gap-2 min-h-0">
         {/* LEFT Column - AI Market Analysis (Full Height) */}
-        <div className="min-h-0">
-          <AIMarketUpdatesPanel fullHeight />
-        </div>
+        {isVisible('ai-analysis') && (
+          <div className="min-h-0">
+            <AIMarketUpdatesPanel fullHeight />
+          </div>
+        )}
         
         {/* CENTER Column - Live Trade Activity Terminal (Full Height) */}
-        <div className="min-h-0">
-          <TradeActivityTerminal expanded />
-        </div>
+        {isVisible('trade-terminal') && (
+          <div className="min-h-0">
+            <TradeActivityTerminal expanded />
+          </div>
+        )}
         
         {/* RIGHT Column - News (LONG) + Infrastructure (SMALL) */}
         <div className="flex flex-col gap-1 min-h-0 h-full">
           {/* News Panel - EXPANDED (takes most space) */}
-          <div className="flex-1 min-h-0">
-            <NewsPanel />
-          </div>
+          {isVisible('news') && (
+            <div className="flex-1 min-h-0">
+              <NewsPanel />
+            </div>
+          )}
           
           {/* Infrastructure Panel - Shows latency (180px fixed) */}
-          <div className="h-[180px] flex-shrink-0">
-            <InfrastructurePanel />
-          </div>
+          {isVisible('infrastructure') && (
+            <div className="h-[180px] flex-shrink-0">
+              <InfrastructurePanel />
+            </div>
+          )}
         </div>
       </div>
     </div>

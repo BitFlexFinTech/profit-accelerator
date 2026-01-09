@@ -216,9 +216,9 @@ async function getNextAvailableProvider(supabase: any): Promise<{
       continue;
     }
     
-    // Check daily rate limit (skip if >90% used to preserve quota)
-    if (dailyUsage >= dailyLimit * 0.95) {
-      console.log(`[ai-analyze] Provider ${p.provider_name} near daily limit (${dailyUsage}/${dailyLimit})`);
+    // Check daily rate limit (skip if >99% used to use full quota)
+    if (dailyUsage >= dailyLimit * 0.99) {
+      console.log(`[ai-analyze] Provider ${p.provider_name} at daily limit (${dailyUsage}/${dailyLimit})`);
       continue;
     }
 

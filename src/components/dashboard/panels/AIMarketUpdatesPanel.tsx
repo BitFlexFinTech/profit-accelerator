@@ -79,7 +79,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
-  const [nextScanIn, setNextScanIn] = useState(3);
+  const [nextScanIn, setNextScanIn] = useState(30);
   const [activeTimeframe, setActiveTimeframe] = useState<TimeframeFilter>('all');
   const hasAutoScanned = useRef(false);
   
@@ -119,7 +119,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
 
   useEffect(() => {
     const countdownInterval = setInterval(() => {
-      setNextScanIn(prev => (prev > 0 ? prev - 1 : 3)); // Reset to 3s
+      setNextScanIn(prev => (prev > 0 ? prev - 1 : 30)); // Reset to 30s
     }, 1000);
     return () => clearInterval(countdownInterval);
   }, []);
@@ -180,13 +180,13 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   }, []);
 
   useEffect(() => {
-    // Real-time trading signals - scan every 3 seconds for live updates
+    // Real-time trading signals - scan every 30 seconds for sustainable API usage
     // Uses ALL connected AI providers with rotation
     const scanInterval = setInterval(() => {
       hasAutoScanned.current = false;
-      setNextScanIn(3);
+      setNextScanIn(30);
       triggerAutoScan();
-    }, 3 * 1000);
+    }, 30 * 1000);
 
     return () => clearInterval(scanInterval);
   }, []);
