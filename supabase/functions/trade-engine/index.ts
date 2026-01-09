@@ -961,6 +961,65 @@ serve(async (req) => {
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      case 'close-position': {
+        const { tradeId, symbol, pnl, exitPrice } = params;
+        console.log(`[trade-engine] Closing position: ${tradeId}, symbol=${symbol}, pnl=${pnl}`);
+        
+        // Update trading_journal with exit data
+        const { error: journalError } = await supabase
+          .from('trading_journal')
+          .update({
+            status: 'closed',
+            exit_price: exitPrice || 0,
+            pnl: pnl,
+            closed_at: new Date().toISOString()
+          })
+          .eq('id', tradeId);
+        
+        if (journalError) {
+          console.error('[trade-engine] Failed to update journal:', journalError);
+        } else {
+          console.log('[trade-engine] Journal entry updated');
+        }
+        
+        // Find and update matching AI decision
+        const { data: aiDecision, error: findError } = await supabase
+          .from('ai_trade_decisions')
+          .select('id')
+          .eq('symbol', symbol)
+          .eq('was_executed', false)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (aiDecision && !findError) {
+          const { error: aiUpdateError } = await supabase
+            .from('ai_trade_decisions')
+            .update({
+              was_executed: true,
+              actual_profit: pnl,
+              actual_outcome: pnl > 0 ? 'profit' : 'loss',
+              trade_id: tradeId
+            })
+            .eq('id', aiDecision.id);
+          
+          if (aiUpdateError) {
+            console.error('[trade-engine] Failed to update AI decision:', aiUpdateError);
+          } else {
+            console.log(`[trade-engine] Updated AI decision ${aiDecision.id} with outcome: ${pnl > 0 ? 'profit' : 'loss'}`);
+          }
+        } else {
+          console.log('[trade-engine] No matching AI decision found for symbol:', symbol);
+        }
+        
+        return new Response(JSON.stringify({ 
+          success: true, 
+          tradeId,
+          pnl,
+          outcome: pnl > 0 ? 'profit' : 'loss'
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       default:
         return new Response(JSON.stringify({ success: false, error: 'Unknown action' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

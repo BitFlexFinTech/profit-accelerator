@@ -356,14 +356,36 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         
         // Call RPC to increment trade count based on mode
         if (config.tradingMode === 'simulation') {
-          const { data: unlocked } = await supabase.rpc('increment_simulation_trade', { profit: profitAmount });
+          const { data: unlocked, error: rpcError } = await supabase.rpc('increment_simulation_trade', { profit: profitAmount });
+          if (rpcError) {
+            console.error('[Simulation] RPC error:', rpcError);
+          }
           if (unlocked) {
+            // Insert unlock notification
+            await supabase.from('system_notifications').insert({
+              type: 'mode_unlock',
+              title: 'Paper Trading Unlocked!',
+              message: 'Congratulations! You completed 20 profitable simulation trades. Paper trading is now available.',
+              severity: 'success',
+              category: 'achievement'
+            });
             setShowUnlockPopup('paper');
             setProgressData(prev => ({ ...prev, paperUnlocked: true }));
           }
         } else if (config.tradingMode === 'paper') {
-          const { data: unlocked } = await supabase.rpc('increment_paper_trade_v2', { profit: profitAmount });
+          const { data: unlocked, error: rpcError } = await supabase.rpc('increment_paper_trade_v2', { profit: profitAmount });
+          if (rpcError) {
+            console.error('[Simulation] RPC error:', rpcError);
+          }
           if (unlocked) {
+            // Insert unlock notification
+            await supabase.from('system_notifications').insert({
+              type: 'mode_unlock',
+              title: 'Live Trading Unlocked!',
+              message: 'Congratulations! You completed 50 profitable paper trades. Live trading is now available.',
+              severity: 'success',
+              category: 'achievement'
+            });
             setShowUnlockPopup('live');
             setProgressData(prev => ({ ...prev, liveUnlocked: true }));
           }
@@ -408,21 +430,31 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
 
       // Create trading session record for leaderboard
       const winCount = totalTradesTarget; // All trades are profitable in simulation
-      
-      await supabase.from('trading_sessions').insert({
+      const sessionData = {
         session_type: config.tradingMode,
         total_trades: totalTradesTarget,
         winning_trades: winCount,
         total_pnl: totalProfit,
         win_rate: 100,
         consistency_score: 95 + Math.random() * 5,
-        avg_trade_duration_ms: avgTotalTime,
+        avg_trade_duration_ms: Math.round(avgTotalTime),
+        started_at: new Date(Date.now() - avgTotalTime * totalTradesTarget).toISOString(),
+        ended_at: new Date().toISOString(),
         metadata: {
           strategy: config.strategy,
           leverage: config.useLeverage ? config.leverageAmount : 1,
           profitTarget: config.profitTarget
         }
-      });
+      };
+      
+      console.log('[Simulation] Creating trading session:', sessionData);
+      const { error: sessionError } = await supabase.from('trading_sessions').insert(sessionData);
+      
+      if (sessionError) {
+        console.error('[Simulation] Failed to create trading session:', sessionError);
+      } else {
+        console.log('[Simulation] Trading session created successfully');
+      }
 
       clearTimeout(globalTimeout);
       setSimulationData(prev => ({ ...prev, pnl: totalProfit }));
