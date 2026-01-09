@@ -140,25 +140,36 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       updateStage('pair-selection', { status: 'success', data: { symbol: selectedSymbol, exchange: selectedExchange } });
 
       // Stage 3: Open Trade - fetch REAL price from trade-engine
+      console.log('[Simulation] Stage 3: Opening Trade - STARTING');
       setCurrentStageIndex(2);
       updateStage('trade-open', { status: 'running' });
       
-      // Attempt to get real price from trade-engine
+      // Attempt to get real price from trade-engine with timeout
       let realEntryPrice = 0;
       try {
-        const { data: priceData, error: priceError } = await supabase.functions.invoke('trade-engine', {
+        const pricePromise = supabase.functions.invoke('trade-engine', {
           body: { action: 'get-prices' }
         });
+        
+        // Add 5-second timeout to prevent hanging
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Price fetch timeout after 5s')), 5000)
+        );
+        
+        const { data: priceData, error: priceError } = await Promise.race([
+          pricePromise,
+          timeoutPromise
+        ]);
         
         if (priceError) {
           console.log('[Trade] Price fetch error:', priceError);
         } else if (priceData?.prices) {
-          // Extract price for the selected symbol (e.g., BTC from BTC/USDT)
           const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '');
           realEntryPrice = priceData.prices[symbolBase]?.price || 0;
+          console.log('[Trade] Got real price:', symbolBase, realEntryPrice);
         }
       } catch (e) {
-        console.log('[Trade] Using fallback price:', e);
+        console.log('[Trade] Price fetch failed, using fallback:', e);
       }
       
       // Fallback to realistic market price if fetch failed
@@ -170,14 +181,15 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         } else {
           realEntryPrice = 100 + Math.random() * 50;
         }
+        console.log('[Trade] Using fallback price:', realEntryPrice);
       }
       
-      // Store entry price in local variable to avoid stale state issue
       const entryPriceForCalc = realEntryPrice;
       setSimulationData(prev => ({ ...prev, entryPrice: entryPriceForCalc }));
       
-      // For LIVE mode, execute real trade via trade-engine
+      // Execute trade based on mode
       if (config.tradingMode === 'live') {
+        console.log('[Trade] Executing LIVE order...');
         const quantity = config.amountPerPosition / entryPriceForCalc;
         const { data: orderData, error: orderError } = await supabase.functions.invoke('trade-engine', {
           body: {
@@ -193,11 +205,10 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         if (orderError) {
           throw { stage: 'trade-open', message: `Order failed: ${orderError.message}`, fix: 'Check exchange API keys and balance' };
         }
-        
         console.log('[Trade] Live order executed:', orderData);
       } else if (config.tradingMode === 'paper') {
-        // Log paper trade to trading_journal with paper_trade flag
-        await supabase.from('trading_journal').insert({
+        console.log('[Trade] Logging PAPER trade...');
+        const { error: insertError } = await supabase.from('trading_journal').insert({
           exchange: selectedExchange,
           symbol: selectedSymbol,
           side: selectedSide === 'long' ? 'buy' : 'sell',
@@ -207,9 +218,19 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
           ai_reasoning: `Paper trade via ${config.strategy} strategy`,
           paper_trade: true
         });
+        
+        if (insertError) {
+          console.error('[Trade] Paper trade insert failed:', insertError);
+          // Continue anyway - don't block simulation for logging failure
+        } else {
+          console.log('[Trade] Paper trade logged to trading_journal');
+        }
+      } else {
+        console.log('[Trade] Simulation mode - no actual trade logged');
       }
       
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 500));
+      console.log('[Simulation] Stage 3: Opening Trade - COMPLETE');
       updateStage('trade-open', { status: 'success', data: { entryPrice: entryPriceForCalc, mode: config.tradingMode } });
 
       // Stage 4: Position Monitoring
