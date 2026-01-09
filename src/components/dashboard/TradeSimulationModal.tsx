@@ -102,6 +102,17 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
     setCurrentStageIndex(0);
     setErrorInfo(null);
 
+    // Global 30-second timeout to prevent infinite hangs
+    const globalTimeout = setTimeout(() => {
+      console.error('[Simulation] Global timeout reached after 30s');
+      setErrorInfo({ 
+        stage: 'timeout', 
+        message: 'Simulation timed out after 30 seconds', 
+        fix: 'Check your network connection and try again' 
+      });
+      setMode('error');
+    }, 30000);
+
     try {
       // Stage 1: AI Analysis - Check for connected exchanges and AI signals
       setCurrentStageIndex(0);
@@ -153,32 +164,30 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       setCurrentStageIndex(2);
       updateStage('trade-open', { status: 'running' });
       
-      // Attempt to get real price from trade-engine with timeout
+      // Attempt to get real price from trade-engine with simple timeout
       let realEntryPrice = 0;
+      console.log('[Trade] Fetching real prices from trade-engine...');
+      
       try {
-        const pricePromise = supabase.functions.invoke('trade-engine', {
-          body: { action: 'get-prices' }
-        });
-        
-        // Add 5-second timeout to prevent hanging
-        const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Price fetch timeout after 5s')), 5000)
-        );
-        
         const { data: priceData, error: priceError } = await Promise.race([
-          pricePromise,
-          timeoutPromise
+          supabase.functions.invoke('trade-engine', { body: { action: 'get-prices' } }),
+          new Promise<{ data: null; error: Error }>((resolve) => 
+            setTimeout(() => resolve({ data: null, error: new Error('Price fetch timeout') }), 5000)
+          )
         ]);
         
         if (priceError) {
-          console.log('[Trade] Price fetch error:', priceError);
-        } else if (priceData?.prices) {
-          const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '');
-          realEntryPrice = priceData.prices[symbolBase]?.price || 0;
-          console.log('[Trade] Got real price:', symbolBase, realEntryPrice);
+          console.log('[Trade] Price fetch error:', priceError.message || priceError);
+        } else if (priceData && typeof priceData === 'object' && 'prices' in priceData) {
+          const prices = priceData.prices as Record<string, { price: number }>;
+          const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '').toUpperCase();
+          realEntryPrice = prices[symbolBase]?.price || 0;
+          console.log('[Trade] Got real price for', symbolBase, ':', realEntryPrice);
+        } else {
+          console.log('[Trade] Invalid price response structure:', priceData);
         }
       } catch (e) {
-        console.log('[Trade] Price fetch failed, using fallback:', e);
+        console.log('[Trade] Price fetch exception, using fallback:', e);
       }
       
       // Fallback to realistic market prices for all supported symbols
@@ -293,15 +302,19 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         })
         .eq('id', '00000000-0000-0000-0000-000000000001');
 
+      clearTimeout(globalTimeout);
+      console.log('[Simulation] Completed successfully!');
       setMode('success');
       toast.success('Simulation completed! Paper trading unlocked.');
 
     } catch (err: unknown) {
+      clearTimeout(globalTimeout);
       const error = err as { stage?: string; message?: string; fix?: string };
       const stage = error.stage || 'unknown';
       const message = error.message || 'Unknown error';
       const fix = error.fix || 'Check console for details';
       
+      console.error('[Simulation] Error at stage:', stage, message);
       updateStage(stage, { status: 'error', errorDetails: message });
       setErrorInfo({ stage, message, fix });
       setMode('error');
