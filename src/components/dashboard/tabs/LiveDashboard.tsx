@@ -10,9 +10,12 @@ import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
 import { ModeProgressTracker } from '../panels/ModeProgressTracker';
+import { MobileDashboard } from '../MobileDashboard';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export function LiveDashboard() {
   useTradeNotifications();
+  const isMobile = useIsMobile();
   const { sync } = useExchangeWebSocket();
   const { startPolling, stopPolling } = useLiveBalancePolling(60);
 
@@ -21,6 +24,11 @@ export function LiveDashboard() {
     startPolling();
     return () => stopPolling();
   }, [sync, startPolling, stopPolling]);
+
+  // Mobile-responsive: swipeable panel navigation
+  if (isMobile) {
+    return <MobileDashboard />;
+  }
 
   return (
     <div className="h-full flex flex-col gap-1.5 overflow-hidden">

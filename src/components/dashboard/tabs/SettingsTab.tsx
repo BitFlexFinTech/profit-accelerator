@@ -245,6 +245,52 @@ function WalletTransferSection() {
   );
 }
 
+// Push Notification Toggle Component
+function PushNotificationToggle() {
+  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [isSupported, setIsSupported] = useState(false);
+
+  useEffect(() => {
+    const supported = 'Notification' in window;
+    setIsSupported(supported);
+    if (supported) {
+      setPermission(Notification.permission);
+    }
+  }, []);
+
+  const requestPermission = async () => {
+    if (!isSupported) {
+      toast.error('Push notifications not supported');
+      return;
+    }
+    const result = await Notification.requestPermission();
+    setPermission(result);
+    if (result === 'granted') {
+      toast.success('Push notifications enabled!');
+    }
+  };
+
+  if (!isSupported) return null;
+
+  return (
+    <div className="flex items-center gap-3 p-2 px-4 rounded-lg bg-secondary/30 border border-border/50">
+      <Bell className="w-4 h-4 text-muted-foreground" />
+      <span className="text-xs text-muted-foreground">Alerts</span>
+      <button
+        onClick={requestPermission}
+        disabled={permission === 'granted'}
+        className={`px-3 py-1.5 text-xs rounded transition-all ${
+          permission === 'granted'
+            ? 'bg-success/20 text-success cursor-default'
+            : 'bg-primary text-primary-foreground hover:bg-primary/90'
+        }`}
+      >
+        {permission === 'granted' ? '✓ Enabled' : 'Enable'}
+      </button>
+    </div>
+  );
+}
+
 export function SettingsTab() {
   const [activeWizard, setActiveWizard] = useState<string | null>(null);
   const [isDeployingMesh, setIsDeployingMesh] = useState(false);
@@ -321,47 +367,52 @@ export function SettingsTab() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-2xl font-bold">Settings</h2>
         
-        {/* Theme Toggle */}
-        <div className="flex items-center gap-3 p-2 px-4 rounded-lg bg-secondary/30 border border-border/50">
-          <Palette className="w-4 h-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Theme</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setTheme('colorful')}
-              className={`px-3 py-1.5 text-xs rounded transition-all ${
-                theme === 'colorful' 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-              }`}
-              title="Deep navy with vibrant neon accents"
-            >
-              🌃 Neon Nights
-            </button>
-            <button
-              onClick={() => setTheme('bw')}
-              className={`px-3 py-1.5 text-xs rounded transition-all ${
-                theme === 'bw' 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-              }`}
-              title="Pure black and white, no distractions"
-            >
-              🎬 Noir Mode
-            </button>
-            <button
-              onClick={() => setTheme('light')}
-              className={`px-3 py-1.5 text-xs rounded transition-all ${
-                theme === 'light' 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-              }`}
-              title="Bright white with vibrant flat colors"
-            >
-              ☀️ Sunshine Pop
-            </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Push Notifications Toggle */}
+          <PushNotificationToggle />
+          
+          {/* Theme Toggle */}
+          <div className="flex items-center gap-3 p-2 px-4 rounded-lg bg-secondary/30 border border-border/50">
+            <Palette className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Theme</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setTheme('colorful')}
+                className={`px-3 py-1.5 text-xs rounded transition-all ${
+                  theme === 'colorful' 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}
+                title="Deep navy with vibrant neon accents"
+              >
+                🌃 Neon Nights
+              </button>
+              <button
+                onClick={() => setTheme('bw')}
+                className={`px-3 py-1.5 text-xs rounded transition-all ${
+                  theme === 'bw' 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}
+                title="Pure black and white, no distractions"
+              >
+                🎬 Noir Mode
+              </button>
+              <button
+                onClick={() => setTheme('light')}
+                className={`px-3 py-1.5 text-xs rounded transition-all ${
+                  theme === 'light' 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}
+                title="Bright white with vibrant flat colors"
+              >
+                ☀️ Sunshine Pop
+              </button>
+            </div>
           </div>
         </div>
       </div>
