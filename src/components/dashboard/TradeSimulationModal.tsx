@@ -137,19 +137,26 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       await new Promise(r => setTimeout(r, 1200));
       updateStage('pair-selection', { status: 'success', data: { symbol: selectedSymbol, exchange: selectedExchange } });
 
-      // Stage 3: Open Trade - fetch REAL price from exchange
+      // Stage 3: Open Trade - fetch REAL price from trade-engine
       setCurrentStageIndex(2);
       updateStage('trade-open', { status: 'running' });
       
-      // Attempt to get real price from exchange WebSocket
+      // Attempt to get real price from trade-engine
       let realEntryPrice = 0;
       try {
-        const { data: priceData } = await supabase.functions.invoke('exchange-websocket', {
-          body: { action: 'getPrice', symbol: selectedSymbol, exchange: selectedExchange }
+        const { data: priceData, error: priceError } = await supabase.functions.invoke('trade-engine', {
+          body: { action: 'get-prices' }
         });
-        realEntryPrice = priceData?.price || 0;
-      } catch {
-        console.log('[Simulation] Using fallback price');
+        
+        if (priceError) {
+          console.log('[Simulation] Price fetch error:', priceError);
+        } else if (priceData?.prices) {
+          // Extract price for the selected symbol (e.g., BTC from BTC/USDT)
+          const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '');
+          realEntryPrice = priceData.prices[symbolBase]?.price || 0;
+        }
+      } catch (e) {
+        console.log('[Simulation] Using fallback price:', e);
       }
       
       // Fallback to realistic market price if fetch failed
@@ -163,10 +170,12 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         }
       }
       
-      setSimulationData(prev => ({ ...prev, entryPrice: realEntryPrice }));
+      // Store entry price in local variable to avoid stale state issue
+      const entryPriceForCalc = realEntryPrice;
+      setSimulationData(prev => ({ ...prev, entryPrice: entryPriceForCalc }));
       
       await new Promise(r => setTimeout(r, 800));
-      updateStage('trade-open', { status: 'success', data: { entryPrice: realEntryPrice } });
+      updateStage('trade-open', { status: 'success', data: { entryPrice: entryPriceForCalc } });
 
       // Stage 4: Position Monitoring
       setCurrentStageIndex(3);
@@ -180,10 +189,10 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       updateStage('profit-target', { status: 'running' });
       
       const profitAmount = config.useLeverage ? config.profitTarget * config.leverageAmount : config.profitTarget;
-      const currentEntryPrice = simulationData.entryPrice || 95000;
+      // Use the local variable, NOT state (which would be stale)
       const exitPrice = selectedSide === 'long' 
-        ? currentEntryPrice * (1 + (profitAmount / config.amountPerPosition))
-        : currentEntryPrice * (1 - (profitAmount / config.amountPerPosition));
+        ? entryPriceForCalc * (1 + (profitAmount / config.amountPerPosition))
+        : entryPriceForCalc * (1 - (profitAmount / config.amountPerPosition));
       
       setSimulationData(prev => ({ ...prev, exitPrice, pnl: profitAmount }));
       
