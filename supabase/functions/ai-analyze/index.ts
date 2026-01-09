@@ -58,7 +58,7 @@ const AI_PROVIDER_CONFIG: Record<string, {
   },
   huggingface: { 
     type: 'openai', 
-    endpoint: 'https://api-inference.huggingface.co/v1/chat/completions', 
+    endpoint: 'https://router.huggingface.co/v1/chat/completions', 
     envKey: 'HUGGINGFACE_API_KEY',
     model: 'meta-llama/Llama-3.1-8B-Instruct',
     fastModel: 'meta-llama/Llama-3.1-8B-Instruct'
@@ -445,8 +445,8 @@ async function analyzeWithRotation(
           .single();
         
         const errorCount = providerData?.error_count || 0;
-        // Exponential backoff: 1min, 2min, 3min, 4min, max 5min
-        const cooldownMinutes = Math.min(5, 1 + errorCount);
+        // REDUCED: 30sec, 45sec, 1min, 1.5min, max 2min (faster recovery)
+        const cooldownMinutes = Math.min(2, 0.5 + (errorCount * 0.25));
         const cooldownUntil = new Date(Date.now() + cooldownMinutes * 60 * 1000).toISOString();
         
         await supabase

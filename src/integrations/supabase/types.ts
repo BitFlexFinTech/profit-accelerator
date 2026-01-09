@@ -568,6 +568,48 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_signals: {
+        Row: {
+          bot_name: string
+          confidence: number
+          created_at: string | null
+          current_price: number | null
+          exchange_name: string | null
+          expected_move_percent: number | null
+          id: string
+          processed: boolean | null
+          side: string
+          symbol: string
+          timeframe_minutes: number | null
+        }
+        Insert: {
+          bot_name: string
+          confidence: number
+          created_at?: string | null
+          current_price?: number | null
+          exchange_name?: string | null
+          expected_move_percent?: number | null
+          id?: string
+          processed?: boolean | null
+          side: string
+          symbol: string
+          timeframe_minutes?: number | null
+        }
+        Update: {
+          bot_name?: string
+          confidence?: number
+          created_at?: string | null
+          current_price?: number | null
+          exchange_name?: string | null
+          expected_move_percent?: number | null
+          id?: string
+          processed?: boolean | null
+          side?: string
+          symbol?: string
+          timeframe_minutes?: number | null
+        }
+        Relationships: []
+      }
       cloud_config: {
         Row: {
           created_at: string | null
@@ -1675,12 +1717,15 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          last_live_trade_at: string | null
           last_paper_trade_at: string | null
           live_mode_unlocked: boolean | null
+          live_profit_total: number | null
           paper_mode_unlocked: boolean | null
           paper_profit_total: number | null
           simulation_completed: boolean | null
           simulation_profit_total: number | null
+          successful_live_trades: number | null
           successful_paper_trades: number | null
           successful_simulation_trades: number | null
           updated_at: string | null
@@ -1688,12 +1733,15 @@ export type Database = {
         Insert: {
           created_at?: string | null
           id?: string
+          last_live_trade_at?: string | null
           last_paper_trade_at?: string | null
           live_mode_unlocked?: boolean | null
+          live_profit_total?: number | null
           paper_mode_unlocked?: boolean | null
           paper_profit_total?: number | null
           simulation_completed?: boolean | null
           simulation_profit_total?: number | null
+          successful_live_trades?: number | null
           successful_paper_trades?: number | null
           successful_simulation_trades?: number | null
           updated_at?: string | null
@@ -1701,12 +1749,15 @@ export type Database = {
         Update: {
           created_at?: string | null
           id?: string
+          last_live_trade_at?: string | null
           last_paper_trade_at?: string | null
           live_mode_unlocked?: boolean | null
+          live_profit_total?: number | null
           paper_mode_unlocked?: boolean | null
           paper_profit_total?: number | null
           simulation_completed?: boolean | null
           simulation_profit_total?: number | null
+          successful_live_trades?: number | null
           successful_paper_trades?: number | null
           successful_simulation_trades?: number | null
           updated_at?: string | null
@@ -2243,6 +2294,7 @@ export type Database = {
           pnl_today: number | null
           position_size: number | null
           profit_target: number | null
+          source_framework: string | null
           trades_today: number | null
           trading_mode: string | null
           updated_at: string | null
@@ -2262,6 +2314,7 @@ export type Database = {
           pnl_today?: number | null
           position_size?: number | null
           profit_target?: number | null
+          source_framework?: string | null
           trades_today?: number | null
           trading_mode?: string | null
           updated_at?: string | null
@@ -2281,6 +2334,7 @@ export type Database = {
           pnl_today?: number | null
           position_size?: number | null
           profit_target?: number | null
+          source_framework?: string | null
           trades_today?: number | null
           trading_mode?: string | null
           updated_at?: string | null
@@ -2705,6 +2759,7 @@ export type Database = {
       }
     }
     Functions: {
+      increment_live_trade: { Args: { profit?: number }; Returns: boolean }
       increment_paper_trade: { Args: never; Returns: undefined }
       increment_paper_trade_v2: { Args: { profit: number }; Returns: boolean }
       increment_simulation_trade: { Args: { profit: number }; Returns: boolean }

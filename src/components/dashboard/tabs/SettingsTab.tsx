@@ -48,6 +48,8 @@ import { HummingbotWizard } from '../wizards/HummingbotWizard';
 import { OctoBotWizard } from '../wizards/OctoBotWizard';
 import { JesseWizard } from '../wizards/JesseWizard';
 import { VnpyWizard } from '../wizards/VnpyWizard';
+import { SuperalgosWizard } from '../wizards/SuperalgosWizard';
+import { BacktraderWizard } from '../wizards/BacktraderWizard';
 import { IPWhitelistCard } from '../panels/IPWhitelistCard';
 import { SecurityVaultPanel } from '../panels/SecurityVaultPanel';
 import { LatencyComparisonChart } from '../panels/LatencyComparisonChart';
@@ -800,6 +802,28 @@ export function SettingsTab() {
             </div>
             <p className="text-xs text-muted-foreground">Event-Driven</p>
           </button>
+          
+          <button
+            onClick={() => setActiveWizard('superalgos')}
+            className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/30 hover:bg-orange-500/20 text-left group transition-all"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Workflow className="w-6 h-6 text-orange-400" />
+              <span className="font-medium">Superalgos</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Visual Designer</p>
+          </button>
+          
+          <button
+            onClick={() => setActiveWizard('backtrader')}
+            className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 hover:bg-yellow-500/20 text-left group transition-all"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <TrendingUp className="w-6 h-6 text-yellow-400" />
+              <span className="font-medium">Backtrader</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Backtesting</p>
+          </button>
         </div>
       </div>
 
@@ -1146,6 +1170,14 @@ export function SettingsTab() {
       <VnpyWizard 
         isOpen={activeWizard === 'vnpy'} 
         onClose={() => setActiveWizard(null)} 
+      />
+      <SuperalgosWizard 
+        open={activeWizard === 'superalgos'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
+      />
+      <BacktraderWizard 
+        open={activeWizard === 'backtrader'} 
+        onOpenChange={(open) => !open && setActiveWizard(null)} 
       />
       <AIProviderWizard 
         open={activeWizard === 'ai-providers'} 
