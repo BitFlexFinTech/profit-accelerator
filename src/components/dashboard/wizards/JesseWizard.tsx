@@ -31,10 +31,10 @@ export function JesseWizard({ open, onOpenChange }: JesseWizardProps) {
     const fetchVPS = async () => {
       const { data } = await supabase
         .from('vps_instances')
-        .select('id, name, ip_address')
+        .select('id, nickname, ip_address')
         .eq('status', 'running');
       if (data) {
-        setVpsInstances(data.map(v => ({ id: v.id, name: v.name || 'VPS', ip: v.ip_address || '' })));
+        setVpsInstances(data.map(v => ({ id: v.id, name: v.nickname || 'VPS', ip: v.ip_address || '' })));
       }
     };
     fetchVPS();
