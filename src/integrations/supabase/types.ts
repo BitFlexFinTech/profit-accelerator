@@ -1605,57 +1605,6 @@ export type Database = {
         }
         Relationships: []
       }
-      simulation_progress: {
-        Row: {
-          created_at: string | null
-          id: string
-          last_live_trade_at: string | null
-          last_paper_trade_at: string | null
-          live_mode_unlocked: boolean | null
-          live_profit_total: number | null
-          paper_mode_unlocked: boolean | null
-          paper_profit_total: number | null
-          simulation_completed: boolean | null
-          simulation_profit_total: number | null
-          successful_live_trades: number | null
-          successful_paper_trades: number | null
-          successful_simulation_trades: number | null
-          updated_at: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          id?: string
-          last_live_trade_at?: string | null
-          last_paper_trade_at?: string | null
-          live_mode_unlocked?: boolean | null
-          live_profit_total?: number | null
-          paper_mode_unlocked?: boolean | null
-          paper_profit_total?: number | null
-          simulation_completed?: boolean | null
-          simulation_profit_total?: number | null
-          successful_live_trades?: number | null
-          successful_paper_trades?: number | null
-          successful_simulation_trades?: number | null
-          updated_at?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          id?: string
-          last_live_trade_at?: string | null
-          last_paper_trade_at?: string | null
-          live_mode_unlocked?: boolean | null
-          live_profit_total?: number | null
-          paper_mode_unlocked?: boolean | null
-          paper_profit_total?: number | null
-          simulation_completed?: boolean | null
-          simulation_profit_total?: number | null
-          successful_live_trades?: number | null
-          successful_paper_trades?: number | null
-          successful_simulation_trades?: number | null
-          updated_at?: string | null
-        }
-        Relationships: []
-      }
       strategy_config: {
         Row: {
           allowed_exchanges: string[] | null
@@ -2080,7 +2029,6 @@ export type Database = {
           execution_latency_ms: number | null
           exit_price: number | null
           id: string
-          paper_trade: boolean | null
           pnl: number | null
           quantity: number
           side: string
@@ -2096,7 +2044,6 @@ export type Database = {
           execution_latency_ms?: number | null
           exit_price?: number | null
           id?: string
-          paper_trade?: boolean | null
           pnl?: number | null
           quantity: number
           side: string
@@ -2112,7 +2059,6 @@ export type Database = {
           execution_latency_ms?: number | null
           exit_price?: number | null
           id?: string
-          paper_trade?: boolean | null
           pnl?: number | null
           quantity?: number
           side?: string
@@ -2652,9 +2598,6 @@ export type Database = {
     }
     Functions: {
       increment_live_trade: { Args: { profit?: number }; Returns: boolean }
-      increment_paper_trade: { Args: never; Returns: undefined }
-      increment_paper_trade_v2: { Args: { profit: number }; Returns: boolean }
-      increment_simulation_trade: { Args: { profit: number }; Returns: boolean }
       reset_ai_provider_daily_usage: { Args: never; Returns: undefined }
       reset_ai_provider_usage: { Args: never; Returns: undefined }
     }

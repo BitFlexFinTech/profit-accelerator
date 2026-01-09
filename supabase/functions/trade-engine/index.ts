@@ -383,19 +383,7 @@ serve(async (req) => {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // REMOVED: paper-order case - All trading now goes through VPS bot only
-      // The VPS bot handles simulation, paper, and live modes with identical logic
-      // Only difference: Live mode places real exchange orders, Paper/Simulation do not
-      case 'paper-order': {
-        return new Response(JSON.stringify({ 
-          success: false, 
-          error: 'DISABLED: All trading now goes through VPS bot. Use bot-control to start/stop trading.',
-          action_required: 'Use the dashboard Start button to begin trading via VPS bot.'
-        }), { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        });
-      }
+      // All trading goes through VPS bot - no paper orders
 
       case 'test-connection': {
         const { exchangeName, apiKey, apiSecret, apiPassphrase, walletAddress, agentPrivateKey } = params;

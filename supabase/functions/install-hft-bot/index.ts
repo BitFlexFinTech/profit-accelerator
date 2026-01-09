@@ -1130,8 +1130,8 @@ async function fetchAIRecommendations() {
   });
 }
 
-// Sync trade to Supabase trading_journal
-async function recordTradeToSupabase(trade, status, isPaperTrade = true) {
+// Sync trade to Supabase trading_journal - LIVE MODE ONLY
+async function recordTradeToSupabase(trade, status) {
   return new Promise((resolve) => {
     const payload = JSON.stringify({
       exchange: trade.exchange,
@@ -1143,8 +1143,7 @@ async function recordTradeToSupabase(trade, status, isPaperTrade = true) {
       pnl: trade.netPnL || null,
       status: status,
       execution_latency_ms: trade.latencyMs || 0,
-      ai_reasoning: 'AI Signal: ' + (trade.aiConfidence || 0) + '% confidence | Mode: ' + (isPaperTrade ? 'PAPER' : 'LIVE'),
-      paper_trade: isPaperTrade
+      ai_reasoning: 'AI Signal: ' + (trade.aiConfidence || 0) + '% confidence | LIVE TRADE'
     });
     
     const urlParts = new URL(CONFIG.SUPABASE_URL);
@@ -1173,33 +1172,6 @@ async function recordTradeToSupabase(trade, status, isPaperTrade = true) {
   });
 }
 
-// Increment paper trade counter when trade closes successfully
-async function incrementPaperTradeProgress() {
-  return new Promise((resolve) => {
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/rpc/increment_paper_trade',
-      method: 'POST',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      console.log('[🐟 PIRANHA] 📝 Paper trade counter incremented, status:', res.statusCode);
-      resolve(res.statusCode === 200 || res.statusCode === 204);
-    });
-    req.on('error', (e) => {
-      console.log('[🐟 PIRANHA] Paper trade increment error:', e.message);
-      resolve(false);
-    });
-    req.write('{}');
-    req.end();
-  });
-}
 
 // Increment live trade counter when LIVE trade closes successfully
 async function incrementLiveTradeProgress() {
@@ -1335,26 +1307,11 @@ async function runPiranha() {
   state.startTime = state.startTime || new Date().toISOString();
   saveState();
   
-  // ═══════════════════════════════════════════════════════════
-  // TRADING MODE DETECTION - Read from START_SIGNAL file
-  // ═══════════════════════════════════════════════════════════
-  let TRADING_MODE = 'paper';
-  let IS_LIVE_MODE = false;
-  
-  const signalPath = '/app/data/START_SIGNAL';
-  if (fs.existsSync(signalPath)) {
-    try {
-      const signalData = JSON.parse(fs.readFileSync(signalPath, 'utf8'));
-      TRADING_MODE = signalData.mode || 'paper';
-      IS_LIVE_MODE = TRADING_MODE === 'live';
-      console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-      console.log('[🐟 PIRANHA] 🎮 TRADING MODE: ' + TRADING_MODE.toUpperCase());
-      console.log('[🐟 PIRANHA] 💰 Real Exchange Orders: ' + (IS_LIVE_MODE ? 'YES' : 'NO (simulated)'));
-      console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-    } catch (e) {
-      console.log('[🐟 PIRANHA] Could not read signal mode, defaulting to paper');
-    }
-  }
+  // LIVE MODE ONLY - All trades are real
+  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+  console.log('[🐟 PIRANHA] 🎮 TRADING MODE: LIVE');
+  console.log('[🐟 PIRANHA] 💰 Real Exchange Orders: YES');
+  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
   
   console.log('[🐟 PIRANHA] Strategy is now ACTIVE');
   console.log('[🐟 PIRANHA] Monitoring positions and AI signals...');
@@ -1439,17 +1396,12 @@ async function runPiranha() {
           };
           logTrade(completedTrade);
           
-          // Sync closed trade to Supabase with correct paper_trade flag
-          await recordTradeToSupabase(completedTrade, 'closed', !IS_LIVE_MODE);
+          // Sync closed trade to Supabase
+          await recordTradeToSupabase(completedTrade, 'closed');
           
-          // Mode-conditional progress tracking
-          if (IS_LIVE_MODE) {
-            await incrementLiveTradeProgress();
-            console.log('[🐟 PIRANHA] 💰 Live trade progress synced to dashboard');
-          } else {
-            await incrementPaperTradeProgress();
-            console.log('[🐟 PIRANHA] 📝 Paper trade progress synced to dashboard');
-          }
+          // Track live trade progress
+          await incrementLiveTradeProgress();
+          console.log('[🐟 PIRANHA] 💰 Live trade progress synced to dashboard');
           
           // Update totals
           state.totalTrades++;

@@ -44,7 +44,7 @@ export function StrategyBuilder() {
   const [leverage, setLeverage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [paperTestingId, setPaperTestingId] = useState<string | null>(null);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
   const [isSavingMode, setIsSavingMode] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
 
@@ -224,51 +224,27 @@ export function StrategyBuilder() {
     }
   };
 
-  const handlePaperTest = async (strategyId: string) => {
-    setPaperTestingId(strategyId);
-    const strategy = strategies.find(s => s.id === strategyId);
-    if (!strategy) {
-      setPaperTestingId(null);
-      return;
-    }
+  // Activate strategy for live trading
+  const handleActivateStrategy = async (strategyId: string) => {
+    setActivatingId(strategyId);
     
     try {
-      // Get real-time price from trade-engine (SAME AS LIVE MODE)
-      const { data: priceData, error: priceError } = await supabase.functions.invoke('trade-engine', {
-        body: { action: 'get-prices' }
-      });
+      // Update strategy to active
+      await supabase.from('trading_strategies')
+        .update({ 
+          is_active: true, 
+          is_paused: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', strategyId);
       
-      if (priceError || !priceData?.success) {
-        throw new Error('Unable to fetch real-time prices');
-      }
-      
-      const symbol = 'BTC/USDT';
-      const price = priceData?.prices?.BTC?.price || 0;
-      
-      if (!price) {
-        toast.error('Unable to fetch current BTC price');
-        return;
-      }
-      
-      // Calculate quantity based on position size and leverage
-      const effectiveLeverage = tradingMode === 'futures' ? (strategy.leverage || leverage) : 1;
-      const quantity = (strategy.position_size * effectiveLeverage) / price;
-      
-      // Paper test trades are now handled by VPS bot
-      // Notify user that trading is managed by the bot
-      toast.info(
-        <div className="flex flex-col gap-1">
-          <span className="font-semibold">Strategy Test</span>
-          <span className="text-xs text-muted-foreground">
-            Strategy trading is managed by the VPS bot. Start the bot from the dashboard to begin trading.
-          </span>
-        </div>
-      );
+      toast.success('Strategy activated for live trading');
+      fetchData();
     } catch (error: any) {
-      console.error('[StrategyBuilder] Paper test error:', error);
-      toast.error(`Paper test failed: ${error.message}`);
+      console.error('[StrategyBuilder] Activate error:', error);
+      toast.error(`Activation failed: ${error.message}`);
     } finally {
-      setPaperTestingId(null);
+      setActivatingId(null);
     }
   };
 
@@ -609,17 +585,17 @@ export function StrategyBuilder() {
                   <ActionButton 
                     variant="outline" 
                     size="sm" 
-                    className="flex-1 gap-1"
-                    onClick={() => handlePaperTest(strategy.id)}
-                    disabled={paperTestingId === strategy.id}
-                    tooltip={BUTTON_TOOLTIPS.paperTest}
+                    className="flex-1 gap-1 text-success hover:text-success"
+                    onClick={() => handleActivateStrategy(strategy.id)}
+                    disabled={activatingId === strategy.id || strategy.is_active}
+                    tooltip="Activate this strategy for live trading"
                   >
-                    {paperTestingId === strategy.id ? (
+                    {activatingId === strategy.id ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
-                      <FileText className="w-3 h-3" />
+                      <Play className="w-3 h-3" />
                     )}
-                    Paper Test
+                    {strategy.is_active ? 'Active' : 'Activate'}
                   </ActionButton>
                   
                   {strategy.is_active && !strategy.is_paused ? (

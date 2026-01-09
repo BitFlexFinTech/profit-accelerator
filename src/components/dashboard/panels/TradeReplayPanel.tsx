@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { format, formatDistanceToNow } from 'date-fns';
 import { 
@@ -26,29 +24,20 @@ interface TradeRecord {
   execution_latency_ms: number | null;
   created_at: string;
   closed_at: string | null;
-  paper_trade: boolean | null;
 }
 
 export function TradeReplayPanel() {
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'simulation' | 'paper' | 'live'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchTrades = async () => {
-    let query = supabase
+    const { data, error } = await supabase
       .from('trading_journal')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(50);
 
-    if (filter === 'paper') {
-      query = query.eq('paper_trade', true);
-    } else if (filter === 'live') {
-      query = query.eq('paper_trade', false);
-    }
-
-    const { data, error } = await query;
     if (!error && data) {
       setTrades(data);
     }
@@ -57,22 +46,23 @@ export function TradeReplayPanel() {
 
   useEffect(() => {
     fetchTrades();
-  }, [filter]);
+    
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('trade-replay')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'trading_journal' },
+        () => fetchTrades()
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
-  };
-
-  const getTradeTypeLabel = (trade: TradeRecord) => {
-    if (trade.paper_trade) return 'Paper';
-    if (trade.ai_reasoning?.toLowerCase().includes('simulation')) return 'Simulation';
-    return 'Live';
-  };
-
-  const getTradeTypeColor = (trade: TradeRecord) => {
-    if (trade.paper_trade) return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-    if (trade.ai_reasoning?.toLowerCase().includes('simulation')) return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-    return 'bg-success/20 text-success border-success/30';
   };
 
   return (
@@ -83,21 +73,12 @@ export function TradeReplayPanel() {
             <History className="w-5 h-5 text-primary" />
             Trade Replay
           </CardTitle>
-          <Badge variant="outline" className="text-xs">
-            {trades.length} trades
+          <Badge variant="outline" className="text-xs bg-success/20 text-success border-success/30">
+            {trades.length} LIVE trades
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as typeof filter)} className="px-4">
-          <TabsList className="grid grid-cols-4 w-full h-8">
-            <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
-            <TabsTrigger value="simulation" className="text-xs">Simulation</TabsTrigger>
-            <TabsTrigger value="paper" className="text-xs">Paper</TabsTrigger>
-            <TabsTrigger value="live" className="text-xs">Live</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
         <ScrollArea className="h-[400px] mt-2">
           {loading ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
@@ -107,6 +88,7 @@ export function TradeReplayPanel() {
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <History className="w-12 h-12 mb-2 opacity-20" />
               <p className="text-sm">No trades found</p>
+              <p className="text-xs mt-1">Start the bot to begin live trading</p>
             </div>
           ) : (
             <div className="space-y-1 px-4 pb-4">
@@ -121,8 +103,8 @@ export function TradeReplayPanel() {
                     className="w-full p-3 flex items-center justify-between hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`p-1.5 rounded-full ${trade.side === 'buy' ? 'bg-success/20' : 'bg-destructive/20'}`}>
-                        {trade.side === 'buy' ? (
+                      <div className={`p-1.5 rounded-full ${trade.side === 'buy' || trade.side === 'long' ? 'bg-success/20' : 'bg-destructive/20'}`}>
+                        {trade.side === 'buy' || trade.side === 'long' ? (
                           <ArrowUpRight className="w-3 h-3 text-success" />
                         ) : (
                           <ArrowDownRight className="w-3 h-3 text-destructive" />
@@ -131,8 +113,8 @@ export function TradeReplayPanel() {
                       <div className="text-left">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">{trade.symbol}</span>
-                          <Badge className={`text-[10px] px-1.5 ${getTradeTypeColor(trade)}`}>
-                            {getTradeTypeLabel(trade)}
+                          <Badge className="text-[10px] px-1.5 bg-success/20 text-success border-success/30">
+                            LIVE
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
