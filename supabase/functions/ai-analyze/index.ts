@@ -230,7 +230,7 @@ async function getNextAvailableProvider(supabase: any): Promise<{
   return null;
 }
 
-// Record provider metrics after API call
+// Record provider metrics after API call - FIXED: use standard update instead of supabase.sql
 async function recordProviderMetrics(
   supabase: any,
   providerName: string,
@@ -239,35 +239,41 @@ async function recordProviderMetrics(
   errorMessage?: string
 ) {
   try {
-    const updateData: any = {
+    // First fetch current values
+    const { data: current } = await supabase
+      .from('ai_providers')
+      .select('current_usage, daily_usage, success_count, error_count, total_latency_ms')
+      .eq('provider_name', providerName)
+      .single();
+
+    if (!current) {
+      console.log(`[ai-analyze] No provider record found for ${providerName}`);
+      return;
+    }
+
+    // Build update object with incremented values
+    const updates: Record<string, any> = {
       last_used_at: new Date().toISOString(),
+      current_usage: (current.current_usage || 0) + 1,
+      daily_usage: (current.daily_usage || 0) + 1,
     };
 
     if (success) {
-      // Use raw SQL update for atomic increment
-      await supabase.rpc('increment_provider_success', { p_name: providerName, latency: latencyMs });
+      updates.success_count = (current.success_count || 0) + 1;
+      updates.total_latency_ms = (current.total_latency_ms || 0) + latencyMs;
     } else {
-      await supabase
-        .from('ai_providers')
-        .update({
-          error_count: supabase.sql`error_count + 1`,
-          last_error: errorMessage || 'Unknown error',
-          last_used_at: new Date().toISOString()
-        })
-        .eq('provider_name', providerName);
+      updates.error_count = (current.error_count || 0) + 1;
+      updates.last_error = errorMessage || 'Unknown error';
     }
 
-    // Increment both minute and daily usage
-    const { error: usageError } = await supabase
+    // Perform the update
+    const { error: updateError } = await supabase
       .from('ai_providers')
-      .update({ 
-        current_usage: supabase.sql`current_usage + 1`,
-        daily_usage: supabase.sql`daily_usage + 1`
-      })
+      .update(updates)
       .eq('provider_name', providerName);
-      
-    if (usageError) {
-      console.error(`[ai-analyze] Usage update error for ${providerName}:`, usageError);
+
+    if (updateError) {
+      console.error(`[ai-analyze] Metrics update error for ${providerName}:`, updateError);
     }
   } catch (e) {
     console.error(`[ai-analyze] Failed to record metrics for ${providerName}:`, e);
@@ -606,11 +612,11 @@ serve(async (req) => {
       const exchangeResults: Record<string, number> = {};
       const providersUsed: Set<string> = new Set();
 
-      // Clean old entries (older than 2 minutes)
+      // Clean old entries (older than 30 minutes for better signal history)
       await supabase
         .from('ai_market_updates')
         .delete()
-        .lt('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString());
+        .lt('created_at', new Date(Date.now() - 30 * 60 * 1000).toISOString());
 
       // Process each connected exchange
       for (const ex of exchanges) {
@@ -621,7 +627,8 @@ serve(async (req) => {
         console.log(`[ai-analyze] Top 10 for ${exName}:`, top10);
         
         let exchangeCount = 0;
-        const pairsToAnalyze = top10.slice(0, 3);
+        // STRICT RULE: Analyze ALL top 10 pairs per exchange
+        const pairsToAnalyze = top10;
         
         for (const sym of pairsToAnalyze) {
           try {
@@ -690,8 +697,8 @@ serve(async (req) => {
               totalAnalyzed++;
             }
             
-            // Rate limit delay
-            await new Promise(r => setTimeout(r, 1000));
+            // Rate limit delay - faster (200ms) since we're rotating providers
+            await new Promise(r => setTimeout(r, 200));
             
           } catch (e) {
             console.error(`[ai-analyze] Error analyzing ${sym}:`, e);

@@ -79,7 +79,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
-  const [nextScanIn, setNextScanIn] = useState(5);
+  const [nextScanIn, setNextScanIn] = useState(10);
   const [activeTimeframe, setActiveTimeframe] = useState<TimeframeFilter>('all');
   const hasAutoScanned = useRef(false);
   
@@ -115,7 +115,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
 
   useEffect(() => {
     const countdownInterval = setInterval(() => {
-      setNextScanIn(prev => (prev > 0 ? prev - 1 : 5));
+      setNextScanIn(prev => (prev > 0 ? prev - 1 : 10)); // Reset to 10s
     }, 1000);
     return () => clearInterval(countdownInterval);
   }, []);
@@ -176,18 +176,21 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   }, []);
 
   useEffect(() => {
+    // Real-time trading signals - scan every 10 seconds to stay within rate limits
+    // Each scan analyzes 10 pairs per exchange, so with 2 exchanges = 20 AI calls
+    // At 10s intervals = 6 scans/min = ~120 AI calls/min, within most provider limits
     const scanInterval = setInterval(() => {
       hasAutoScanned.current = false;
-      setNextScanIn(5);
+      setNextScanIn(10);
       triggerAutoScan();
-    }, 5 * 1000);
+    }, 10 * 1000);
 
     return () => clearInterval(scanInterval);
   }, []);
 
   const triggerManualScan = async () => {
     setIsScanning(true);
-    setNextScanIn(5);
+    setNextScanIn(10);
     try {
       const { data, error } = await supabase.functions.invoke('ai-analyze', {
         body: { action: 'market-scan' }

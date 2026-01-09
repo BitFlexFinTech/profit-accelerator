@@ -1,9 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef, ComponentPropsWithoutRef } from 'react';
 import { Brain, Activity, Server, Loader2, RefreshCw } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+
+// Forward ref button component for tooltip compatibility
+const IndicatorButton = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<'button'>>(
+  (props, ref) => <button ref={ref} {...props} />
+);
+IndicatorButton.displayName = 'IndicatorButton';
 
 interface SystemHealthBarProps {
   onNavigateToSettings?: () => void;
@@ -187,7 +193,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
           return (
             <Tooltip key={indicator.id}>
               <TooltipTrigger asChild>
-                <button
+                <IndicatorButton
                   onClick={onNavigateToSettings}
                   className={cn(
                     'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all',
@@ -211,7 +217,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
                     <indicator.icon className="h-3 w-3" />
                   )}
                   <span className="hidden sm:inline">{indicator.label}</span>
-                </button>
+                </IndicatorButton>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
                 {indicator.tooltip}
@@ -222,7 +228,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
         
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <IndicatorButton
               onClick={handleRefresh}
               disabled={isRefreshing}
               className={cn(
@@ -232,7 +238,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
               )}
             >
               <RefreshCw className={cn('h-3 w-3', isRefreshing && 'animate-spin')} />
-            </button>
+            </IndicatorButton>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
             Refresh health status
