@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, ComponentPropsWithoutRef } from 'react';
 import { Trophy, Flame, Star, Medal, Calendar, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,7 +28,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Medal
 };
 
-export function Leaderboard() {
+export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>((props, ref) => {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [bestDays, setBestDays] = useState<BestDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -104,7 +104,7 @@ export function Leaderboard() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div ref={ref} {...props} className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Leaderboard & Achievements</h2>
       </div>
@@ -230,4 +230,6 @@ export function Leaderboard() {
       </Card>
     </div>
   );
-}
+});
+
+Leaderboard.displayName = "Leaderboard";
