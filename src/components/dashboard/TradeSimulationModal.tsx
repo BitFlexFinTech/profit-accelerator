@@ -48,6 +48,7 @@ interface SimulationStage {
 interface ProgressData {
   simulationTrades: number;
   paperTrades: number;
+  liveTrades: number;
   paperUnlocked: boolean;
   liveUnlocked: boolean;
 }
@@ -149,6 +150,7 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
   const [progressData, setProgressData] = useState<ProgressData>({
     simulationTrades: 0,
     paperTrades: 0,
+    liveTrades: 0,
     paperUnlocked: false,
     liveUnlocked: false
   });
@@ -198,6 +200,7 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
           setProgressData({
             simulationTrades: data.successful_simulation_trades || 0,
             paperTrades: data.successful_paper_trades || 0,
+            liveTrades: data.successful_live_trades || 0,
             paperUnlocked: data.paper_mode_unlocked || false,
             liveUnlocked: data.live_mode_unlocked || false
           });
@@ -607,6 +610,21 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
           });
           
           console.log('[Live] Trade recorded to trading_journal and trade_execution_metrics');
+          
+          // Call increment_live_trade RPC for progress tracking
+          const { error: liveRpcError } = await supabase.rpc('increment_live_trade', { 
+            profit: profitAmount 
+          });
+
+          if (liveRpcError) {
+            console.error('[Live] Failed to increment live trade counter:', liveRpcError.message);
+          } else {
+            console.log('[Live] Trade count incremented successfully');
+            setProgressData(prev => ({ 
+              ...prev, 
+              liveTrades: (prev.liveTrades || 0) + 1 
+            }));
+          }
         }
         
         await new Promise(r => setTimeout(r, 100));

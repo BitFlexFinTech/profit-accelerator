@@ -27,11 +27,11 @@ interface Strategy {
   pnl_today: number;
   trading_mode: string;
   leverage: number;
-  // New fields for enhanced controls
   position_size: number;
   profit_target: number;
   daily_goal: number;
   daily_progress: number;
+  source_framework: string | null;
 }
 
 interface TradingConfig {
@@ -68,6 +68,7 @@ export function StrategyBuilder() {
           trades_today: s.trades_today || 0,
           pnl_today: s.pnl_today || 0,
           leverage: s.leverage || 1,
+          source_framework: s.source_framework || null,
         })) as Strategy[]);
       }
 
@@ -468,7 +469,25 @@ export function StrategyBuilder() {
                 {/* Header */}
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="font-semibold">{strategy.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold">{strategy.name}</h3>
+                      {strategy.source_framework && strategy.source_framework !== 'custom' && (
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "text-[10px] px-1.5 py-0.5",
+                            strategy.source_framework === 'freqtrade' && 'border-sky-500 text-sky-500',
+                            strategy.source_framework === 'jesse' && 'border-blue-500 text-blue-500',
+                            strategy.source_framework === 'vnpy' && 'border-purple-500 text-purple-500',
+                            strategy.source_framework === 'superalgos' && 'border-orange-500 text-orange-500',
+                            strategy.source_framework === 'backtrader' && 'border-yellow-500 text-yellow-500',
+                            strategy.source_framework === 'hummingbot' && 'border-teal-500 text-teal-500'
+                          )}
+                        >
+                          {strategy.source_framework}
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground line-clamp-1">{strategy.description}</p>
                   </div>
                   <div className="flex items-center gap-1">
