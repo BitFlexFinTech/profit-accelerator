@@ -765,11 +765,11 @@ serve(async (req) => {
         console.log(`[ai-analyze] Top 10 for ${exName}:`, top10);
         
         let exchangeCount = 0;
-        // OPTIMIZED: Reduce to 5 pairs for faster scans (prevents timeout)
-        const pairsToAnalyze = top10.slice(0, 5);
+        // RESTORED: 10 pairs per exchange for maximum coverage
+        const pairsToAnalyze = top10.slice(0, 10);
         
-        // Process in parallel batches of 3 for speed (was sequential)
-        const batchSize = 3;
+        // Process in parallel batches of 5 for maximum speed
+        const batchSize = 5;
         for (let batchStart = 0; batchStart < pairsToAnalyze.length; batchStart += batchSize) {
           const batch = pairsToAnalyze.slice(batchStart, batchStart + batchSize);
           
@@ -897,8 +897,8 @@ serve(async (req) => {
             }
           }
           
-          // Reduced delay between batches (100ms instead of 200ms per symbol)
-          await new Promise(r => setTimeout(r, 100));
+          // Minimal delay between batches (50ms) for HFT speed
+          await new Promise(r => setTimeout(r, 50));
         }
         
         exchangeResults[exName] = exchangeCount;
