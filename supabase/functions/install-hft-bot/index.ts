@@ -1080,8 +1080,8 @@ const RUNTIME_ENV_FILE = '/app/data/.env.runtime';
 if (fs.existsSync(RUNTIME_ENV_FILE)) {
   try {
     const envContent = fs.readFileSync(RUNTIME_ENV_FILE, 'utf8');
-    // Split on actual newlines (LF or CRLF)
-    envContent.split(/\\r?\\n/).forEach(line => {
+    // Split on actual newlines (LF or CRLF) using replace + split for bash heredoc compat
+    envContent.replace(/\r/g, '').split(String.fromCharCode(10)).forEach(line => {
       const idx = line.indexOf('=');
       if (idx > 0) {
         const key = line.substring(0, idx);
@@ -1294,8 +1294,8 @@ function reloadRuntimeEnv() {
   if (fs.existsSync(RUNTIME_ENV_FILE)) {
     try {
       const envContent = fs.readFileSync(RUNTIME_ENV_FILE, 'utf8');
-      // Split on actual newlines (LF or CRLF)
-      envContent.split(/\\r?\\n/).forEach(line => {
+      // Split on actual newlines (LF or CRLF) using replace + split for bash heredoc compat
+      envContent.replace(/\r/g, '').split(String.fromCharCode(10)).forEach(line => {
         const idx = line.indexOf('=');
         if (idx > 0) {
           const key = line.substring(0, idx);

@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 // FIXED health.js with proper newline handling in /control endpoint
+// Using regular string concatenation to avoid template literal escaping issues
 const FIXED_HEALTH_JS = `const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
@@ -42,11 +43,11 @@ const signOKX = (timestamp, method, path, body, secret) => {
 const fetchBinanceBalance = async (apiKey, apiSecret) => {
   return new Promise((resolve) => {
     const timestamp = Date.now();
-    const query = \\\`timestamp=\\\${timestamp}\\\`;
+    const query = 'timestamp=' + timestamp;
     const signature = signBinance(query, apiSecret);
     https.get({
       hostname: 'api.binance.com',
-      path: \\\`/api/v3/account?\\\${query}&signature=\\\${signature}\\\`,
+      path: '/api/v3/account?' + query + '&signature=' + signature,
       headers: { 'X-MBX-APIKEY': apiKey }
     }, (res) => {
       let data = '';
@@ -175,7 +176,7 @@ const server = http.createServer(async (req, res) => {
             
             // CRITICAL FIX: Write with actual newlines using String.fromCharCode(10)
             const envFileContent = Object.entries(env)
-              .map(([k, v]) => k + '=' + v)
+              .map(function(entry) { return entry[0] + '=' + entry[1]; })
               .join(String.fromCharCode(10));
             fs.writeFileSync(ENV_FILE, envFileContent);
             console.log('[PIRANHA] Wrote ' + Object.keys(env).length + ' env vars to ' + ENV_FILE);
