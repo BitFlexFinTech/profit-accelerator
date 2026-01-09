@@ -173,7 +173,48 @@ Deno.serve(async (req) => {
             .eq('provider', provider);
         }
         
-        console.log(`[check-vps-health] VPS marked as running`);
+        // CRITICAL: Sync bot_status to vps_instances and hft_deployments tables
+        // This ensures dashboard shows accurate bot status
+        const botStatus = isHealthy ? 'running' : 'stopped';
+        const now = new Date().toISOString();
+        
+        console.log(`[check-vps-health] Syncing bot_status=${botStatus} to vps_instances for IP=${targetIp}`);
+        
+        // Update vps_instances by IP
+        const { data: vpsUpdateData, error: vpsUpdateError, count: vpsCount } = await supabase
+          .from('vps_instances')
+          .update({ 
+            bot_status: botStatus, 
+            status: 'running',
+            updated_at: now 
+          })
+          .eq('ip_address', targetIp)
+          .select();
+        
+        if (vpsUpdateError) {
+          console.error('[check-vps-health] Failed to update vps_instances:', vpsUpdateError.message);
+        } else {
+          console.log(`[check-vps-health] Updated vps_instances: ${vpsUpdateData?.length || 0} rows`);
+        }
+        
+        // Update hft_deployments by IP
+        const { data: hftUpdateData, error: hftUpdateError } = await supabase
+          .from('hft_deployments')
+          .update({ 
+            bot_status: botStatus, 
+            status: 'running',
+            updated_at: now 
+          })
+          .eq('ip_address', targetIp)
+          .select();
+        
+        if (hftUpdateError) {
+          console.error('[check-vps-health] Failed to update hft_deployments:', hftUpdateError.message);
+        } else {
+          console.log(`[check-vps-health] Updated hft_deployments: ${hftUpdateData?.length || 0} rows`);
+        }
+        
+        console.log(`[check-vps-health] VPS marked as running, bot_status=${botStatus}`);
       }
     } catch (fetchError) {
       console.error('[check-vps-health] Fetch failed:', fetchError);

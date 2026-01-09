@@ -102,10 +102,11 @@ export function NewsPanel() {
                 return (
                   <Sheet key={item.id}>
                     <SheetTrigger asChild>
-                      <button
+                      <Button
+                        variant="ghost"
                         className={cn(
-                          "w-full text-left p-2 rounded-lg transition-all duration-300 border-b border-cyan-400/10 last:border-0",
-                          "hover:bg-cyan-500/10 animate-fade-slide-in"
+                          "w-full h-auto text-left p-2 rounded-lg transition-all duration-300 border-b border-cyan-400/10 last:border-0",
+                          "hover:bg-cyan-500/10 animate-fade-slide-in justify-start"
                         )}
                         style={{ animationDelay: `${index * 30}ms` }}
                         onClick={() => setSelectedArticle({ title: item.title, url: item.url })}
@@ -135,7 +136,7 @@ export function NewsPanel() {
                           </div>
                           <ExternalLink className="w-3 h-3 text-cyan-400/50 flex-shrink-0 mt-0.5" />
                         </div>
-                      </button>
+                      </Button>
                     </SheetTrigger>
                     <SheetContent side="right" className="w-full sm:w-[600px] sm:max-w-[80vw] p-0 border-cyan-400/20">
                       <SheetHeader className="p-4 border-b border-cyan-400/20">
