@@ -1,77 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
-import { Beaker, FileText, Zap, Trophy, Sparkles } from 'lucide-react';
+import { useAppStore } from '@/store/useAppStore';
+import { Beaker, FileText, Zap, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-interface ProgressData {
-  simulationTrades: number;
-  paperTrades: number;
-  paperUnlocked: boolean;
-  liveUnlocked: boolean;
-  simulationProfit: number;
-  paperProfit: number;
-}
-
 export function ModeProgressTracker() {
-  const [progress, setProgress] = useState<ProgressData>({
-    simulationTrades: 0,
-    paperTrades: 0,
-    paperUnlocked: false,
-    liveUnlocked: false,
-    simulationProfit: 0,
-    paperProfit: 0,
-  });
-  const [loading, setLoading] = useState(true);
+  // Subscribe to SSOT store - single source of truth
+  const { 
+    paperModeUnlocked, 
+    liveModeUnlocked, 
+    successfulPaperTrades,
+    simulationCompleted,
+    isLoading,
+    syncFromDatabase
+  } = useAppStore();
 
-  const fetchProgress = async () => {
-    const { data } = await supabase
-      .from('simulation_progress')
-      .select('*')
-      .eq('id', '00000000-0000-0000-0000-000000000001')
-      .single();
-
-    if (data) {
-      setProgress({
-        simulationTrades: data.successful_simulation_trades || 0,
-        paperTrades: data.successful_paper_trades || 0,
-        paperUnlocked: data.paper_mode_unlocked || false,
-        liveUnlocked: data.live_mode_unlocked || false,
-        simulationProfit: data.simulation_profit_total || 0,
-        paperProfit: data.paper_profit_total || 0,
-      });
-    }
-    setLoading(false);
-  };
-
+  // Trigger a sync on mount to ensure fresh data
   useEffect(() => {
-    fetchProgress();
+    syncFromDatabase();
+  }, [syncFromDatabase]);
 
-    const channel = supabase
-      .channel('progress-tracker')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'simulation_progress'
-      }, () => {
-        fetchProgress();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  if (loading) return null;
+  // Don't render anything while loading to prevent flash of wrong content
+  if (isLoading) return null;
 
   // Hide completely if live mode is unlocked (user has passed both gates)
-  if (progress.liveUnlocked) return null;
+  if (liveModeUnlocked) return null;
 
-  const showSimulationCard = !progress.paperUnlocked;
-  const showPaperCard = progress.paperUnlocked && !progress.liveUnlocked;
+  // Determine which card to show based on SSOT state
+  const showSimulationCard = !paperModeUnlocked;
+  const showPaperCard = paperModeUnlocked && !liveModeUnlocked;
+
+  // Calculate simulation trades from simulationCompleted flag
+  // If simulation is completed, show 20/20, otherwise show progress
+  const simulationTrades = simulationCompleted ? 20 : 0;
+  const simulationProgress = (simulationTrades / 20) * 100;
+  const paperProgress = (successfulPaperTrades / 20) * 100;
 
   return (
     <div className="flex gap-2">
@@ -94,19 +59,19 @@ export function ModeProgressTracker() {
                     <span className="text-sm font-medium">Simulation Progress</span>
                   </div>
                   <Badge variant="outline" className="text-xs">
-                    {progress.simulationTrades}/20 trades
+                    {simulationTrades}/20 trades
                   </Badge>
                 </div>
                 <Progress 
-                  value={(progress.simulationTrades / 20) * 100} 
+                  value={simulationProgress} 
                   className="h-2 mb-2" 
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>
-                    {20 - progress.simulationTrades} more to unlock Paper Mode
+                    {20 - simulationTrades} more to unlock Paper Mode
                   </span>
-                  <span className="text-success">
-                    +${progress.simulationProfit.toFixed(2)} profit
+                  <span className="text-primary">
+                    Use Simulate button to practice
                   </span>
                 </div>
               </CardContent>
@@ -136,20 +101,20 @@ export function ModeProgressTracker() {
                     </Badge>
                   </div>
                   <Badge variant="outline" className="text-xs">
-                    {progress.paperTrades}/20 trades
+                    {successfulPaperTrades}/20 trades
                   </Badge>
                 </div>
                 <Progress 
-                  value={(progress.paperTrades / 20) * 100} 
+                  value={paperProgress} 
                   className="h-2 mb-2" 
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Zap className="w-3 h-3" />
-                    {20 - progress.paperTrades} more to unlock Live Trading
+                    {20 - successfulPaperTrades} more to unlock Live Trading
                   </span>
                   <span className="text-success">
-                    +${progress.paperProfit.toFixed(2)} profit
+                    Start bot in Paper mode to progress
                   </span>
                 </div>
               </CardContent>

@@ -1,15 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
 import { 
-  Play, Square, RefreshCw, Bell, Zap, Pause, Activity, AlertTriangle, RotateCcw, FlaskConical
+  Play, Square, RefreshCw, Bell, Zap, Pause, Activity, AlertTriangle, RotateCcw, FlaskConical, FileText
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { TradeSimulationModal } from '@/components/dashboard/TradeSimulationModal';
+import { useAppStore } from '@/store/useAppStore';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,25 +22,38 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-type BotStatus = 'running' | 'stopped' | 'idle' | 'error';
-type StartupStage = 'connecting' | 'fetching' | 'opening' | 'active';
+type BotStatus = 'running' | 'stopped' | 'idle' | 'error' | 'starting';
+type StartupStage = 'idle' | 'connecting' | 'verifying' | 'waiting_trade' | 'active' | 'timeout';
 
 export function UnifiedControlBar() {
-  // Default to 'stopped' - NEVER assume bot is running
+  // Get state from SSOT store
+  const { 
+    activeVPS, 
+    liveModeUnlocked, 
+    syncFromDatabase 
+  } = useAppStore();
+
+  // Local state
   const [botStatus, setBotStatus] = useState<BotStatus>('stopped');
   const [isPaperMode, setIsPaperMode] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
   
-  // Startup progress bar state
-  const [isStartingUp, setIsStartingUp] = useState(false);
-  const [startupStage, setStartupStage] = useState<StartupStage>('connecting');
+  // Startup progress state with ref to prevent stale closure issues
+  const [startupStage, setStartupStage] = useState<StartupStage>('idle');
   const [startupProgress, setStartupProgress] = useState(0);
+  const startupStageRef = useRef<StartupStage>('idle');
+  const startTimeRef = useRef<number | null>(null);
   
   // Simulation modal
   const [showSimulation, setShowSimulation] = useState(false);
   const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
+
+  // Sync startupStage with ref
+  useEffect(() => {
+    startupStageRef.current = startupStage;
+  }, [startupStage]);
 
   // Listen for custom event from Leaderboard to open simulation modal
   useEffect(() => {
@@ -48,7 +62,7 @@ export function UnifiedControlBar() {
     return () => window.removeEventListener('open-simulation-modal', handleOpenSimulation);
   }, []);
 
-  // Fetch bot status from database - NEVER auto-start
+  // Fetch bot status from database
   const fetchBotStatus = useCallback(async () => {
     try {
       const { data } = await supabase
@@ -58,17 +72,17 @@ export function UnifiedControlBar() {
         .single();
       
       if (data) {
-        // Always respect the database status - never assume running
         const dbStatus = (data.bot_status as BotStatus) || 'stopped';
-        setBotStatus(dbStatus);
+        // Only update if not in startup sequence
+        if (startupStageRef.current === 'idle' || startupStageRef.current === 'active') {
+          setBotStatus(dbStatus);
+        }
         setIsPaperMode(data.trading_mode === 'paper');
       } else {
-        // No config = bot is definitely stopped
         setBotStatus('stopped');
       }
 
       // Get active deployment for bot control
-      // CRITICAL FIX: Query for both 'active' AND 'running' status
       const { data: deployment } = await supabase
         .from('hft_deployments')
         .select('id, server_id')
@@ -80,8 +94,9 @@ export function UnifiedControlBar() {
         setDeploymentId(deployment.id || deployment.server_id);
       }
     } catch {
-      // Error or no config = bot is stopped
-      setBotStatus('stopped');
+      if (startupStageRef.current === 'idle') {
+        setBotStatus('stopped');
+      }
     }
   }, []);
 
@@ -91,59 +106,123 @@ export function UnifiedControlBar() {
     return () => clearInterval(interval);
   }, [fetchBotStatus]);
 
-  // Handle startup progress animation
+  // Subscribe to first trade for startup completion
+  const subscribeToFirstTrade = useCallback(() => {
+    const channel = supabase.channel('first-trade-watch-' + Date.now())
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'trading_journal' 
+      }, (payload) => {
+        console.log('[UnifiedControlBar] First trade detected:', payload);
+        setStartupProgress(100);
+        setStartupStage('active');
+        setBotStatus('running');
+        toast.success('First trade executed!');
+        syncFromDatabase();
+        supabase.removeChannel(channel);
+      })
+      .subscribe();
+
+    return channel;
+  }, [syncFromDatabase]);
+
+  // Handle startup progress with deterministic stages
   const startBotWithProgress = async () => {
-    setIsStartingUp(true);
-    setStartupProgress(0);
     setStartupStage('connecting');
+    setStartupProgress(10);
+    startTimeRef.current = Date.now();
     
     try {
-      // Stage 1: Connecting
-      setStartupProgress(10);
-      const { error } = await supabase.functions.invoke('bot-control', {
+      // Stage 1: Connecting - invoke bot-control
+      console.log('[UnifiedControlBar] Starting bot, deploymentId:', deploymentId);
+      const { data, error } = await supabase.functions.invoke('bot-control', {
         body: { action: 'start', deploymentId }
       });
-      if (error) throw error;
       
-      setStartupProgress(30);
-      setStartupStage('fetching');
-      
-      // Update DB status
-      const { data: config } = await supabase.from('trading_config').select('id').limit(1).single();
-      if (config) {
-        await supabase.from('trading_config').update({ bot_status: 'running' }).eq('id', config.id);
+      if (error || !data?.success) {
+        const errMsg = error?.message || data?.error || 'Unknown error';
+        console.error('[UnifiedControlBar] Bot start failed:', errMsg);
+        toast.error(`Failed to start bot: ${errMsg}`);
+        setStartupStage('idle');
+        setStartupProgress(0);
+        setBotStatus('error');
+        return;
       }
       
-      setStartupProgress(60);
-      setStartupStage('opening');
+      console.log('[UnifiedControlBar] Bot control response:', data);
+      setStartupProgress(40);
+      setStartupStage('verifying');
+      
+      // Stage 2: Verifying - bot-control already verified health
+      if (data.healthVerified) {
+        console.log('[UnifiedControlBar] Health verified by bot-control');
+        setStartupProgress(60);
+      } else {
+        console.log('[UnifiedControlBar] Health not verified, container may still be starting');
+        setStartupProgress(50);
+      }
+      
+      setStartupStage('waiting_trade');
+      setBotStatus('running');
       
       // Subscribe to first trade
-      const channel = supabase.channel('first-trade-watch')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trading_journal' }, () => {
-          setStartupProgress(100);
-          setStartupStage('active');
-          setIsStartingUp(false);
-          toast.success('First trade executed!');
-          supabase.removeChannel(channel);
-        })
-        .subscribe();
+      const channel = subscribeToFirstTrade();
       
-      // Timeout after 60 seconds
+      // Execute paper trade smoke test if in paper mode
+      if (isPaperMode) {
+        console.log('[UnifiedControlBar] Executing paper trade smoke test...');
+        setStartupProgress(70);
+        
+        try {
+          const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('trade-engine', {
+            body: {
+              action: 'paper-order',
+              symbol: 'BTC/USDT',
+              side: 'BUY',
+              quantity: 0.001,
+              strategy: 'smoke-test-startup',
+              exchange: 'binance'
+            }
+          });
+          
+          if (tradeResult?.success) {
+            console.log('[UnifiedControlBar] ✅ Paper trade smoke test passed:', tradeResult);
+            setStartupProgress(100);
+            setStartupStage('active');
+            toast.success('Paper trading is active!');
+            syncFromDatabase();
+            supabase.removeChannel(channel);
+            return;
+          } else {
+            console.warn('[UnifiedControlBar] Paper trade smoke test returned no success:', tradeResult);
+          }
+        } catch (smokeErr) {
+          console.warn('[UnifiedControlBar] Paper trade smoke test failed:', smokeErr);
+          // Continue anyway - bot is running
+        }
+      }
+      
+      // Timeout after 60 seconds - transition to active regardless
       setTimeout(() => {
-        if (isStartingUp) {
+        if (startupStageRef.current === 'waiting_trade' || startupStageRef.current === 'verifying') {
+          console.log('[UnifiedControlBar] Timeout reached, transitioning to active');
           setStartupProgress(100);
           setStartupStage('active');
-          setIsStartingUp(false);
+          setBotStatus('running');
+          toast.info('Bot is running. Waiting for trade signals...');
           supabase.removeChannel(channel);
         }
       }, 60000);
       
-      setBotStatus('running');
       toast.success('Bot started - waiting for first trade...');
+      
     } catch (err) {
-      console.error('Failed to start bot:', err);
+      console.error('[UnifiedControlBar] Failed to start bot:', err);
       toast.error('Failed to start bot');
-      setIsStartingUp(false);
+      setStartupStage('idle');
+      setStartupProgress(0);
+      setBotStatus('error');
     } finally {
       setIsLoading(false);
       setShowStartConfirm(false);
@@ -157,6 +236,11 @@ export function UnifiedControlBar() {
       return;
     }
     
+    if (!deploymentId) {
+      toast.error('No VPS deployment found. Deploy a VPS first.');
+      return;
+    }
+    
     setIsLoading(true);
     await startBotWithProgress();
   };
@@ -164,18 +248,19 @@ export function UnifiedControlBar() {
   const handleStopBot = async () => {
     setIsLoading(true);
     try {
-      const { error } = await supabase.functions.invoke('bot-control', {
+      const { data, error } = await supabase.functions.invoke('bot-control', {
         body: { action: 'stop', deploymentId }
       });
-      if (error) throw error;
       
-      const { data: config } = await supabase.from('trading_config').select('id').limit(1).single();
-      if (config) {
-        await supabase.from('trading_config').update({ bot_status: 'stopped' }).eq('id', config.id);
+      if (error || !data?.success) {
+        throw new Error(error?.message || data?.error || 'Stop failed');
       }
       
       setBotStatus('stopped');
+      setStartupStage('idle');
+      setStartupProgress(0);
       toast.success('Bot stopped');
+      syncFromDatabase();
     } catch (err) {
       console.error('Failed to stop bot:', err);
       toast.error('Failed to stop bot');
@@ -187,14 +272,39 @@ export function UnifiedControlBar() {
   const handleRestartBot = async () => {
     setIsLoading(true);
     try {
-      await supabase.functions.invoke('bot-control', { body: { action: 'stop', deploymentId } });
-      await new Promise(r => setTimeout(r, 1000));
-      await supabase.functions.invoke('bot-control', { body: { action: 'start', deploymentId } });
+      const { data, error } = await supabase.functions.invoke('bot-control', { 
+        body: { action: 'restart', deploymentId } 
+      });
+      
+      if (error || !data?.success) {
+        throw new Error(error?.message || data?.error || 'Restart failed');
+      }
+      
       setBotStatus('running');
       toast.success('Bot restarted');
+      syncFromDatabase();
     } catch (err) {
       console.error('Failed to restart bot:', err);
       toast.error('Failed to restart bot');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleViewLogs = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('bot-control', {
+        body: { action: 'logs', deploymentId }
+      });
+      
+      if (error) throw error;
+      
+      console.log('[Bot Logs]', data?.logs);
+      toast.info('Logs printed to console (F12)');
+    } catch (err) {
+      console.error('Failed to fetch logs:', err);
+      toast.error('Failed to fetch logs');
     } finally {
       setIsLoading(false);
     }
@@ -206,6 +316,7 @@ export function UnifiedControlBar() {
       const { error } = await supabase.functions.invoke('poll-balances');
       if (error) throw error;
       toast.success('Balances synced');
+      syncFromDatabase();
     } catch (err) {
       console.error('Sync failed:', err);
       toast.error('Sync failed');
@@ -235,17 +346,19 @@ export function UnifiedControlBar() {
 
   const handleModeToggle = async (checked: boolean) => {
     if (!checked && isPaperMode) {
-      // Switching to live mode - check paper trade gate
-      const { data: simProgress } = await supabase
-        .from('simulation_progress')
-        .select('live_mode_unlocked, successful_paper_trades')
-        .limit(1)
-        .single();
-      
-      if (!simProgress?.live_mode_unlocked) {
-        const remaining = 20 - (simProgress?.successful_paper_trades || 0);
-        toast.error(`Complete ${remaining} more paper trades to unlock live mode`);
-        return;
+      // Switching to live mode - check if unlocked
+      if (!liveModeUnlocked) {
+        const { data: simProgress } = await supabase
+          .from('simulation_progress')
+          .select('live_mode_unlocked, successful_paper_trades')
+          .limit(1)
+          .single();
+        
+        if (!simProgress?.live_mode_unlocked) {
+          const remaining = 20 - (simProgress?.successful_paper_trades || 0);
+          toast.error(`Complete ${remaining} more paper trades to unlock live mode`);
+          return;
+        }
       }
       
       setShowLiveConfirm(true);
@@ -269,11 +382,24 @@ export function UnifiedControlBar() {
     }
   };
 
+  const isStartingUp = startupStage !== 'idle' && startupStage !== 'active';
+
   const statusColor = {
     running: 'bg-success',
     stopped: 'bg-destructive',
     idle: 'bg-warning',
-    error: 'bg-destructive'
+    error: 'bg-destructive',
+    starting: 'bg-warning'
+  };
+
+  const getStartupMessage = () => {
+    switch (startupStage) {
+      case 'connecting': return '🔗 Connecting to VPS...';
+      case 'verifying': return '🤖 Verifying bot health...';
+      case 'waiting_trade': return '📈 Bot running, waiting for trade signals...';
+      case 'active': return '✅ Trading active!';
+      default: return '';
+    }
   };
 
   return (
@@ -283,7 +409,7 @@ export function UnifiedControlBar() {
           {/* Bot Status Section */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${statusColor[botStatus]} animate-pulse`} />
+              <div className={`w-2 h-2 rounded-full ${statusColor[botStatus]} ${botStatus === 'running' || botStatus === 'starting' ? 'animate-pulse' : ''}`} />
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Bot
               </span>
@@ -313,7 +439,7 @@ export function UnifiedControlBar() {
 
           {/* Control Buttons */}
           <div className="flex items-center gap-1.5">
-            {botStatus === 'running' ? (
+            {botStatus === 'running' || botStatus === 'starting' ? (
               <Button 
                 size="sm" 
                 variant="destructive" 
@@ -328,7 +454,7 @@ export function UnifiedControlBar() {
               <Button 
                 size="sm" 
                 onClick={handleStartBot}
-                disabled={isLoading}
+                disabled={isLoading || !deploymentId}
                 className="h-7 text-xs px-2 bg-success hover:bg-success/90"
               >
                 <Play className="w-3 h-3 mr-1" />
@@ -344,6 +470,17 @@ export function UnifiedControlBar() {
               className="h-7 text-xs px-2"
             >
               <RotateCcw className="w-3 h-3" />
+            </Button>
+
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={handleViewLogs}
+              disabled={isLoading || !deploymentId}
+              className="h-7 text-xs px-2"
+              title="View bot logs (prints to console)"
+            >
+              <FileText className="w-3 h-3" />
             </Button>
 
             <div className="h-4 w-px bg-border/50" />
@@ -392,10 +529,7 @@ export function UnifiedControlBar() {
           <div className="mt-2 space-y-1">
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">
-                {startupStage === 'connecting' && '🔗 Connecting to VPS...'}
-                {startupStage === 'fetching' && '🤖 Fetching AI signals...'}
-                {startupStage === 'opening' && '📈 Opening first position...'}
-                {startupStage === 'active' && '✅ Trading active!'}
+                {getStartupMessage()}
               </span>
               <span className="text-muted-foreground">{startupProgress}%</span>
             </div>
