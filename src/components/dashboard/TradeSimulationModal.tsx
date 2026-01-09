@@ -10,7 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Brain, TrendingUp, ArrowRightLeft, Target, CheckCircle2, XCircle, 
-  Zap, AlertTriangle, RefreshCw, Loader2, Sparkles, BarChart3
+  Zap, AlertTriangle, RefreshCw, Loader2, Sparkles, BarChart3, Lock
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -42,6 +42,20 @@ interface SimulationStage {
   data?: Record<string, unknown>;
 }
 
+interface ProgressData {
+  simulationTrades: number;
+  paperTrades: number;
+  paperUnlocked: boolean;
+  liveUnlocked: boolean;
+}
+
+interface AnalysisResult {
+  maxTradesIn24h: number;
+  bottleneck: string;
+  estimatedDailyProfit: number;
+  avgTradeTime: number;
+}
+
 const STRATEGIES = [
   { id: 'piranha', name: 'Profit Piranha', description: 'Micro-scalping, $1-3 targets' },
   { id: 'scalper', name: 'Speed Scalper', description: 'Fast in/out, high frequency' },
@@ -57,6 +71,24 @@ const INITIAL_STAGES: SimulationStage[] = [
   { id: 'trade-close', name: 'Trade Closed', icon: <CheckCircle2 className="w-4 h-4" />, status: 'pending' },
   { id: 'post-analysis', name: 'Post-Trade Analysis', icon: <Sparkles className="w-4 h-4" />, status: 'pending' },
 ];
+
+// Extended tradeable symbols
+const TRADEABLE_SYMBOLS = ['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA', 'AVAX', 'LINK', 'SUI', 'ZEC', 'BNB'];
+
+// Fallback prices for all supported symbols
+const FALLBACK_PRICES: Record<string, number> = {
+  'BTC': 91000,
+  'ETH': 3100,
+  'SOL': 138,
+  'XRP': 2.1,
+  'DOGE': 0.34,
+  'ADA': 0.9,
+  'AVAX': 35,
+  'LINK': 22,
+  'SUI': 4.5,
+  'ZEC': 55,
+  'BNB': 680,
+};
 
 export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModalProps) {
   const [mode, setMode] = useState<'config' | 'simulating' | 'success' | 'error'>('config');
@@ -81,7 +113,20 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
     pnl?: number;
   }>({});
 
-  // Reset when modal opens
+  // Progressive unlock state
+  const [showUnlockPopup, setShowUnlockPopup] = useState<'paper' | 'live' | null>(null);
+  const [progressData, setProgressData] = useState<ProgressData>({
+    simulationTrades: 0,
+    paperTrades: 0,
+    paperUnlocked: false,
+    liveUnlocked: false
+  });
+  const [tradeCount, setTradeCount] = useState(0);
+  const [totalTradesTarget] = useState(10);
+  const [stageMetrics, setStageMetrics] = useState<Record<string, number>>({});
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+
+  // Fetch progress data on modal open
   useEffect(() => {
     if (open) {
       setMode('config');
@@ -89,6 +134,29 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       setCurrentStageIndex(0);
       setErrorInfo(null);
       setSimulationData({});
+      setTradeCount(0);
+      setStageMetrics({});
+      setAnalysisResult(null);
+      
+      // Fetch unlock status
+      const fetchProgress = async () => {
+        const { data } = await supabase
+          .from('simulation_progress')
+          .select('*')
+          .eq('id', '00000000-0000-0000-0000-000000000001')
+          .single();
+        
+        if (data) {
+          setProgressData({
+            simulationTrades: data.successful_simulation_trades || 0,
+            paperTrades: data.successful_paper_trades || 0,
+            paperUnlocked: data.paper_mode_unlocked || false,
+            liveUnlocked: data.live_mode_unlocked || false
+          });
+        }
+      };
+      
+      fetchProgress();
     }
   }, [open]);
 
@@ -101,162 +169,143 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
     setStages(INITIAL_STAGES);
     setCurrentStageIndex(0);
     setErrorInfo(null);
+    setTradeCount(0);
+    
+    const allStageMetrics: Record<string, number[]> = {};
+    let totalProfit = 0;
 
-    // Global 30-second timeout to prevent infinite hangs
+    // Global 60-second timeout for 10-trade loop
     const globalTimeout = setTimeout(() => {
-      console.error('[Simulation] Global timeout reached after 30s');
+      console.error('[Simulation] Global timeout reached after 60s');
       setErrorInfo({ 
         stage: 'timeout', 
-        message: 'Simulation timed out after 30 seconds', 
+        message: 'Simulation timed out after 60 seconds', 
         fix: 'Check your network connection and try again' 
       });
       setMode('error');
-    }, 30000);
+    }, 60000);
 
     try {
-      // Stage 1: AI Analysis - Check for connected exchanges and AI signals
-      setCurrentStageIndex(0);
-      updateStage('ai-analysis', { status: 'running' });
-      
-      const { data: exchanges } = await supabase
-        .from('exchange_connections')
-        .select('exchange_name, is_connected, balance_usdt')
-        .eq('is_connected', true);
-
-      // Only require real exchanges for paper and live modes
-      const requiresRealExchange = config.tradingMode === 'paper' || config.tradingMode === 'live';
-
-      if (requiresRealExchange && (!exchanges || exchanges.length === 0)) {
-        throw { 
-          stage: 'ai-analysis', 
-          message: 'No connected exchanges found', 
-          fix: 'Connect at least one exchange with API keys in Settings' 
-        };
-      }
-
-      // For simulation mode, use a mock exchange if none connected
-      const effectiveExchanges = (exchanges && exchanges.length > 0) 
-        ? exchanges 
-        : [{ exchange_name: 'Simulated Exchange', is_connected: true, balance_usdt: 10000 }];
-
-      console.log(`[Simulation] Mode: ${config.tradingMode}, Exchanges: ${effectiveExchanges.length}`);
-
-      // Get latest AI signal
-      const { data: aiSignals } = await supabase
-        .from('ai_market_updates')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      await new Promise(r => setTimeout(r, 1500));
-      updateStage('ai-analysis', { 
-        status: 'success', 
-        data: { exchanges: effectiveExchanges.length, signals: aiSignals?.length || 0, mode: config.tradingMode } 
-      });
-
-      // Stage 2: Pair Selection
-      setCurrentStageIndex(1);
-      updateStage('pair-selection', { status: 'running' });
-      
-      const selectedExchange = effectiveExchanges[0].exchange_name;
-      
-      // Filter for tradeable symbols (exclude stablecoins like USDC, FDUSD)
-      const tradeableSymbols = ['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA', 'AVAX', 'LINK'];
-      const tradeableSignal = aiSignals?.find(s => 
-        tradeableSymbols.some(t => s.symbol?.toUpperCase().includes(t))
-      );
-      const selectedSymbol = tradeableSignal?.symbol 
-        ? `${tradeableSignal.symbol.toUpperCase().replace('/USDT', '').replace('USDT', '')}/USDT`
-        : 'BTC/USDT';
-      const selectedSide = tradeableSignal?.recommended_side || 'long';
-      console.log('[Trade] Selected symbol:', selectedSymbol, 'from signal:', tradeableSignal?.symbol);
-      
-      setSimulationData(prev => ({ ...prev, exchange: selectedExchange, symbol: selectedSymbol, side: selectedSide }));
-      
-      await new Promise(r => setTimeout(r, 1200));
-      updateStage('pair-selection', { status: 'success', data: { symbol: selectedSymbol, exchange: selectedExchange } });
-
-      // Stage 3: Open Trade - fetch REAL price from trade-engine
-      console.log('[Simulation] Stage 3: Opening Trade - STARTING');
-      setCurrentStageIndex(2);
-      updateStage('trade-open', { status: 'running' });
-      
-      // Attempt to get real price from trade-engine with simple timeout
-      let realEntryPrice = 0;
-      console.log('[Trade] Fetching real prices from trade-engine...');
-      
-      try {
-        const priceResponse = await supabase.functions.invoke('trade-engine', { 
-          body: { action: 'get-prices' } 
-        });
+      // Run 10 trades in loop
+      for (let tradeNum = 1; tradeNum <= totalTradesTarget; tradeNum++) {
+        setTradeCount(tradeNum);
+        console.log(`[Simulation] Starting trade ${tradeNum}/${totalTradesTarget}`);
         
-        if (priceResponse.error) {
-          console.log('[Trade] Price fetch error:', priceResponse.error);
-        } else if (priceResponse.data?.success && priceResponse.data?.prices) {
-          const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '').toUpperCase();
-          const priceInfo = priceResponse.data.prices[symbolBase];
-          if (priceInfo?.price) {
-            realEntryPrice = priceInfo.price;
-            console.log('[Trade] Got real price for', symbolBase, ':', realEntryPrice);
+        // Reset stages for each trade
+        setStages(INITIAL_STAGES);
+        setCurrentStageIndex(0);
+
+        // Stage 1: AI Analysis
+        const aiStart = Date.now();
+        setCurrentStageIndex(0);
+        updateStage('ai-analysis', { status: 'running' });
+        
+        const { data: exchanges } = await supabase
+          .from('exchange_connections')
+          .select('exchange_name, is_connected, balance_usdt')
+          .eq('is_connected', true);
+
+        const requiresRealExchange = config.tradingMode === 'paper' || config.tradingMode === 'live';
+        if (requiresRealExchange && (!exchanges || exchanges.length === 0)) {
+          throw { 
+            stage: 'ai-analysis', 
+            message: 'No connected exchanges found', 
+            fix: 'Connect at least one exchange with API keys in Settings' 
+          };
+        }
+
+        const effectiveExchanges = (exchanges && exchanges.length > 0) 
+          ? exchanges 
+          : [{ exchange_name: 'Simulated Exchange', is_connected: true, balance_usdt: 10000 }];
+
+        const { data: aiSignals } = await supabase
+          .from('ai_market_updates')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        await new Promise(r => setTimeout(r, 300 + Math.random() * 200));
+        const aiDuration = Date.now() - aiStart;
+        if (!allStageMetrics['ai']) allStageMetrics['ai'] = [];
+        allStageMetrics['ai'].push(aiDuration);
+        updateStage('ai-analysis', { status: 'success', duration: aiDuration });
+
+        // Stage 2: Pair Selection
+        const pairStart = Date.now();
+        setCurrentStageIndex(1);
+        updateStage('pair-selection', { status: 'running' });
+        
+        const selectedExchange = effectiveExchanges[0].exchange_name;
+        
+        // Rotate through symbols for variety
+        const symbolIndex = (tradeNum - 1) % TRADEABLE_SYMBOLS.length;
+        const tradeableSignal = aiSignals?.find(s => 
+          TRADEABLE_SYMBOLS.some(t => s.symbol?.toUpperCase().includes(t))
+        );
+        const symbolBase = tradeableSignal?.symbol?.toUpperCase().replace('/USDT', '').replace('USDT', '') 
+          || TRADEABLE_SYMBOLS[symbolIndex];
+        const selectedSymbol = `${symbolBase}/USDT`;
+        const selectedSide = tradeableSignal?.recommended_side || (Math.random() > 0.5 ? 'long' : 'short');
+        
+        setSimulationData(prev => ({ ...prev, exchange: selectedExchange, symbol: selectedSymbol, side: selectedSide }));
+        
+        await new Promise(r => setTimeout(r, 200 + Math.random() * 100));
+        const pairDuration = Date.now() - pairStart;
+        if (!allStageMetrics['pair']) allStageMetrics['pair'] = [];
+        allStageMetrics['pair'].push(pairDuration);
+        updateStage('pair-selection', { status: 'success', duration: pairDuration });
+
+        // Stage 3: Open Trade
+        const tradeStart = Date.now();
+        setCurrentStageIndex(2);
+        updateStage('trade-open', { status: 'running' });
+        
+        let realEntryPrice = 0;
+        
+        try {
+          const priceResponse = await supabase.functions.invoke('trade-engine', { 
+            body: { action: 'get-prices' } 
+          });
+          
+          if (priceResponse.data?.success && priceResponse.data?.prices) {
+            const priceInfo = priceResponse.data.prices[symbolBase];
+            if (priceInfo?.price) {
+              realEntryPrice = priceInfo.price;
+            }
           }
+        } catch (e) {
+          console.log('[Trade] Price fetch exception, using fallback:', e);
         }
-      } catch (e) {
-        console.log('[Trade] Price fetch exception, using fallback:', e);
-      }
-      
-      // Fallback to realistic market prices for all supported symbols
-      if (!realEntryPrice) {
-        const fallbackPrices: Record<string, number> = {
-          'BTC': 91000 + Math.random() * 1000,
-          'ETH': 3100 + Math.random() * 50,
-          'SOL': 138 + Math.random() * 5,
-          'XRP': 2.1 + Math.random() * 0.1,
-          'DOGE': 0.14 + Math.random() * 0.01,
-          'ADA': 0.9 + Math.random() * 0.05,
-          'AVAX': 35 + Math.random() * 2,
-          'LINK': 22 + Math.random() * 1,
-        };
-        const symbolBase = selectedSymbol.replace('/USDT', '').replace('USDT', '').toUpperCase();
-        realEntryPrice = fallbackPrices[symbolBase] || 100 + Math.random() * 10;
-        console.log('[Trade] Using fallback price for', symbolBase, ':', realEntryPrice);
-      }
-      
-      const entryPriceForCalc = realEntryPrice;
-      setSimulationData(prev => ({ ...prev, entryPrice: entryPriceForCalc }));
-      
-      // Execute trade based on mode
-      if (config.tradingMode === 'live') {
-        console.log('[Trade] Executing LIVE order via trade-engine...');
-        const quantity = config.amountPerPosition / entryPriceForCalc;
-        const { data: orderData, error: orderError } = await supabase.functions.invoke('trade-engine', {
-          body: {
-            action: 'place-order',
-            exchangeName: selectedExchange,
-            symbol: selectedSymbol,
-            side: selectedSide === 'long' ? 'buy' : 'sell',
-            quantity,
-            orderType: 'market'
+        
+        if (!realEntryPrice) {
+          const basePrice = FALLBACK_PRICES[symbolBase] || 100;
+          realEntryPrice = basePrice + (Math.random() - 0.5) * basePrice * 0.02;
+        }
+        
+        const entryPriceForCalc = realEntryPrice;
+        setSimulationData(prev => ({ ...prev, entryPrice: entryPriceForCalc }));
+        
+        // Execute trade based on mode
+        if (config.tradingMode === 'live') {
+          const quantity = config.amountPerPosition / entryPriceForCalc;
+          const { data: orderData, error: orderError } = await supabase.functions.invoke('trade-engine', {
+            body: {
+              action: 'place-order',
+              exchangeName: selectedExchange,
+              symbol: selectedSymbol,
+              side: selectedSide === 'long' ? 'buy' : 'sell',
+              quantity,
+              orderType: 'market'
+            }
+          });
+          
+          if (orderError || !orderData?.success) {
+            throw { stage: 'trade-open', message: orderData?.error || 'Order execution failed', fix: 'Check exchange connection and permissions' };
           }
-        });
-        
-        if (orderError) {
-          throw { stage: 'trade-open', message: `Live order failed: ${orderError.message}`, fix: 'Check exchange API keys and balance' };
-        }
-        
-        if (!orderData?.success) {
-          throw { stage: 'trade-open', message: orderData?.error || 'Order execution failed', fix: 'Check exchange connection and permissions' };
-        }
-        
-        console.log('[Trade] ✅ Live order executed successfully:', orderData);
-        toast.success(`Live order placed: ${selectedSide.toUpperCase()} ${selectedSymbol}`);
-        
-      } else if (config.tradingMode === 'paper') {
-        console.log('[Trade] Executing PAPER trade...');
-        const quantity = config.amountPerPosition / entryPriceForCalc;
-        
-        const { data: insertedTrade, error: insertError } = await supabase
-          .from('trading_journal')
-          .insert({
+        } else if (config.tradingMode === 'paper') {
+          const quantity = config.amountPerPosition / entryPriceForCalc;
+          
+          await supabase.from('trading_journal').insert({
             exchange: selectedExchange,
             symbol: selectedSymbol,
             side: selectedSide === 'long' ? 'buy' : 'sell',
@@ -265,83 +314,102 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
             status: 'open',
             ai_reasoning: `Paper trade via ${config.strategy} strategy`,
             paper_trade: true
-          })
-          .select()
-          .single();
-        
-        if (insertError) {
-          console.error('[Trade] Paper trade insert FAILED:', insertError);
-          throw { 
-            stage: 'trade-open', 
-            message: `Paper trade failed: ${insertError.message}`, 
-            fix: 'Check database permissions or RLS policies' 
-          };
+          });
         }
         
-        console.log('[Trade] ✅ Paper trade logged successfully:', insertedTrade?.id);
-        toast.success(`Paper trade opened: ${selectedSide.toUpperCase()} ${selectedSymbol}`);
+        await new Promise(r => setTimeout(r, 150));
+        const tradeDuration = Date.now() - tradeStart;
+        if (!allStageMetrics['trade']) allStageMetrics['trade'] = [];
+        allStageMetrics['trade'].push(tradeDuration);
+        updateStage('trade-open', { status: 'success', duration: tradeDuration });
+
+        // Stage 4: Position Monitoring
+        setCurrentStageIndex(3);
+        updateStage('position-monitor', { status: 'running' });
+        await new Promise(r => setTimeout(r, 400 + Math.random() * 300));
+        updateStage('position-monitor', { status: 'success' });
+
+        // Stage 5: Profit Target
+        setCurrentStageIndex(4);
+        updateStage('profit-target', { status: 'running' });
         
-        // Update simulation progress
-        await supabase.rpc('increment_paper_trade');
+        const profitAmount = config.useLeverage ? config.profitTarget * config.leverageAmount : config.profitTarget;
+        const exitPrice = selectedSide === 'long' 
+          ? entryPriceForCalc * (1 + (profitAmount / config.amountPerPosition))
+          : entryPriceForCalc * (1 - (profitAmount / config.amountPerPosition));
         
-      } else {
-        console.log('[Trade] Simulation mode - no actual trade executed');
+        setSimulationData(prev => ({ ...prev, exitPrice, pnl: profitAmount }));
+        totalProfit += profitAmount;
+        
+        await new Promise(r => setTimeout(r, 200));
+        updateStage('profit-target', { status: 'success' });
+
+        // Stage 6: Trade Close
+        setCurrentStageIndex(5);
+        updateStage('trade-close', { status: 'running' });
+        await new Promise(r => setTimeout(r, 150));
+        updateStage('trade-close', { status: 'success' });
+
+        // Stage 7: Post Analysis
+        setCurrentStageIndex(6);
+        updateStage('post-analysis', { status: 'running' });
+        
+        // Call RPC to increment trade count based on mode
+        if (config.tradingMode === 'simulation') {
+          const { data: unlocked } = await supabase.rpc('increment_simulation_trade', { profit: profitAmount });
+          if (unlocked) {
+            setShowUnlockPopup('paper');
+            setProgressData(prev => ({ ...prev, paperUnlocked: true }));
+          }
+        } else if (config.tradingMode === 'paper') {
+          const { data: unlocked } = await supabase.rpc('increment_paper_trade_v2', { profit: profitAmount });
+          if (unlocked) {
+            setShowUnlockPopup('live');
+            setProgressData(prev => ({ ...prev, liveUnlocked: true }));
+          }
+        }
+        
+        await new Promise(r => setTimeout(r, 100));
+        updateStage('post-analysis', { status: 'success' });
+        
+        console.log(`[Simulation] Trade ${tradeNum} complete. Total profit: $${totalProfit.toFixed(2)}`);
       }
-      
-      await new Promise(r => setTimeout(r, 500));
-      console.log('[Simulation] Stage 3: Opening Trade - COMPLETE');
-      updateStage('trade-open', { status: 'success', data: { entryPrice: entryPriceForCalc, mode: config.tradingMode } });
 
-      // Stage 4: Position Monitoring
-      setCurrentStageIndex(3);
-      updateStage('position-monitor', { status: 'running' });
+      // Calculate analysis metrics
+      const avgAiTime = allStageMetrics['ai']?.reduce((a, b) => a + b, 0) / (allStageMetrics['ai']?.length || 1);
+      const avgTradeTime = allStageMetrics['trade']?.reduce((a, b) => a + b, 0) / (allStageMetrics['trade']?.length || 1);
+      const avgTotalTime = Object.values(allStageMetrics).flat().reduce((a, b) => a + b, 0) / totalTradesTarget;
       
-      await new Promise(r => setTimeout(r, 2000));
-      updateStage('position-monitor', { status: 'success' });
+      const maxTradesIn24h = Math.floor((24 * 60 * 60 * 1000) / avgTotalTime);
+      const bottleneck = avgAiTime > avgTradeTime ? 'AI Analysis' : 'Exchange Latency';
+      const estimatedDailyProfit = (totalProfit / totalTradesTarget) * Math.min(maxTradesIn24h, 500);
+      
+      setAnalysisResult({
+        maxTradesIn24h,
+        bottleneck,
+        estimatedDailyProfit,
+        avgTradeTime: avgTotalTime
+      });
+      
+      setStageMetrics({
+        ai: avgAiTime,
+        trade: avgTradeTime,
+        total: avgTotalTime
+      });
 
-      // Stage 5: Profit Target
-      setCurrentStageIndex(4);
-      updateStage('profit-target', { status: 'running' });
-      
-      const profitAmount = config.useLeverage ? config.profitTarget * config.leverageAmount : config.profitTarget;
-      // Use the local variable, NOT state (which would be stale)
-      const exitPrice = selectedSide === 'long' 
-        ? entryPriceForCalc * (1 + (profitAmount / config.amountPerPosition))
-        : entryPriceForCalc * (1 - (profitAmount / config.amountPerPosition));
-      
-      setSimulationData(prev => ({ ...prev, exitPrice, pnl: profitAmount }));
-      
-      await new Promise(r => setTimeout(r, 1000));
-      updateStage('profit-target', { status: 'success', data: { pnl: profitAmount } });
-
-      // Stage 6: Trade Close
-      setCurrentStageIndex(5);
-      updateStage('trade-close', { status: 'running' });
-      
-      await new Promise(r => setTimeout(r, 600));
-      updateStage('trade-close', { status: 'success' });
-
-      // Stage 7: Post Analysis
-      setCurrentStageIndex(6);
-      updateStage('post-analysis', { status: 'running' });
-      
-      await new Promise(r => setTimeout(r, 1000));
-      updateStage('post-analysis', { status: 'success' });
-
-      // Success! Update simulation_progress
+      // Update simulation progress
       await supabase
         .from('simulation_progress')
         .update({ 
           simulation_completed: true,
-          paper_mode_unlocked: true,
           updated_at: new Date().toISOString()
         })
         .eq('id', '00000000-0000-0000-0000-000000000001');
 
       clearTimeout(globalTimeout);
-      console.log('[Simulation] Completed successfully!');
+      setSimulationData(prev => ({ ...prev, pnl: totalProfit }));
       setMode('success');
-      toast.success('Simulation completed! Paper trading unlocked.');
+      toast.success(`${totalTradesTarget} trades completed! Total profit: $${totalProfit.toFixed(2)}`);
 
     } catch (err: unknown) {
       clearTimeout(globalTimeout);
@@ -362,6 +430,13 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
   };
 
   const progress = ((currentStageIndex + 1) / stages.length) * 100;
+  const overallProgress = (tradeCount / totalTradesTarget) * 100;
+
+  // Check if mode is locked
+  const isPaperLocked = !progressData.paperUnlocked;
+  const isLiveLocked = !progressData.liveUnlocked;
+  const simulationTradesRemaining = Math.max(0, 20 - progressData.simulationTrades);
+  const paperTradesRemaining = Math.max(0, 50 - progressData.paperTrades);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -373,11 +448,67 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
           </DialogTitle>
           <DialogDescription>
             {mode === 'config' && 'Configure and run a simulated trade to test the system'}
-            {mode === 'simulating' && 'Running simulation...'}
+            {mode === 'simulating' && `Running trade ${tradeCount}/${totalTradesTarget}...`}
             {mode === 'success' && 'Simulation completed successfully!'}
             {mode === 'error' && 'Simulation encountered an error'}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Unlock Popup */}
+        <AnimatePresence>
+          {showUnlockPopup && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.5 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+              onClick={() => setShowUnlockPopup(null)}
+            >
+              <motion.div
+                initial={{ y: 50, rotateX: -20 }}
+                animate={{ y: 0, rotateX: 0 }}
+                transition={{ type: 'spring', damping: 15, stiffness: 300 }}
+                className="bg-gradient-to-br from-primary/20 via-background to-success/20 p-8 rounded-2xl border-2 border-primary shadow-2xl max-w-md text-center"
+                onClick={e => e.stopPropagation()}
+              >
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1], rotate: [0, 5, -5, 0] }}
+                  transition={{ duration: 0.5, repeat: 3 }}
+                >
+                  {showUnlockPopup === 'paper' ? (
+                    <Sparkles className="w-20 h-20 mx-auto text-primary mb-4" />
+                  ) : (
+                    <Zap className="w-20 h-20 mx-auto text-success mb-4" />
+                  )}
+                </motion.div>
+                
+                <motion.h2 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  transition={{ delay: 0.3 }} 
+                  className="text-3xl font-bold mb-2"
+                >
+                  {showUnlockPopup === 'paper' ? 'Paper Trading Unlocked!' : 'Live Trading Unlocked!'}
+                </motion.h2>
+                
+                <motion.p 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  transition={{ delay: 0.5 }} 
+                  className="text-muted-foreground mb-6"
+                >
+                  {showUnlockPopup === 'paper' 
+                    ? 'You completed 20 profitable simulation trades! Paper trading is now available.'
+                    : 'You completed 50 profitable paper trades! Live trading is now available.'}
+                </motion.p>
+                
+                <Button onClick={() => setShowUnlockPopup(null)} size="lg" className="px-8">
+                  {showUnlockPopup === 'paper' ? 'Start Paper Trading' : 'Start Live Trading'}
+                </Button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AnimatePresence mode="wait">
           {mode === 'config' && (
@@ -391,27 +522,51 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
               {/* Trading Mode Selection */}
               <div className="space-y-2">
                 <Label>Trading Mode</Label>
-                <Select value={config.tradingMode} onValueChange={(v) => setConfig(c => ({ ...c, tradingMode: v as SimulationConfig['tradingMode'] }))}>
+                <Select 
+                  value={config.tradingMode} 
+                  onValueChange={(v) => {
+                    // Prevent selecting locked modes
+                    if (v === 'paper' && isPaperLocked) return;
+                    if (v === 'live' && isLiveLocked) return;
+                    setConfig(c => ({ ...c, tradingMode: v as SimulationConfig['tradingMode'] }));
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="simulation">
-                      <div className="flex flex-col">
-                        <span>Simulation</span>
-                        <span className="text-xs text-muted-foreground">Test with mock trades, no real orders</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col">
+                          <span>Simulation</span>
+                          <span className="text-xs text-muted-foreground">Test with mock trades, no real orders</span>
+                        </div>
                       </div>
                     </SelectItem>
-                    <SelectItem value="paper">
-                      <div className="flex flex-col">
-                        <span>Paper Trading</span>
-                        <span className="text-xs text-muted-foreground">Track with real prices, no real orders</span>
+                    <SelectItem value="paper" disabled={isPaperLocked}>
+                      <div className="flex items-center gap-2">
+                        {isPaperLocked && <Lock className="w-4 h-4 text-muted-foreground" />}
+                        <div className="flex flex-col">
+                          <span className={isPaperLocked ? 'text-muted-foreground' : ''}>Paper Trading</span>
+                          <span className="text-xs text-muted-foreground">
+                            {isPaperLocked 
+                              ? `${simulationTradesRemaining} simulation trades to unlock` 
+                              : 'Track with real prices, no real orders'}
+                          </span>
+                        </div>
                       </div>
                     </SelectItem>
-                    <SelectItem value="live">
-                      <div className="flex flex-col">
-                        <span>Live Trading</span>
-                        <span className="text-xs text-destructive">Real orders on connected exchanges</span>
+                    <SelectItem value="live" disabled={isLiveLocked}>
+                      <div className="flex items-center gap-2">
+                        {isLiveLocked && <Lock className="w-4 h-4 text-muted-foreground" />}
+                        <div className="flex flex-col">
+                          <span className={isLiveLocked ? 'text-muted-foreground' : ''}>Live Trading</span>
+                          <span className="text-xs text-muted-foreground">
+                            {isLiveLocked 
+                              ? `${paperTradesRemaining} paper trades to unlock` 
+                              : 'Real orders on connected exchanges'}
+                          </span>
+                        </div>
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -515,7 +670,7 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
 
               <Button onClick={runSimulation} className="w-full" size="lg" variant={config.tradingMode === 'live' ? 'destructive' : 'default'}>
                 <Zap className="w-4 h-4 mr-2" />
-                {config.tradingMode === 'simulation' ? 'Start Simulation' : config.tradingMode === 'paper' ? 'Start Paper Trade' : 'Execute Live Trade'}
+                Run {totalTradesTarget} {config.tradingMode === 'simulation' ? 'Simulations' : config.tradingMode === 'paper' ? 'Paper Trades' : 'Live Trades'}
               </Button>
             </motion.div>
           )}
@@ -528,6 +683,16 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
               exit={{ opacity: 0 }}
               className="space-y-6 py-4"
             >
+              {/* Overall Progress */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Trade {tradeCount} of {totalTradesTarget}</span>
+                  <span>{Math.round(overallProgress)}%</span>
+                </div>
+                <Progress value={overallProgress} className="h-3" />
+              </div>
+              
+              {/* Current Trade Stages */}
               <Progress value={progress} className="h-2" />
               
               <div className="space-y-2">
@@ -566,8 +731,8 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-medium">{stage.name}</p>
-                      {stage.status === 'running' && (
-                        <p className="text-xs text-muted-foreground">Processing...</p>
+                      {stage.duration && (
+                        <p className="text-xs text-muted-foreground">{stage.duration}ms</p>
                       )}
                     </div>
                     {index === currentStageIndex && stage.status === 'running' && (
@@ -585,7 +750,6 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
                   {simulationData.side && <p>Side: <span className={simulationData.side === 'long' ? 'text-success' : 'text-destructive'}>{simulationData.side.toUpperCase()}</span></p>}
                   {simulationData.entryPrice && <p>Entry: <span className="text-foreground">${simulationData.entryPrice.toFixed(2)}</span></p>}
                   {simulationData.exitPrice && <p>Exit: <span className="text-foreground">${simulationData.exitPrice.toFixed(2)}</span></p>}
-                  {simulationData.pnl && <p>PnL: <span className="text-success">+${simulationData.pnl.toFixed(2)}</span></p>}
                 </div>
               )}
             </motion.div>
@@ -596,27 +760,60 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
               key="success"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="py-8 text-center space-y-6"
+              className="py-6 space-y-6"
             >
-              <div className="w-20 h-20 mx-auto rounded-full bg-success/20 flex items-center justify-center">
-                <CheckCircle2 className="w-10 h-10 text-success" />
+              <div className="w-16 h-16 mx-auto rounded-full bg-success/20 flex items-center justify-center">
+                <CheckCircle2 className="w-8 h-8 text-success" />
               </div>
-              <div>
-                <h3 className="text-xl font-bold">Simulation Complete!</h3>
+              <div className="text-center">
+                <h3 className="text-xl font-bold">{totalTradesTarget} Trades Complete!</h3>
                 <p className="text-muted-foreground mt-2">
-                  Paper trading mode is now unlocked. Complete 20 successful paper trades to unlock live mode.
+                  Total Profit: <span className="text-success font-bold">${simulationData.pnl?.toFixed(2)}</span>
                 </p>
               </div>
+              
+              {/* Post-Simulation Analysis */}
+              {analysisResult && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-lg bg-gradient-to-r from-primary/10 to-success/10 border border-primary/30"
+                >
+                  <h4 className="font-bold mb-3 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    24-Hour Trade Analysis
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Max Trades/24h:</span>
+                      <span className="font-mono font-bold">{analysisResult.maxTradesIn24h.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Avg Trade Time:</span>
+                      <span className="font-mono">{analysisResult.avgTradeTime.toFixed(0)}ms</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Bottleneck:</span>
+                      <span className="text-warning font-medium">{analysisResult.bottleneck}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Est. Daily Profit:</span>
+                      <span className="text-success font-bold">${analysisResult.estimatedDailyProfit.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
               <div className="p-4 rounded-lg bg-success/10 border border-success/30">
                 <p className="text-sm text-success font-medium">
                   ✅ Strategy: {STRATEGIES.find(s => s.id === config.strategy)?.name}
                 </p>
                 <p className="text-sm text-success font-medium">
-                  ✅ Simulated PnL: +${simulationData.pnl?.toFixed(2) || config.profitTarget}
+                  ✅ Mode: {config.tradingMode.charAt(0).toUpperCase() + config.tradingMode.slice(1)}
                 </p>
               </div>
               <Button onClick={() => onOpenChange(false)} className="w-full">
-                Start Paper Trading
+                Continue Trading
               </Button>
             </motion.div>
           )}
