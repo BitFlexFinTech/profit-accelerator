@@ -447,13 +447,21 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         }
       };
       
-      console.log('[Simulation] Creating trading session:', sessionData);
-      const { error: sessionError } = await supabase.from('trading_sessions').insert(sessionData);
-      
-      if (sessionError) {
-        console.error('[Simulation] Failed to create trading session:', sessionError);
-      } else {
-        console.log('[Simulation] Trading session created successfully');
+      try {
+        console.log('[Simulation] Creating trading session:', JSON.stringify(sessionData));
+        const { data: insertedSession, error: sessionError } = await supabase
+          .from('trading_sessions')
+          .insert(sessionData)
+          .select()
+          .single();
+        
+        if (sessionError) {
+          console.error('[Simulation] Failed to create trading session:', sessionError.message, sessionError.details);
+        } else {
+          console.log('[Simulation] Trading session created successfully:', insertedSession?.id);
+        }
+      } catch (sessionErr) {
+        console.error('[Simulation] Exception creating trading session:', sessionErr);
       }
 
       clearTimeout(globalTimeout);
