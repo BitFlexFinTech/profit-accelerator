@@ -123,9 +123,23 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         .select('exchange_name, is_connected, balance_usdt')
         .eq('is_connected', true);
 
-      if (!exchanges || exchanges.length === 0) {
-        throw { stage: 'ai-analysis', message: 'No connected exchanges found', fix: 'Connect at least one exchange with API keys in Settings' };
+      // Only require real exchanges for paper and live modes
+      const requiresRealExchange = config.tradingMode === 'paper' || config.tradingMode === 'live';
+
+      if (requiresRealExchange && (!exchanges || exchanges.length === 0)) {
+        throw { 
+          stage: 'ai-analysis', 
+          message: 'No connected exchanges found', 
+          fix: 'Connect at least one exchange with API keys in Settings' 
+        };
       }
+
+      // For simulation mode, use a mock exchange if none connected
+      const effectiveExchanges = (exchanges && exchanges.length > 0) 
+        ? exchanges 
+        : [{ exchange_name: 'Simulated Exchange', is_connected: true, balance_usdt: 10000 }];
+
+      console.log(`[Simulation] Mode: ${config.tradingMode}, Exchanges: ${effectiveExchanges.length}`);
 
       // Get latest AI signal
       const { data: aiSignals } = await supabase
@@ -135,13 +149,16 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         .limit(5);
 
       await new Promise(r => setTimeout(r, 1500));
-      updateStage('ai-analysis', { status: 'success', data: { exchanges: exchanges.length, signals: aiSignals?.length || 0 } });
+      updateStage('ai-analysis', { 
+        status: 'success', 
+        data: { exchanges: effectiveExchanges.length, signals: aiSignals?.length || 0, mode: config.tradingMode } 
+      });
 
       // Stage 2: Pair Selection
       setCurrentStageIndex(1);
       updateStage('pair-selection', { status: 'running' });
       
-      const selectedExchange = exchanges[0].exchange_name;
+      const selectedExchange = effectiveExchanges[0].exchange_name;
       
       // Filter for tradeable symbols (exclude stablecoins like USDC, FDUSD)
       const tradeableSymbols = ['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA', 'AVAX', 'LINK'];
