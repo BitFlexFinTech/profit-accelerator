@@ -687,8 +687,26 @@ serve(async (req) => {
         console.log('[ai-analyze] Daily reset check error:', e);
       }
       
-      // CAPACITY CHECK: Verify we have available AI providers before scanning
+      // AUTO-CLEAR EXPIRED COOLDOWNS before capacity check
       const now = new Date();
+      const { data: expiredCooldowns } = await supabase
+        .from('ai_providers')
+        .select('provider_name, cooldown_until')
+        .not('cooldown_until', 'is', null)
+        .lt('cooldown_until', now.toISOString());
+
+      for (const provider of expiredCooldowns || []) {
+        await supabase
+          .from('ai_providers')
+          .update({ 
+            cooldown_until: null,
+            error_count: 0 
+          })
+          .eq('provider_name', provider.provider_name);
+        console.log(`[ai-analyze] Auto-cleared expired cooldown for ${provider.provider_name}`);
+      }
+      
+      // CAPACITY CHECK: Verify we have available AI providers before scanning
       const { data: availableProviders } = await supabase
         .from('ai_providers')
         .select('provider_name, daily_usage, rate_limit_rpd, cooldown_until, is_enabled')
