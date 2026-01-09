@@ -51,9 +51,6 @@ interface AppState {
   lastUpdate: number;
   isLoading: boolean;
   
-  // Trading mode (from trading_config.trading_mode)
-  paperTradingMode: boolean;
-  
   // Connection status
   connectionStatus: 'connected' | 'disconnected' | 'error';
   
@@ -62,12 +59,6 @@ interface AppState {
   
   // VPS State (single source of truth for active VPS)
   activeVPS: ActiveVPS | null;
-  
-  // Simulation/Paper trading gate
-  simulationCompleted: boolean;
-  paperModeUnlocked: boolean;
-  liveModeUnlocked: boolean;
-  successfulPaperTrades: number;
   
   // Theme state
   theme: 'colorful' | 'bw' | 'light';
@@ -87,7 +78,6 @@ interface AppState {
     color: string;
   }>;
   getActiveVPS: () => ActiveVPS | null;
-  getPaperTradeProgress: () => { current: number; required: number; percentage: number };
   
   // ACTIONS (update state from real data sources)
   setExchangeBalance: (exchange: string, balance: ExchangeBalance) => void;
@@ -95,8 +85,6 @@ interface AppState {
   setExchangePulse: (exchange: string, pulse: ExchangePulse) => void;
   setPnlData: (daily: number, weekly: number) => void;
   syncFromDatabase: () => Promise<void>;
-  setPaperTradingMode: (mode: boolean) => void;
-  togglePaperTrading: () => void;
   setConnectionStatus: (status: 'connected' | 'disconnected' | 'error') => void;
   setActiveVPS: (vps: ActiveVPS | null) => void;
 }
@@ -110,18 +98,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   weeklyPnl: 0,
   lastUpdate: 0,
   isLoading: true,
-  paperTradingMode: false,
   connectionStatus: 'connected',
   _hasInitialized: false,
   
   // VPS state
   activeVPS: null,
-  
-  // Simulation gate state
-  simulationCompleted: false,
-  paperModeUnlocked: false,
-  liveModeUnlocked: false,
-  successfulPaperTrades: 0,
   
   // Theme state
   theme: (typeof window !== 'undefined' && localStorage.getItem('app-theme') as 'colorful' | 'bw' | 'light') || 'colorful',
@@ -216,16 +197,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   getActiveVPS: () => get().activeVPS,
   
-  getPaperTradeProgress: () => {
-    const { successfulPaperTrades } = get();
-    const required = 20;
-    return {
-      current: successfulPaperTrades,
-      required,
-      percentage: Math.min((successfulPaperTrades / required) * 100, 100)
-    };
-  },
-  
   // ACTIONS
   setExchangeBalance: (exchange, balance) => {
     set(state => ({
@@ -250,14 +221,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   setPnlData: (daily, weekly) => {
     set({ dailyPnl: daily, weeklyPnl: weekly, lastUpdate: Date.now() });
-  },
-  
-  setPaperTradingMode: (mode) => {
-    set({ paperTradingMode: mode });
-  },
-  
-  togglePaperTrading: () => {
-    set(state => ({ paperTradingMode: !state.paperTradingMode }));
   },
   
   setConnectionStatus: (status) => {
@@ -330,7 +293,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         .order('recorded_at', { ascending: false });
       
       // CRITICAL FIX: Fetch VPS→Exchange latency from exchange_pulse (HFT-relevant)
-      // NOT from vps_metrics.latency_ms (which is Edge→VPS, irrelevant for HFT)
       const { data: vpsPulseData } = await supabase
         .from('exchange_pulse')
         .select('latency_ms')
@@ -355,7 +317,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           };
           statuses[v.provider] = {
             status: statusMap[v.status || 'error'] || 'error',
-            // Use VPS→Exchange latency for deployed VPS
             latencyMs: isDeployed ? avgExchangeLatency : 0,
             cpuPercent: metrics?.cpu_percent || 0,
             memoryPercent: metrics?.ram_percent || 0,
@@ -367,8 +328,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ vpsStatus: statuses });
       }
       
-      // Calculate PnL from ACTUAL TRADES in trading_journal (not balance fluctuations)
-      // This ensures "Today" shows $0 if no trades have been made
+      // Calculate PnL from ACTUAL TRADES in trading_journal
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       
@@ -383,7 +343,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         .eq('status', 'closed')
         .gte('closed_at', todayStart.toISOString());
 
-      // STRICT RULE: PnL is exactly $0 when no trades exist
       const dailyPnl = todayTrades?.length 
         ? todayTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) 
         : 0;
@@ -402,39 +361,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log(`[SSOT] Daily PnL: $${dailyPnl} from ${todayTrades?.length || 0} closed trades`);
       
       set({ dailyPnl, weeklyPnl });
-      
-      // Fetch simulation progress
-      const { data: simProgress } = await supabase
-        .from('simulation_progress')
-        .select('*')
-        .limit(1)
-        .single();
-
-      if (simProgress) {
-        // STRICT RULE: Use exact database values, reset to 0 if database shows 0
-        const simTrades = simProgress.successful_simulation_trades || 0;
-        const paperTrades = simProgress.successful_paper_trades || 0;
-        const paperUnlocked = simProgress.paper_mode_unlocked || false;
-        const liveUnlocked = simProgress.live_mode_unlocked || false;
-        
-        set({
-          simulationCompleted: simProgress.simulation_completed || false,
-          paperModeUnlocked: paperUnlocked,
-          liveModeUnlocked: liveUnlocked,
-          successfulPaperTrades: paperTrades,
-        });
-        
-        console.log(`[SSOT] Simulation: ${simTrades}/20, Paper: ${paperTrades}/20, Paper Unlocked: ${paperUnlocked}, Live Unlocked: ${liveUnlocked}`);
-      } else {
-        // No simulation progress record - reset to initial state
-        set({
-          simulationCompleted: false,
-          paperModeUnlocked: false,
-          liveModeUnlocked: false,
-          successfulPaperTrades: 0,
-        });
-        console.log('[SSOT] No simulation progress found - reset to initial state');
-      }
 
       // Fetch active VPS deployment
       const { data: activeDeployment } = await supabase
@@ -479,15 +405,13 @@ const debouncedSync = () => {
 };
 
 // Initialize store and set up realtime subscriptions
-// IMPORTANT: This does NOT auto-start the bot - it only syncs data from the database
 export function initializeAppStore() {
   const store = useAppStore.getState();
   
-  // Initial sync - reads current state from DB, does NOT start anything
+  // Initial sync
   store.syncFromDatabase();
   
-  // Subscribe to realtime updates with debouncing - single channel for all tables
-  // SSOT: All critical tables are synced here for unified state
+  // Subscribe to realtime updates with debouncing
   const channel = supabase
     .channel('app-store-sync')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, debouncedSync)
@@ -499,24 +423,9 @@ export function initializeAppStore() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debouncedSync)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, debouncedSync)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_journal' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_config' }, debouncedSync)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'hft_deployments' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_market_updates' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'simulation_progress' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'failover_config' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'system_notifications' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_trade_decisions' }, debouncedSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_sessions' }, debouncedSync)
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('[useAppStore] Realtime subscribed');
-        store.setConnectionStatus('connected');
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        console.warn('[useAppStore] Realtime connection lost');
-        store.setConnectionStatus('error');
-      }
-    });
-  
+    .subscribe();
+
   return () => {
     if (realtimeDebounceTimer) {
       clearTimeout(realtimeDebounceTimer);
