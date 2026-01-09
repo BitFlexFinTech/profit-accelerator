@@ -840,6 +840,44 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: String(err), latencyMs: Date.now() - startTime }));
       }
     });
+  } else if (req.url === '/control' && req.method === 'POST') {
+    // ========== BOT CONTROL ENDPOINT ==========
+    // Allows dashboard to start/stop the trading strategy
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        const { action, mode } = JSON.parse(body);
+        const SIGNAL_FILE = '/app/data/START_SIGNAL';
+        
+        if (action === 'start') {
+          // Create START_SIGNAL with trading mode info
+          const signalData = JSON.stringify({ 
+            started_at: new Date().toISOString(),
+            source: 'dashboard',
+            mode: mode || 'paper'  // 'simulation', 'paper', or 'live'
+          });
+          require('fs').writeFileSync(SIGNAL_FILE, signalData);
+          console.log('[🐟 PIRANHA] ✅ START_SIGNAL created - Mode: ' + (mode || 'paper'));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, action: 'start', mode: mode || 'paper', signal_created: true }));
+        } else if (action === 'stop') {
+          if (require('fs').existsSync(SIGNAL_FILE)) {
+            require('fs').unlinkSync(SIGNAL_FILE);
+          }
+          console.log('[🐟 PIRANHA] ⏹️ START_SIGNAL removed');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, action: 'stop', signal_removed: true }));
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Invalid action. Use "start" or "stop".' }));
+        }
+      } catch (err) {
+        console.error('[🐟 PIRANHA] Control endpoint error:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
   } else {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not found' }));

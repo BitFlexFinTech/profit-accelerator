@@ -32,9 +32,9 @@ export function OrderHistory() {
   const [filter, setFilter] = useState<StatusFilter>('all');
 
   const fetchOrders = useCallback(async () => {
-    const table = paperTradingMode ? 'paper_orders' : 'orders';
+    // All orders now in 'orders' table - VPS bot handles all modes
     let query = supabase
-      .from(table)
+      .from('orders')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(50);
@@ -49,7 +49,7 @@ export function OrderHistory() {
       setOrders(data as Order[]);
     }
     setIsLoading(false);
-  }, [paperTradingMode, filter]);
+  }, [filter]);
 
   // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
   useEffect(() => {

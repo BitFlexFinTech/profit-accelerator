@@ -29,9 +29,9 @@ export function PositionsPanel() {
   const [closingId, setClosingId] = useState<string | null>(null);
 
   const fetchPositions = useCallback(async () => {
-    const table = paperTradingMode ? 'paper_positions' : 'positions';
+    // All positions now stored in 'positions' table - VPS bot handles all modes
     const { data, error } = await supabase
-      .from(table)
+      .from('positions')
       .select('*')
       .order('created_at', { ascending: false });
 
@@ -39,7 +39,7 @@ export function PositionsPanel() {
       setPositions(data as Position[]);
     }
     setIsLoading(false);
-  }, [paperTradingMode]);
+  }, []);
 
   // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
   useEffect(() => {
@@ -49,28 +49,12 @@ export function PositionsPanel() {
   const handleClosePosition = async (position: Position) => {
     setClosingId(position.id);
     try {
+      // All position management now goes through OrderManager which uses VPS bot
       if (paperTradingMode) {
-        // For paper trading, just delete the position and record PnL
-        const pnl = position.unrealized_pnl || 0;
-        
-        await supabase.from('paper_positions').delete().eq('id', position.id);
-        
-        // Log the paper close
-        await supabase.from('transaction_log').insert({
-          action_type: 'paper_position_closed',
-          exchange_name: position.exchange_name,
-          symbol: position.symbol,
-          details: {
-            side: position.side,
-            size: position.size,
-            entryPrice: position.entry_price,
-            exitPrice: position.current_price,
-            pnl
-          },
-          status: 'success'
-        });
-        
-        toast.success(`Paper position closed: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`);
+        // In paper mode, positions are managed by VPS bot - just notify user
+        toast.info('Paper positions are managed automatically by the trading bot');
+        setClosingId(null);
+        return;
       } else {
         // For live trading, use OrderManager to place offsetting order
         await OrderManager.getInstance().closePosition(position.id);

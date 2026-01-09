@@ -51,7 +51,7 @@ interface AppState {
   lastUpdate: number;
   isLoading: boolean;
   
-  // Paper trading mode
+  // Trading mode (from trading_config.trading_mode)
   paperTradingMode: boolean;
   
   // Connection status
@@ -95,10 +95,10 @@ interface AppState {
   setExchangePulse: (exchange: string, pulse: ExchangePulse) => void;
   setPnlData: (daily: number, weekly: number) => void;
   syncFromDatabase: () => Promise<void>;
+  setPaperTradingMode: (mode: boolean) => void;
   togglePaperTrading: () => void;
   setConnectionStatus: (status: 'connected' | 'disconnected' | 'error') => void;
   setActiveVPS: (vps: ActiveVPS | null) => void;
-  incrementPaperTrades: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -252,6 +252,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ dailyPnl: daily, weeklyPnl: weekly, lastUpdate: Date.now() });
   },
   
+  setPaperTradingMode: (mode) => {
+    set({ paperTradingMode: mode });
+  },
+  
   togglePaperTrading: () => {
     set(state => ({ paperTradingMode: !state.paperTradingMode }));
   },
@@ -262,17 +266,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   setActiveVPS: (vps) => {
     set({ activeVPS: vps, lastUpdate: Date.now() });
-  },
-  
-  incrementPaperTrades: () => {
-    set(state => {
-      const newCount = state.successfulPaperTrades + 1;
-      return {
-        successfulPaperTrades: newCount,
-        liveModeUnlocked: newCount >= 20,
-        lastUpdate: Date.now()
-      };
-    });
   },
   
   syncFromDatabase: async () => {
