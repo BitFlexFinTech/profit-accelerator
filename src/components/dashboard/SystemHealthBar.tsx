@@ -77,18 +77,21 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
 
   const isDeploying = status.vps.status === 'deploying';
   const isReadyForSetup = !status.vps.ip && botStatus === 'stopped';
+  const hasError = status.vps.botStatus === 'error' || botStatus === 'error';
 
   // Determine VPS connection state: 'connected' (green) | 'warning' (yellow) | 'disconnected' (red)
   const getVpsColorState = (): 'connected' | 'warning' | 'disconnected' => {
-    // Red: No IP and not active, or explicit error/failed status
+    // Red: Error state or no IP with inactive status
+    if (hasError) return 'disconnected';
     if (status.vps.status === 'error' || status.vps.status === 'failed') return 'disconnected';
     if (!status.vps.ip && status.vps.status === 'inactive') return 'disconnected';
     
     // Yellow: Deploying, starting, or unknown states
     if (status.vps.status === 'deploying' || status.vps.status === 'starting') return 'warning';
     
-    // Green: Running or idle with a valid IP
-    if ((status.vps.status === 'running' || status.vps.status === 'idle') && status.vps.ip) return 'connected';
+    // Green: Running with a valid IP (regardless of bot_status)
+    if (status.vps.status === 'running' && status.vps.ip) return 'connected';
+    if (status.vps.ip && status.vps.healthStatus === 'healthy') return 'connected';
     if (status.vps.ip) return 'connected'; // Has IP = connected
     
     return 'warning'; // Default to warning for unknown states
@@ -97,6 +100,9 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
   const vpsColorState = getVpsColorState();
 
   const getVpsTooltip = () => {
+    if (hasError) {
+      return 'VPS Error - Clear error in Bot Control panel';
+    }
     if (isReadyForSetup) {
       return 'Ready for Setup - Configure VPS in Settings';
     }
@@ -104,7 +110,9 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
       const provider = status.vps.provider 
         ? `${status.vps.provider.charAt(0).toUpperCase()}${status.vps.provider.slice(1)}` 
         : '';
-      return `Connected - ${status.vps.ip}${provider ? ` (${provider})` : ''}`;
+      const botInfo = status.vps.botStatus === 'running' ? ' • Bot Running' : 
+                      status.vps.botStatus === 'stopped' ? ' • Bot Stopped' : '';
+      return `Connected - ${status.vps.ip}${provider ? ` (${provider})` : ''}${botInfo}`;
     }
     if (status.vps.status === 'deploying') {
       return 'Deploying instance...';
