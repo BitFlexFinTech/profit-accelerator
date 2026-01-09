@@ -210,6 +210,38 @@ Deno.serve(async (req) => {
       }
     } catch (fetchError) {
       console.error('[check-vps-health] Fetch failed:', fetchError);
+      const latencyMs = Date.now() - startTime;
+      
+      // Get current failure count from vps_proxy_health
+      const { data: healthHistory } = await supabase
+        .from('vps_proxy_health')
+        .select('consecutive_failures')
+        .eq('vps_ip', targetIp)
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      const currentFailures = (healthHistory?.consecutive_failures || 0) + 1;
+      
+      // Insert health record with incremented failure count
+      await supabase.from('vps_proxy_health').insert({
+        vps_ip: targetIp,
+        is_healthy: false,
+        latency_ms: latencyMs,
+        consecutive_failures: currentFailures
+      });
+      
+      // Create alert notification after 3 consecutive failures
+      if (currentFailures >= 3) {
+        await supabase.from('system_notifications').insert({
+          type: 'vps_health',
+          title: 'VPS Health Alert',
+          message: `VPS ${targetIp} has failed ${currentFailures} consecutive health checks. Check your VPS status.`,
+          severity: 'error',
+          category: 'vps'
+        });
+        console.log(`[check-vps-health] Created alert notification for ${currentFailures} consecutive failures`);
+      }
       
       // Set status to offline if we have an ID
       if (vpsConfigId) {
