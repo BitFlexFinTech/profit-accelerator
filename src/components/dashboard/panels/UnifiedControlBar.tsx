@@ -41,6 +41,13 @@ export function UnifiedControlBar() {
   const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
 
+  // Listen for custom event from Leaderboard to open simulation modal
+  useEffect(() => {
+    const handleOpenSimulation = () => setShowSimulation(true);
+    window.addEventListener('open-simulation-modal', handleOpenSimulation);
+    return () => window.removeEventListener('open-simulation-modal', handleOpenSimulation);
+  }, []);
+
   // Fetch bot status from database - NEVER auto-start
   const fetchBotStatus = useCallback(async () => {
     try {
