@@ -979,9 +979,10 @@ const server = http.createServer(async (req, res) => {
             });
             
             // Also write to file for strategy.js process to pick up
+            // CRITICAL: Use actual newlines, not escaped \\n
             const envFileContent = Object.entries(env)
               .map(([k, v]) => k + '=' + v)
-              .join('\\n');
+              .join(String.fromCharCode(10));
             require('fs').writeFileSync(ENV_FILE, envFileContent);
             console.log('[🐟 PIRANHA] Wrote ' + Object.keys(env).length + ' env vars to ' + ENV_FILE);
           }
@@ -1079,7 +1080,8 @@ const RUNTIME_ENV_FILE = '/app/data/.env.runtime';
 if (fs.existsSync(RUNTIME_ENV_FILE)) {
   try {
     const envContent = fs.readFileSync(RUNTIME_ENV_FILE, 'utf8');
-    envContent.split('\\n').forEach(line => {
+    // Split on actual newlines (LF or CRLF)
+    envContent.split(/\\r?\\n/).forEach(line => {
       const idx = line.indexOf('=');
       if (idx > 0) {
         const key = line.substring(0, idx);
@@ -1292,7 +1294,8 @@ function reloadRuntimeEnv() {
   if (fs.existsSync(RUNTIME_ENV_FILE)) {
     try {
       const envContent = fs.readFileSync(RUNTIME_ENV_FILE, 'utf8');
-      envContent.split('\\n').forEach(line => {
+      // Split on actual newlines (LF or CRLF)
+      envContent.split(/\\r?\\n/).forEach(line => {
         const idx = line.indexOf('=');
         if (idx > 0) {
           const key = line.substring(0, idx);
