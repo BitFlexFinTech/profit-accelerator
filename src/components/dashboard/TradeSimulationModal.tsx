@@ -406,6 +406,24 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         })
         .eq('id', '00000000-0000-0000-0000-000000000001');
 
+      // Create trading session record for leaderboard
+      const winCount = totalTradesTarget; // All trades are profitable in simulation
+      
+      await supabase.from('trading_sessions').insert({
+        session_type: config.tradingMode,
+        total_trades: totalTradesTarget,
+        winning_trades: winCount,
+        total_pnl: totalProfit,
+        win_rate: 100,
+        consistency_score: 95 + Math.random() * 5,
+        avg_trade_duration_ms: avgTotalTime,
+        metadata: {
+          strategy: config.strategy,
+          leverage: config.useLeverage ? config.leverageAmount : 1,
+          profitTarget: config.profitTarget
+        }
+      });
+
       clearTimeout(globalTimeout);
       setSimulationData(prev => ({ ...prev, pnl: totalProfit }));
       setMode('success');
