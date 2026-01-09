@@ -80,9 +80,9 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
-  const [nextScanIn, setNextScanIn] = useState(60);
+  const [nextScanIn, setNextScanIn] = useState(3);
   const [activeTimeframe, setActiveTimeframe] = useState<TimeframeFilter>('all');
-  const hasAutoScanned = useRef(false);
+  const dbPollRef = useRef<NodeJS.Timeout | null>(null);
   
   const { vps } = useSystemStatus();
   const isVpsConnected = vps.status === 'running' || vps.status === 'idle';
@@ -136,15 +136,17 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
     }
   };
 
+  // 3-second countdown timer for database polling
   useEffect(() => {
     const countdownInterval = setInterval(() => {
-      setNextScanIn(prev => (prev > 0 ? prev - 1 : 60)); // Reset to 60s (was 30s)
+      setNextScanIn(prev => (prev > 0 ? prev - 1 : 3));
     }, 1000);
     return () => clearInterval(countdownInterval);
   }, []);
 
+  // FAST 3-SECOND DATABASE POLLING - Dashboard reads from DB, not edge functions
   useEffect(() => {
-    const fetchUpdates = async () => {
+    const pollDatabase = async () => {
       try {
         const { data, error } = await supabase
           .from('ai_market_updates')
@@ -153,22 +155,30 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
           .order('created_at', { ascending: false })
           .limit(100);
 
-        if (error) throw error;
-        setUpdates((data as AIUpdate[]) || []);
-        
-        if (!hasAutoScanned.current) {
-          hasAutoScanned.current = true;
-          triggerAutoScan();
+        if (!error && data) {
+          setUpdates(data as AIUpdate[]);
+          setLastScanTime(new Date());
         }
       } catch (err) {
-        console.error('[AIMarketUpdatesPanel] Error:', err);
+        console.error('[AIMarketUpdatesPanel] Poll error:', err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchUpdates();
-  }, [lastUpdate]);
+    // Initial fetch
+    pollDatabase();
+
+    // Poll every 3 seconds for HFT speed
+    dbPollRef.current = setInterval(() => {
+      pollDatabase();
+      setNextScanIn(3);
+    }, 3000);
+
+    return () => {
+      if (dbPollRef.current) clearInterval(dbPollRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const channel = supabase
@@ -198,16 +208,18 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
     };
   }, []);
 
+  // Background AI scan every 30 seconds to keep database fresh
+  // Dashboard polls database every 3 seconds for fast updates
   useEffect(() => {
-    // OPTIMIZED: 60-second scan interval for sustainable API usage (was 30s)
-    // Prevents provider exhaustion and edge function timeouts
-    const scanInterval = setInterval(() => {
-      hasAutoScanned.current = false;
-      setNextScanIn(60);
+    // Trigger initial scan
+    triggerAutoScan();
+    
+    // Background scan every 30 seconds to populate database
+    const backgroundScan = setInterval(() => {
       triggerAutoScan();
-    }, 60 * 1000);
+    }, 30 * 1000);
 
-    return () => clearInterval(scanInterval);
+    return () => clearInterval(backgroundScan);
   }, []);
 
   const triggerManualScan = async () => {
