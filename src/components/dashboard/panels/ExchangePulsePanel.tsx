@@ -1,10 +1,12 @@
 import { useState, useEffect, forwardRef, useCallback } from 'react';
-import { Activity, CheckCircle2, XCircle, RefreshCw, Server, AlertTriangle } from 'lucide-react';
+import { Activity, CheckCircle2, XCircle, RefreshCw, Server, AlertTriangle, Clock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { differenceInSeconds } from 'date-fns';
 
 interface ExchangePulse {
   id: string;
@@ -12,6 +14,7 @@ interface ExchangePulse {
   status: 'healthy' | 'jitter' | 'error';
   latency_ms: number;
   source?: 'edge' | 'vps';
+  last_check?: string;
 }
 
 const EXCHANGE_DISPLAY: Record<string, { name: string }> = {
@@ -30,7 +33,15 @@ interface ExchangePulsePanelProps {
 export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelProps>(({ compact = false }, ref) => {
   const [pulses, setPulses] = useState<ExchangePulse[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastCheckTime, setLastCheckTime] = useState<Date | null>(null);
+  const [now, setNow] = useState(Date.now());
   const lastUpdate = useAppStore((s) => s.lastUpdate);
+
+  // Update "now" every second for freshness display
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchPulses = useCallback(async () => {
     try {
@@ -44,7 +55,7 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
       
       const { data, error } = await supabase
         .from('exchange_pulse')
-        .select('id, exchange_name, status, latency_ms, source')
+        .select('id, exchange_name, status, latency_ms, source, last_check')
         .order('exchange_name')
         .limit(6);
 
@@ -60,6 +71,11 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
       });
       
       setPulses(sorted as ExchangePulse[]);
+      
+      // Extract the latest check time
+      if (sorted.length > 0 && sorted[0].last_check) {
+        setLastCheckTime(new Date(sorted[0].last_check));
+      }
     } catch (err) {
       console.error('[ExchangePulsePanel] Error:', err);
     }
@@ -114,8 +130,18 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
 
   const healthyCount = pulses.filter(p => p.status === 'healthy').length;
   const isVPS = pulses.some(p => p.source === 'vps');
+  
+  // Calculate data freshness
+  const getSecondsAgo = () => {
+    if (!lastCheckTime) return null;
+    return Math.max(0, differenceInSeconds(now, lastCheckTime));
+  };
+  
+  const secondsAgo = getSecondsAgo();
+  const isStale = secondsAgo !== null && secondsAgo > 120; // Stale if > 2 minutes
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div ref={ref} className={cn("glass-card h-full flex flex-col", compact ? 'p-2' : 'p-4')}>
       <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
         <div className="flex items-center gap-1.5">
@@ -132,7 +158,27 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
         </div>
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-muted-foreground">{healthyCount}/{pulses.length}</span>
-          <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1 rounded">10s</span>
+          
+          {/* Freshness indicator with tooltip */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(
+                "flex items-center gap-0.5 text-[9px] px-1 rounded cursor-help",
+                isStale ? "text-amber-400 bg-amber-500/10" : "text-muted-foreground bg-secondary/50"
+              )}>
+                <Clock className="w-2 h-2" />
+                {secondsAgo !== null ? (secondsAgo < 60 ? `${secondsAgo}s` : `${Math.floor(secondsAgo / 60)}m`) : '—'}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p className="text-xs">
+                {isStale 
+                  ? `Data is stale (${secondsAgo}s ago) - click refresh` 
+                  : `Last ping: ${secondsAgo}s ago`}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+          
           <Button
             variant="ghost"
             size="sm"
@@ -180,6 +226,7 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
         })}
       </div>
     </div>
+    </TooltipProvider>
   );
 });
 
