@@ -25,14 +25,12 @@ interface Order {
 type StatusFilter = 'all' | 'pending' | 'filled' | 'cancelled';
 
 export function OrderHistory() {
-  const paperTradingMode = useAppStore(state => state.paperTradingMode);
   const lastUpdate = useAppStore(state => state.lastUpdate);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<StatusFilter>('all');
 
   const fetchOrders = useCallback(async () => {
-    // All orders now in 'orders' table - VPS bot handles all modes
     let query = supabase
       .from('orders')
       .select('*')
@@ -51,32 +49,22 @@ export function OrderHistory() {
     setIsLoading(false);
   }, [filter]);
 
-  // Use SSOT lastUpdate to trigger refetch - no duplicate subscription needed
+  // Use SSOT lastUpdate to trigger refetch
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders, lastUpdate]);
 
-  const getStatusBadge = (status: string) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
-      case 'filled':
-        return <Badge className="bg-success/20 text-success border-success/40">Filled</Badge>;
-      case 'pending':
-      case 'partially_filled':
-        return <Badge className="bg-warning/20 text-warning border-warning/40">Pending</Badge>;
-      case 'cancelled':
-      case 'rejected':
-        return <Badge className="bg-destructive/20 text-destructive border-destructive/40">Cancelled</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+      case 'filled': return 'bg-success/20 text-success';
+      case 'pending': return 'bg-warning/20 text-warning';
+      case 'cancelled': return 'bg-muted text-muted-foreground';
+      default: return 'bg-muted text-muted-foreground';
     }
   };
 
-  const formatTime = (timestamp: string) => {
-    return format(new Date(timestamp), 'HH:mm:ss');
-  };
-
-  const formatDate = (timestamp: string) => {
-    return format(new Date(timestamp), 'MMM dd');
+  const getSideColor = (side: string) => {
+    return side === 'buy' ? 'text-success' : 'text-destructive';
   };
 
   return (
@@ -86,9 +74,7 @@ export function OrderHistory() {
           <CardTitle className="text-base flex items-center gap-2">
             <History className="w-4 h-4 text-primary" />
             Order History
-            {paperTradingMode && (
-              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">PAPER</span>
-            )}
+            <span className="text-xs bg-destructive/20 text-destructive px-2 py-0.5 rounded">LIVE</span>
           </CardTitle>
           <Tabs value={filter} onValueChange={(v) => setFilter(v as StatusFilter)}>
             <TabsList className="h-7">
@@ -103,20 +89,19 @@ export function OrderHistory() {
       <CardContent>
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : orders.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <History className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            <p className="text-sm">No orders yet</p>
-            <p className="text-xs mt-1">Place your first trade to see it here</p>
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            No orders found
           </div>
         ) : (
-          <div className="max-h-[300px] overflow-auto">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs">Time</TableHead>
+                  <TableHead className="text-xs">Exchange</TableHead>
                   <TableHead className="text-xs">Symbol</TableHead>
                   <TableHead className="text-xs">Side</TableHead>
                   <TableHead className="text-xs">Type</TableHead>
@@ -126,26 +111,30 @@ export function OrderHistory() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {orders.map(order => (
+                {orders.map((order) => (
                   <TableRow key={order.id}>
                     <TableCell className="text-xs text-muted-foreground">
-                      <div>{formatTime(order.created_at)}</div>
-                      <div className="text-[10px]">{formatDate(order.created_at)}</div>
+                      {format(new Date(order.created_at), 'HH:mm:ss')}
                     </TableCell>
-                    <TableCell className="font-medium text-sm">{order.symbol}</TableCell>
+                    <TableCell className="text-xs">{order.exchange_name}</TableCell>
+                    <TableCell className="text-xs font-medium">{order.symbol}</TableCell>
+                    <TableCell className={`text-xs font-medium ${getSideColor(order.side)}`}>
+                      {order.side.toUpperCase()}
+                    </TableCell>
+                    <TableCell className="text-xs">{order.type}</TableCell>
+                    <TableCell className="text-xs text-right">
+                      ${order.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell className="text-xs text-right">
+                      {order.average_fill_price || order.price 
+                        ? `$${(order.average_fill_price || order.price)?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                        : 'Market'}
+                    </TableCell>
                     <TableCell>
-                      <span className={order.side === 'buy' ? 'text-success' : 'text-destructive'}>
-                        {order.side.toUpperCase()}
-                      </span>
+                      <Badge variant="outline" className={`text-[10px] ${getStatusColor(order.status)}`}>
+                        {order.status}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {order.type.toUpperCase()}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">{order.amount}</TableCell>
-                    <TableCell className="text-right text-sm">
-                      ${(order.fill_price || order.average_fill_price || order.price || 0).toFixed(2)}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

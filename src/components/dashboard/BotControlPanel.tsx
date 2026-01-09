@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, AlertTriangle, Loader2, RefreshCw, FlaskConical, Zap } from 'lucide-react';
+import { Play, Square, AlertTriangle, Loader2, RefreshCw, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
@@ -36,8 +35,6 @@ export function BotControlPanel() {
   
   const { sync } = useExchangeWebSocket();
   const getTotalEquity = useAppStore(state => state.getTotalEquity);
-  const paperTradingMode = useAppStore(state => state.paperTradingMode);
-  const togglePaperTrading = useAppStore(state => state.togglePaperTrading);
 
   const handleSyncBalances = async () => {
     setIsSyncing(true);
@@ -281,17 +278,10 @@ export function BotControlPanel() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Paper Trading Toggle */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
-              <FlaskConical className={`w-4 h-4 ${paperTradingMode ? 'text-primary' : 'text-muted-foreground'}`} />
-              <span className={`text-xs font-medium ${paperTradingMode ? 'text-primary' : 'text-muted-foreground'}`}>Paper</span>
-              <Switch 
-                checked={!paperTradingMode} 
-                onCheckedChange={() => togglePaperTrading()}
-                className="data-[state=checked]:bg-destructive"
-              />
-              <Zap className={`w-4 h-4 ${!paperTradingMode ? 'text-destructive' : 'text-muted-foreground'}`} />
-              <span className={`text-xs font-medium ${!paperTradingMode ? 'text-destructive' : 'text-muted-foreground'}`}>Live</span>
+            {/* Live Mode Indicator */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-destructive/10 border border-destructive/30">
+              <Zap className="w-4 h-4 text-destructive" />
+              <span className="text-xs font-medium text-destructive">LIVE MODE</span>
             </div>
 
             <ActionButton
@@ -340,18 +330,8 @@ export function BotControlPanel() {
           </div>
         </div>
 
-        {/* Paper Trading Active Banner */}
-        {paperTradingMode && (
-          <div className="mt-3 p-2 rounded-lg bg-primary/10 border border-primary/30 flex items-center gap-2">
-            <FlaskConical className="w-4 h-4 text-primary" />
-            <span className="text-sm text-primary font-medium">
-              Paper Trading Mode - No real orders will be executed
-            </span>
-          </div>
-        )}
-
         {/* Live Mode Warning */}
-        {botStatus !== 'running' && !paperTradingMode && (
+        {botStatus !== 'running' && (
           <div className="mt-3 p-2 rounded-lg bg-destructive/10 border border-destructive/30 flex items-center gap-2 animate-pulse">
             <AlertTriangle className="w-4 h-4 text-destructive" />
             <span className="text-sm text-destructive font-medium">
