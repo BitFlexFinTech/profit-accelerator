@@ -418,12 +418,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         .single();
 
       if (simProgress) {
+        // STRICT RULE: Use exact database values, reset to 0 if database shows 0
+        const simTrades = simProgress.successful_simulation_trades || 0;
+        const paperTrades = simProgress.successful_paper_trades || 0;
+        const paperUnlocked = simProgress.paper_mode_unlocked || false;
+        const liveUnlocked = simProgress.live_mode_unlocked || false;
+        
         set({
           simulationCompleted: simProgress.simulation_completed || false,
-          paperModeUnlocked: simProgress.paper_mode_unlocked || false,
-          liveModeUnlocked: simProgress.live_mode_unlocked || false,
-          successfulPaperTrades: simProgress.successful_paper_trades || 0,
+          paperModeUnlocked: paperUnlocked,
+          liveModeUnlocked: liveUnlocked,
+          successfulPaperTrades: paperTrades,
         });
+        
+        console.log(`[SSOT] Simulation: ${simTrades}/20, Paper: ${paperTrades}/20, Paper Unlocked: ${paperUnlocked}, Live Unlocked: ${liveUnlocked}`);
+      } else {
+        // No simulation progress record - reset to initial state
+        set({
+          simulationCompleted: false,
+          paperModeUnlocked: false,
+          liveModeUnlocked: false,
+          successfulPaperTrades: 0,
+        });
+        console.log('[SSOT] No simulation progress found - reset to initial state');
       }
 
       // Fetch active VPS deployment
