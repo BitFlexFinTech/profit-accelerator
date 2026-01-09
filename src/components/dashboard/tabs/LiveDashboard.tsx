@@ -9,6 +9,7 @@ import { InfrastructurePanel } from '../panels/InfrastructurePanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
+import { ModeProgressTracker } from '../panels/ModeProgressTracker';
 
 export function LiveDashboard() {
   useTradeNotifications();
@@ -25,6 +26,9 @@ export function LiveDashboard() {
     <div className="h-full flex flex-col gap-1.5 overflow-hidden">
       {/* Scrolling Price Ticker - Very Top */}
       <ScrollingPriceTicker />
+      
+      {/* Mode Progress Tracker - Temporary cards until live mode unlocked */}
+      <ModeProgressTracker />
       
       {/* Top Control Bar - Merged Bot Status + Quick Actions */}
       <UnifiedControlBar />

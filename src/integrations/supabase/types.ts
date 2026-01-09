@@ -265,6 +265,63 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_trade_decisions: {
+        Row: {
+          actual_outcome: string | null
+          actual_profit: number | null
+          ai_provider: string
+          confidence: number
+          created_at: string | null
+          entry_price: number | null
+          exchange: string
+          expected_profit_percent: number | null
+          expected_time_minutes: number | null
+          id: string
+          reasoning: string | null
+          recommended_side: string
+          symbol: string
+          target_price: number | null
+          trade_id: string | null
+          was_executed: boolean | null
+        }
+        Insert: {
+          actual_outcome?: string | null
+          actual_profit?: number | null
+          ai_provider: string
+          confidence: number
+          created_at?: string | null
+          entry_price?: number | null
+          exchange: string
+          expected_profit_percent?: number | null
+          expected_time_minutes?: number | null
+          id?: string
+          reasoning?: string | null
+          recommended_side: string
+          symbol: string
+          target_price?: number | null
+          trade_id?: string | null
+          was_executed?: boolean | null
+        }
+        Update: {
+          actual_outcome?: string | null
+          actual_profit?: number | null
+          ai_provider?: string
+          confidence?: number
+          created_at?: string | null
+          entry_price?: number | null
+          exchange?: string
+          expected_profit_percent?: number | null
+          expected_time_minutes?: number | null
+          id?: string
+          reasoning?: string | null
+          recommended_side?: string
+          symbol?: string
+          target_price?: number | null
+          trade_id?: string | null
+          was_executed?: boolean | null
+        }
+        Relationships: []
+      }
       alert_config: {
         Row: {
           alert_type: string
@@ -1621,8 +1678,11 @@ export type Database = {
           last_paper_trade_at: string | null
           live_mode_unlocked: boolean | null
           paper_mode_unlocked: boolean | null
+          paper_profit_total: number | null
           simulation_completed: boolean | null
+          simulation_profit_total: number | null
           successful_paper_trades: number | null
+          successful_simulation_trades: number | null
           updated_at: string | null
         }
         Insert: {
@@ -1631,8 +1691,11 @@ export type Database = {
           last_paper_trade_at?: string | null
           live_mode_unlocked?: boolean | null
           paper_mode_unlocked?: boolean | null
+          paper_profit_total?: number | null
           simulation_completed?: boolean | null
+          simulation_profit_total?: number | null
           successful_paper_trades?: number | null
+          successful_simulation_trades?: number | null
           updated_at?: string | null
         }
         Update: {
@@ -1641,8 +1704,11 @@ export type Database = {
           last_paper_trade_at?: string | null
           live_mode_unlocked?: boolean | null
           paper_mode_unlocked?: boolean | null
+          paper_profit_total?: number | null
           simulation_completed?: boolean | null
+          simulation_profit_total?: number | null
           successful_paper_trades?: number | null
+          successful_simulation_trades?: number | null
           updated_at?: string | null
         }
         Relationships: []
@@ -1815,6 +1881,45 @@ export type Database = {
         }
         Relationships: []
       }
+      system_notifications: {
+        Row: {
+          category: string | null
+          created_at: string | null
+          dismissed: boolean | null
+          id: string
+          message: string | null
+          metadata: Json | null
+          read: boolean | null
+          severity: string | null
+          title: string
+          type: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string | null
+          dismissed?: boolean | null
+          id?: string
+          message?: string | null
+          metadata?: Json | null
+          read?: boolean | null
+          severity?: string | null
+          title: string
+          type: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string | null
+          dismissed?: boolean | null
+          id?: string
+          message?: string | null
+          metadata?: Json | null
+          read?: boolean | null
+          severity?: string | null
+          title?: string
+          type?: string
+        }
+        Relationships: []
+      }
       system_secrets: {
         Row: {
           created_at: string | null
@@ -1969,6 +2074,7 @@ export type Database = {
           global_kill_switch_enabled: boolean | null
           id: string
           leverage: number | null
+          manual_start_required: boolean | null
           max_daily_drawdown_percent: number | null
           max_daily_trades: number | null
           max_position_size: number | null
@@ -1987,6 +2093,7 @@ export type Database = {
           global_kill_switch_enabled?: boolean | null
           id?: string
           leverage?: number | null
+          manual_start_required?: boolean | null
           max_daily_drawdown_percent?: number | null
           max_daily_trades?: number | null
           max_position_size?: number | null
@@ -2005,6 +2112,7 @@ export type Database = {
           global_kill_switch_enabled?: boolean | null
           id?: string
           leverage?: number | null
+          manual_start_required?: boolean | null
           max_daily_drawdown_percent?: number | null
           max_daily_trades?: number | null
           max_position_size?: number | null
@@ -2067,6 +2175,57 @@ export type Database = {
           side?: string
           status?: string | null
           symbol?: string
+        }
+        Relationships: []
+      }
+      trading_sessions: {
+        Row: {
+          ai_accuracy_percent: number | null
+          avg_trade_duration_ms: number | null
+          best_trade_pnl: number | null
+          consistency_score: number | null
+          ended_at: string | null
+          id: string
+          metadata: Json | null
+          session_type: string
+          started_at: string | null
+          total_pnl: number | null
+          total_trades: number | null
+          win_rate: number | null
+          winning_trades: number | null
+          worst_trade_pnl: number | null
+        }
+        Insert: {
+          ai_accuracy_percent?: number | null
+          avg_trade_duration_ms?: number | null
+          best_trade_pnl?: number | null
+          consistency_score?: number | null
+          ended_at?: string | null
+          id?: string
+          metadata?: Json | null
+          session_type: string
+          started_at?: string | null
+          total_pnl?: number | null
+          total_trades?: number | null
+          win_rate?: number | null
+          winning_trades?: number | null
+          worst_trade_pnl?: number | null
+        }
+        Update: {
+          ai_accuracy_percent?: number | null
+          avg_trade_duration_ms?: number | null
+          best_trade_pnl?: number | null
+          consistency_score?: number | null
+          ended_at?: string | null
+          id?: string
+          metadata?: Json | null
+          session_type?: string
+          started_at?: string | null
+          total_pnl?: number | null
+          total_trades?: number | null
+          win_rate?: number | null
+          winning_trades?: number | null
+          worst_trade_pnl?: number | null
         }
         Relationships: []
       }
@@ -2468,6 +2627,36 @@ export type Database = {
         }
         Relationships: []
       }
+      vps_proxy_health: {
+        Row: {
+          checked_at: string | null
+          consecutive_failures: number | null
+          error_message: string | null
+          id: string
+          is_healthy: boolean
+          latency_ms: number | null
+          vps_ip: string
+        }
+        Insert: {
+          checked_at?: string | null
+          consecutive_failures?: number | null
+          error_message?: string | null
+          id?: string
+          is_healthy: boolean
+          latency_ms?: number | null
+          vps_ip: string
+        }
+        Update: {
+          checked_at?: string | null
+          consecutive_failures?: number | null
+          error_message?: string | null
+          id?: string
+          is_healthy?: boolean
+          latency_ms?: number | null
+          vps_ip?: string
+        }
+        Relationships: []
+      }
       vps_timeline_events: {
         Row: {
           created_at: string | null
@@ -2503,10 +2692,22 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      ai_provider_accuracy: {
+        Row: {
+          accuracy_percent: number | null
+          ai_provider: string | null
+          avg_confidence: number | null
+          avg_profit: number | null
+          correct_predictions: number | null
+          total_recommendations: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       increment_paper_trade: { Args: never; Returns: undefined }
+      increment_paper_trade_v2: { Args: { profit: number }; Returns: boolean }
+      increment_simulation_trade: { Args: { profit: number }; Returns: boolean }
       reset_ai_provider_daily_usage: { Args: never; Returns: undefined }
       reset_ai_provider_usage: { Args: never; Returns: undefined }
     }

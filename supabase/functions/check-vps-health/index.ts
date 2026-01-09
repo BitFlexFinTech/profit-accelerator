@@ -173,48 +173,40 @@ Deno.serve(async (req) => {
             .eq('provider', provider);
         }
         
-        // CRITICAL: Sync bot_status to vps_instances and hft_deployments tables
-        // This ensures dashboard shows accurate bot status
-        const botStatus = isHealthy ? 'running' : 'stopped';
+        // CRITICAL FIX: Only update HEALTH metrics - NEVER auto-set bot_status
+        // Bot must be started manually by user action only
         const now = new Date().toISOString();
         
-        console.log(`[check-vps-health] Syncing bot_status=${botStatus} to vps_instances for IP=${targetIp}`);
+        console.log(`[check-vps-health] Updating HEALTH metrics only (not bot_status) for IP=${targetIp}`);
         
-        // Update vps_instances by IP
-        const { data: vpsUpdateData, error: vpsUpdateError, count: vpsCount } = await supabase
+        // Update vps_instances health status ONLY (no bot_status)
+        await supabase
           .from('vps_instances')
           .update({ 
-            bot_status: botStatus, 
-            status: 'running',
+            last_health_check: now,
+            health_status: isHealthy ? 'healthy' : 'unhealthy',
             updated_at: now 
           })
-          .eq('ip_address', targetIp)
-          .select();
+          .eq('ip_address', targetIp);
         
-        if (vpsUpdateError) {
-          console.error('[check-vps-health] Failed to update vps_instances:', vpsUpdateError.message);
-        } else {
-          console.log(`[check-vps-health] Updated vps_instances: ${vpsUpdateData?.length || 0} rows`);
-        }
-        
-        // Update hft_deployments by IP
-        const { data: hftUpdateData, error: hftUpdateError } = await supabase
+        // Update hft_deployments health status ONLY (no bot_status)
+        await supabase
           .from('hft_deployments')
           .update({ 
-            bot_status: botStatus, 
-            status: 'running',
+            status: isHealthy ? 'running' : 'offline',
             updated_at: now 
           })
-          .eq('ip_address', targetIp)
-          .select();
+          .eq('ip_address', targetIp);
         
-        if (hftUpdateError) {
-          console.error('[check-vps-health] Failed to update hft_deployments:', hftUpdateError.message);
-        } else {
-          console.log(`[check-vps-health] Updated hft_deployments: ${hftUpdateData?.length || 0} rows`);
-        }
+        // Log to vps_proxy_health table
+        await supabase.from('vps_proxy_health').insert({
+          vps_ip: targetIp,
+          is_healthy: isHealthy,
+          latency_ms: latencyMs,
+          consecutive_failures: 0
+        });
         
-        console.log(`[check-vps-health] VPS marked as running, bot_status=${botStatus}`);
+        console.log(`[check-vps-health] VPS health updated (bot_status NOT changed)`);
       }
     } catch (fetchError) {
       console.error('[check-vps-health] Fetch failed:', fetchError);
