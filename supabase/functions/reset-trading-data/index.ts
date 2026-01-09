@@ -38,9 +38,6 @@ serve(async (req) => {
       'trading_journal',
       'strategy_trades',
       'orders',
-      'paper_orders',
-      'paper_positions',
-      'paper_balance_history',
       'positions',
       'trade_copies',
       'trade_execution_metrics',
@@ -82,34 +79,7 @@ serve(async (req) => {
     }
 
     // ============================================
-    // PHASE 2: RESET SIMULATION PROGRESS
-    // ============================================
-    
-    const { error: simError } = await supabase
-      .from('simulation_progress')
-      .update({
-        successful_simulation_trades: 0,
-        successful_paper_trades: 0,
-        simulation_profit_total: 0,
-        paper_profit_total: 0,
-        paper_mode_unlocked: false,
-        live_mode_unlocked: false,
-        simulation_completed: false,
-        last_paper_trade_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', '00000000-0000-0000-0000-000000000001');
-
-    if (simError) {
-      console.log(`[RESET] Warning: simulation_progress reset failed: ${simError.message}`);
-      results['simulation_progress'] = `warning: ${simError.message}`;
-    } else {
-      console.log('[RESET] Reset simulation_progress to initial state');
-      results['simulation_progress'] = 'reset';
-    }
-
-    // ============================================
-    // PHASE 3: RESET AI PROVIDER USAGE COUNTERS
+    // PHASE 2: RESET AI PROVIDER USAGE COUNTERS
     // ============================================
     
     const { error: aiError } = await supabase
@@ -134,7 +104,7 @@ serve(async (req) => {
     }
 
     // ============================================
-    // PHASE 4: STOP TRADING BOT
+    // PHASE 3: STOP TRADING BOT
     // ============================================
     
     const { error: botError } = await supabase
@@ -142,6 +112,7 @@ serve(async (req) => {
       .update({
         bot_status: 'stopped',
         trading_enabled: false,
+        trading_mode: 'live', // Always live mode
         updated_at: new Date().toISOString(),
       })
       .neq('id', '00000000-0000-0000-0000-000000000000');
@@ -155,7 +126,7 @@ serve(async (req) => {
     }
 
     // ============================================
-    // PHASE 5: RESET EXCHANGE BALANCES (keep connections)
+    // PHASE 4: RESET EXCHANGE BALANCES (keep connections)
     // ============================================
     
     const { error: exchError } = await supabase
@@ -179,7 +150,7 @@ serve(async (req) => {
     }
 
     // ============================================
-    // PHASE 6: RESET VPS BOT STATUS (keep instances)
+    // PHASE 5: RESET VPS BOT STATUS (keep instances)
     // ============================================
     
     const { error: vpsError } = await supabase
@@ -230,4 +201,3 @@ serve(async (req) => {
     );
   }
 });
-

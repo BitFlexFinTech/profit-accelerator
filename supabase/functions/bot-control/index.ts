@@ -138,7 +138,7 @@ serve(async (req) => {
       );
     }
 
-    // Build .env.exchanges content for Docker
+    // Build .env.exchanges content for Docker - ALWAYS LIVE MODE
     let envFileContent = '';
     if (action === 'start' || action === 'restart') {
       const { data: exchanges } = await supabase
@@ -146,20 +146,10 @@ serve(async (req) => {
         .select('exchange_name, api_key, api_secret, api_passphrase')
         .eq('is_connected', true);
       
-      // Get trading mode
-      const { data: tradingConfig } = await supabase
-        .from('trading_config')
-        .select('trading_mode')
-        .limit(1)
-        .single();
-      
-      const tradingMode = tradingConfig?.trading_mode || 'paper';
-      
       if (exchanges?.length) {
         const envLines: string[] = [
           'STRATEGY_ENABLED=true',
-          `TRADE_MODE=${tradingMode === 'live' ? 'LIVE' : 'PAPER'}`,
-          `PAPER_TRADING=${tradingMode === 'paper' ? 'true' : 'false'}`
+          'TRADE_MODE=LIVE'
         ];
         for (const ex of exchanges) {
           const name = ex.exchange_name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
@@ -168,22 +158,12 @@ serve(async (req) => {
           if (ex.api_passphrase) envLines.push(`${name}_PASSPHRASE=${ex.api_passphrase}`);
         }
         envFileContent = envLines.join('\\n');
-        console.log(`[bot-control] Prepared .env.exchanges for ${exchanges.length} exchanges in ${tradingMode} mode`);
+        console.log(`[bot-control] Prepared .env.exchanges for ${exchanges.length} exchanges in LIVE mode`);
       }
     }
-
-    // Get trading mode from database
-    const { data: tradingConfig } = await supabase
-      .from('trading_config')
-      .select('trading_mode')
-      .limit(1)
-      .single();
-    
-    const tradingMode = tradingConfig?.trading_mode || 'paper';
     
     // ═══════════════════════════════════════════════════════════
     // STRATEGY 1: Try VPS HTTP /control endpoint first (preferred)
-    // This is faster and doesn't require SSH
     // ═══════════════════════════════════════════════════════════
     if (action === 'start' || action === 'stop') {
       console.log(`[bot-control] Trying VPS /control endpoint at ${ipAddress}:8080...`);
@@ -194,7 +174,7 @@ serve(async (req) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             action: action,
-            mode: tradingMode  // 'simulation', 'paper', or 'live'
+            mode: 'live'
           }),
           signal: AbortSignal.timeout(10000)
         });
@@ -224,7 +204,7 @@ serve(async (req) => {
           return new Response(JSON.stringify({ 
             success: true, 
             action,
-            mode: tradingMode,
+            mode: 'live',
             botStatus: newBotStatus,
             method: 'http_control',
             result: controlResult,
@@ -248,8 +228,8 @@ serve(async (req) => {
 
     switch (action) {
       case 'start':
-        // Create START_SIGNAL with trading mode
-        const signalData = JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', mode: tradingMode });
+        // Create START_SIGNAL - always LIVE mode
+        const signalData = JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', mode: 'live' });
         command = `mkdir -p /opt/hft-bot/app/data && echo '${signalData}' > /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
         newBotStatus = 'starting';
         break;
@@ -258,7 +238,7 @@ serve(async (req) => {
         newBotStatus = 'stopped';
         break;
       case 'restart':
-        const restartSignalData = JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', mode: tradingMode });
+        const restartSignalData = JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', mode: 'live' });
         command = `echo '${restartSignalData}' > /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
         newBotStatus = 'starting';
         break;
@@ -352,7 +332,6 @@ serve(async (req) => {
         });
         
         if (containerCheck?.output?.trim()) {
-          // Container is running even if health endpoint isn't ready yet
           newBotStatus = 'running';
           healthVerified = false;
           console.log('[bot-control] ⚠️ Container running but health endpoint not ready');
@@ -365,7 +344,6 @@ serve(async (req) => {
         healthVerified = true;
         console.log('[bot-control] ✅ Bot verified running via health check');
       } else {
-        // Some response but not OK - still mark as running
         newBotStatus = 'running';
         healthVerified = true;
         console.log('[bot-control] ✅ Bot responded to health check');
@@ -445,7 +423,6 @@ serve(async (req) => {
         .or(`deployment_id.eq.${deployment.server_id},provider_instance_id.eq.${deployment.server_id}`);
       
       // 3. Update trading_config for global state sync
-      // CRITICAL: Only set trading_enabled=true if health verified
       await supabase
         .from('trading_config')
         .update({ 
@@ -455,29 +432,27 @@ serve(async (req) => {
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
       
-      console.log(`[bot-control] Synced bot_status=${newBotStatus}, trading_enabled=${newBotStatus === 'running' && healthVerified} across all tables`);
+      console.log(`[bot-control] Updated all status tables: ${newBotStatus}, healthVerified: ${healthVerified}`);
     }
-
-    console.log(`[bot-control] ${action} completed successfully for ${ipAddress}`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         action,
-        botStatus: newBotStatus || 'unknown',
+        mode: 'live',
+        botStatus: newBotStatus,
         healthVerified,
-        output: sshResult.output,
-        ipAddress
+        output: sshResult.output?.substring(0, 500),
+        ipAddress 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+  } catch (error) {
     console.error('[bot-control] Error:', error);
-    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
-      JSON.stringify({ success: false, error }),
+      JSON.stringify({ success: false, error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
