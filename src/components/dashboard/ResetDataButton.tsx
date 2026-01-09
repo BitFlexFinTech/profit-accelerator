@@ -98,10 +98,9 @@ export function ResetDataButton({ variant = 'default' }: ResetDataButtonProps) {
             </p>
             <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
               <li>All trade history and journal entries</li>
-              <li>Paper trading orders and positions</li>
               <li>Balance history and portfolio snapshots</li>
-              <li>Simulation progress (reset to 0/20)</li>
               <li>AI decision logs and performance metrics</li>
+              <li>Trading session records</li>
             </ul>
             <p className="font-medium text-foreground mt-3">
               Your settings will be preserved:

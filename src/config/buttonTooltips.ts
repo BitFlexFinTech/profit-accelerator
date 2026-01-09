@@ -4,7 +4,6 @@
 export const BUTTON_TOOLTIPS = {
   // Strategy
   newStrategy: 'Create a new trading strategy using the visual builder',
-  paperTest: 'Test this strategy with paper money using real-time prices - no real funds at risk',
   startLive: 'Start this strategy with LIVE trading - real money will be used',
   pauseStrategy: 'Pause this strategy - stops all new trades but keeps positions open',
   deleteStrategy: 'Permanently delete this strategy and all its settings',
@@ -16,11 +15,10 @@ export const BUTTON_TOOLTIPS = {
   leverage: 'Leverage multiplier for futures trades (1x = no leverage)',
   
   // Bot Control
-  startBot: 'Start the trading bot - begins automated trading based on active strategies',
+  startBot: 'Start the trading bot - begins automated LIVE trading based on active strategies',
   stopBot: 'Stop the trading bot - halts all automated trading immediately',
   restartBot: 'Restart the trading bot with current settings',
   syncBalances: 'Refresh all exchange balances from connected exchanges',
-  paperToggle: 'Toggle between Paper (simulated) and Live (real money) trading mode',
   killSwitch: 'EMERGENCY: Immediately stop ALL trading and optionally close all positions',
   
   // Trading
@@ -61,7 +59,7 @@ export const BUTTON_TOOLTIPS = {
   syncData: 'Synchronize data across all connected services',
   
   // Quick Actions
-  startTrading: 'Enable automated trading on all active strategies',
+  startTrading: 'Enable automated LIVE trading on all active strategies',
   pauseAll: 'Pause all trading activity immediately - positions remain open',
   testAlert: 'Send a test notification to Telegram to verify connectivity',
   

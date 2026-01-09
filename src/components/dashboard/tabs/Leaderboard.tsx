@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
-import { TradeReplayModal } from '../TradeReplayModal';
+// TradeReplayModal removed - all trades are live only
 
 interface Achievement {
   id: string;
@@ -62,21 +62,6 @@ const PROVIDER_COLORS: Record<string, string> = {
   gemini: 'text-indigo-500',
 };
 
-interface TradeForReplay {
-  id: string;
-  symbol: string;
-  exchange: string;
-  side: string;
-  entryPrice: number;
-  exitPrice: number;
-  quantity: number;
-  pnl: number;
-  aiReasoning?: string;
-  createdAt: string;
-  closedAt?: string;
-  executionLatencyMs?: number;
-}
-
 export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>((props, ref) => {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [bestDays, setBestDays] = useState<BestDay[]>([]);
@@ -84,8 +69,6 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
   const [aiRankings, setAIRankings] = useState<AIProviderRanking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('days');
-  const [replayTrade, setReplayTrade] = useState<TradeForReplay | null>(null);
-  const [showReplayModal, setShowReplayModal] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -195,24 +178,7 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
     return IconComponent;
   };
 
-  const handleReplaySession = (session: TradingSession) => {
-    // Create a replay trade from session data
-    const replayData: TradeForReplay = {
-      id: session.id,
-      symbol: 'BTC/USDT', // Session doesn't have specific symbol, use placeholder
-      exchange: session.session_type === 'live' ? 'Binance' : 'Simulated',
-      side: 'long',
-      entryPrice: 100000,
-      exitPrice: 100000 + (session.total_pnl / session.total_trades),
-      quantity: 0.1,
-      pnl: session.total_pnl,
-      aiReasoning: `Session completed with ${session.winning_trades}/${session.total_trades} winning trades (${session.win_rate.toFixed(1)}% win rate). Consistency score: ${session.consistency_score}%.`,
-      createdAt: session.started_at,
-      executionLatencyMs: session.avg_trade_duration_ms || 500
-    };
-    setReplayTrade(replayData);
-    setShowReplayModal(true);
-  };
+  // Session details now shown inline - no replay modal needed
 
   if (isLoading) {
     return (
@@ -411,11 +377,8 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={
-                            session.session_type === 'live' ? 'destructive' :
-                            session.session_type === 'paper' ? 'default' : 'secondary'
-                          }>
-                            {session.session_type}
+                          <Badge variant="destructive">
+                            live
                           </Badge>
                         </TableCell>
                         <TableCell className={`text-right font-bold ${session.total_pnl >= 0 ? 'text-success' : 'text-destructive'}`}>
@@ -434,15 +397,9 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleReplaySession(session)}
-                            className="gap-1"
-                          >
-                            <Play className="w-3 h-3" />
-                            Replay
-                          </Button>
+                          <Badge variant="outline" className="text-xs">
+                            {format(new Date(session.started_at), 'MMM d, HH:mm')}
+                          </Badge>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -525,12 +482,6 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
         </CardContent>
       </Card>
 
-      {/* Trade Replay Modal */}
-      <TradeReplayModal
-        open={showReplayModal}
-        onOpenChange={setShowReplayModal}
-        trade={replayTrade}
-      />
     </div>
   );
 });
