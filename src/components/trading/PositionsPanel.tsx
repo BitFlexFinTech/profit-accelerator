@@ -31,6 +31,7 @@ export function PositionsPanel() {
     const { data, error } = await supabase
       .from('positions')
       .select('*')
+      .or('status.eq.open,status.is.null')
       .order('created_at', { ascending: false });
 
     if (!error && data) {

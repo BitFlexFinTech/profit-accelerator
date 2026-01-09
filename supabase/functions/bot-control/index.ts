@@ -174,7 +174,7 @@ serve(async (req) => {
         console.log(`[bot-control] ⚠️ No connected exchanges found! Bot will not be able to trade.`);
       }
       
-      envFileContent = envLines.join('\\n');
+      envFileContent = envLines.join('\n');
     }
     
     // ═══════════════════════════════════════════════════════════
@@ -184,12 +184,43 @@ serve(async (req) => {
       console.log(`[bot-control] Trying VPS /control endpoint at ${ipAddress}:8080...`);
       
       try {
+        // Build environment variables object for HTTP control
+        const envVars: Record<string, string> = {};
+        if (action === 'start') {
+          envVars['STRATEGY_ENABLED'] = 'true';
+          envVars['TRADE_MODE'] = 'LIVE';
+          envVars['SUPABASE_URL'] = supabaseUrl;
+          envVars['SUPABASE_SERVICE_ROLE_KEY'] = supabaseServiceKey;
+          
+          // Add Telegram config
+          const telegramToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
+          const telegramChatId = Deno.env.get('TELEGRAM_CHAT_ID');
+          if (telegramToken) envVars['TELEGRAM_BOT_TOKEN'] = telegramToken;
+          if (telegramChatId) envVars['TELEGRAM_CHAT_ID'] = telegramChatId;
+          
+          // Add exchange credentials from database
+          const { data: exchanges } = await supabase
+            .from('exchange_connections')
+            .select('exchange_name, api_key, api_secret, api_passphrase')
+            .eq('is_connected', true);
+          
+          if (exchanges?.length) {
+            for (const ex of exchanges) {
+              const name = ex.exchange_name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+              if (ex.api_key) envVars[`${name}_API_KEY`] = ex.api_key;
+              if (ex.api_secret) envVars[`${name}_API_SECRET`] = ex.api_secret;
+              if (ex.api_passphrase) envVars[`${name}_PASSPHRASE`] = ex.api_passphrase;
+            }
+          }
+        }
+        
         const controlResponse = await fetch(`http://${ipAddress}:8080/control`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             action: action,
-            mode: 'live'
+            mode: 'live',
+            env: envVars
           }),
           signal: AbortSignal.timeout(10000)
         });
