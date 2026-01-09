@@ -225,9 +225,75 @@ echo "Server ready for trading at $(date)"
         );
       }
 
+      case 'deploy-instance': {
+        // Unified deploy-instance action for provision-vps compatibility
+        const { region, provider: hostProvider } = params;
+        
+        // Map to BitLaunch format
+        const hostId = hostProvider || 'vultr';
+        const regionSlug = region === 'tokyo' ? 'nrt' : region === 'new-york' ? 'ewr' : region || 'nrt';
+        
+        // HFT Bot installation script
+        const initScript = `#!/bin/bash
+set -e
+apt-get update
+apt-get install -y docker.io docker-compose curl wget
+systemctl enable docker
+systemctl start docker
+
+mkdir -p /opt/hft-bot
+cd /opt/hft-bot
+
+# Install HFT bot via Supabase edge function
+curl -fsSL https://${Deno.env.get('SUPABASE_URL')?.replace('https://', '')}/functions/v1/install-hft-bot | bash
+
+echo "HFT Bot environment initialized successfully"
+echo "Server ready for trading at $(date)"
+`;
+
+        const data = await makeRequest('/servers', 'POST', {
+          host: hostId,
+          region: regionSlug,
+          size: 'nibble-1024',
+          image: 'ubuntu-24-04-x64',
+          sshKeyIds: params.sshKeyIds || [],
+          name: `hft-bot-${Date.now()}`,
+          initScript,
+        });
+
+        if (data.id) {
+          // Update cloud_config
+          await supabase
+            .from('cloud_config')
+            .upsert({
+              provider: 'bitlaunch',
+              region: regionSlug,
+              instance_type: 'nibble-1024',
+              is_active: true,
+              status: 'deploying',
+              credentials: { serverId: data.id, host: hostId },
+            }, { onConflict: 'provider' });
+
+          return new Response(
+            JSON.stringify({ 
+              success: true, 
+              instanceId: data.id?.toString(),
+              publicIp: data.ipAddress || 'Provisioning...',
+              status: data.status || 'deploying'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to create server' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       default:
         return new Response(
-          JSON.stringify({ success: false, error: 'Unknown action' }),
+          JSON.stringify({ success: false, error: 'Unknown action. Supported: validate-api-key, list-hosts, list-sizes, list-regions, create-ssh-key, deploy-server, deploy-instance, get-server-status, delete-server' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }

@@ -144,9 +144,84 @@ echo "HFT Bot environment installed successfully"
         );
       }
 
+      case 'deploy-instance': {
+        // Unified deploy-instance action for provision-vps compatibility
+        const { email, apiKey, region, provider: cloudProvider } = params;
+        
+        // First get access token
+        const tokenResponse = await fetch(`${CLOUDWAYS_API}/oauth/access_token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `email=${encodeURIComponent(email)}&api_key=${encodeURIComponent(apiKey)}`,
+        });
+
+        const tokenData = await tokenResponse.json();
+        if (!tokenData.access_token) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Failed to authenticate with Cloudways' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const accessToken = tokenData.access_token;
+        
+        // Map region to Cloudways format
+        const cloudwaysRegion = region === 'tokyo' ? 'tokyo1' : 
+                                region === 'us-east-1' ? 'newyork1' : 
+                                region || 'tokyo1';
+        
+        // Create server (Cloudways uses different providers: vultr, do, linode, aws, gce)
+        const createResponse = await fetch(`${CLOUDWAYS_API}/server`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            cloud: cloudProvider || 'vultr',
+            region: cloudwaysRegion,
+            server_size: 'starter', // Smallest plan
+            application: 'custom',
+            app_label: 'hft-bot',
+            server_label: `hft-bot-${Date.now()}`,
+          }),
+        });
+
+        const serverData = await createResponse.json();
+        
+        if (serverData.server?.id) {
+          // Update cloud_config
+          await supabase
+            .from('cloud_config')
+            .upsert({
+              provider: 'cloudways',
+              region: cloudwaysRegion,
+              instance_type: 'starter',
+              is_active: true,
+              status: 'deploying',
+              credentials: { serverId: serverData.server.id },
+            }, { onConflict: 'provider' });
+
+          return new Response(
+            JSON.stringify({ 
+              success: true, 
+              instanceId: serverData.server.id?.toString(),
+              publicIp: serverData.server.public_ip || 'Provisioning...',
+              status: serverData.server.status || 'deploying'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: false, error: serverData.message || 'Failed to create server' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       default:
         return new Response(
-          JSON.stringify({ success: false, error: 'Unknown action' }),
+          JSON.stringify({ success: false, error: 'Unknown action. Supported: validate-credentials, list-servers, get-server-ip, create-app, run-script, deploy-instance' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }

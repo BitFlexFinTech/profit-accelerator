@@ -189,3 +189,6 @@ verify_jwt = false
 
 [functions.push-vps-fix]
 verify_jwt = false
+
+[functions.vps-debug]
+verify_jwt = false

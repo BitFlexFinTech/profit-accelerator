@@ -232,7 +232,9 @@ class MyStrategy(Strategy):
                   <SelectContent>
                     <SelectItem value="Binance Futures">Binance Futures</SelectItem>
                     <SelectItem value="Bybit USDT Perpetual">Bybit Perpetual</SelectItem>
-                    <SelectItem value="FTX Futures">FTX Futures</SelectItem>
+                    <SelectItem value="OKX Perpetual">OKX Perpetual</SelectItem>
+                    <SelectItem value="Bitget Futures">Bitget Futures</SelectItem>
+                    <SelectItem value="Hyperliquid">Hyperliquid</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

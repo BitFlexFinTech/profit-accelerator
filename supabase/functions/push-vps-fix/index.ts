@@ -305,6 +305,93 @@ const server = http.createServer(async (req, res) => {
     }));
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, pings: results }));
+  } else if (req.url === '/logs' && req.method === 'GET') {
+    // Debug endpoint: Read recent bot logs
+    try {
+      const logsDir = '/app/logs';
+      const dataDir = '/app/data';
+      const logs = {
+        strategy_state: null,
+        trades: null,
+        env_runtime_exists: false,
+        start_signal_exists: false,
+        files: []
+      };
+      
+      // Check for .env.runtime
+      if (fs.existsSync(dataDir + '/.env.runtime')) {
+        logs.env_runtime_exists = true;
+        const content = fs.readFileSync(dataDir + '/.env.runtime', 'utf8');
+        logs.env_runtime_lines = content.split(String.fromCharCode(10)).length;
+      }
+      
+      // Check for START_SIGNAL
+      if (fs.existsSync(dataDir + '/START_SIGNAL')) {
+        logs.start_signal_exists = true;
+        logs.start_signal = JSON.parse(fs.readFileSync(dataDir + '/START_SIGNAL', 'utf8'));
+      }
+      
+      // Read strategy state
+      if (fs.existsSync(dataDir + '/strategy-state.json')) {
+        logs.strategy_state = JSON.parse(fs.readFileSync(dataDir + '/strategy-state.json', 'utf8'));
+      }
+      
+      // Read recent trades (last 20)
+      if (fs.existsSync(dataDir + '/trades.json')) {
+        const allTrades = JSON.parse(fs.readFileSync(dataDir + '/trades.json', 'utf8'));
+        logs.trades = allTrades.slice(-20);
+        logs.total_trades = allTrades.length;
+      }
+      
+      // List files in data dir
+      if (fs.existsSync(dataDir)) {
+        logs.files = fs.readdirSync(dataDir);
+      }
+      
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, logs, timestamp: Date.now() }));
+    } catch (err) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+  } else if (req.url === '/state' && req.method === 'GET') {
+    // Debug endpoint: Full bot state
+    try {
+      const state = {
+        version: BOT_VERSION,
+        uptime: Math.floor((Date.now() - startTime) / 1000),
+        memory: process.memoryUsage(),
+        env: {
+          STRATEGY_ENABLED: process.env.STRATEGY_ENABLED || 'not set',
+          SUPABASE_URL: process.env.SUPABASE_URL ? 'set' : 'not set',
+          SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'set' : 'not set',
+          TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN ? 'set' : 'not set',
+          TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID ? 'set' : 'not set'
+        },
+        files: {
+          env_runtime: fs.existsSync('/app/data/.env.runtime'),
+          start_signal: fs.existsSync('/app/data/START_SIGNAL'),
+          strategy_state: fs.existsSync('/app/data/strategy-state.json'),
+          trades: fs.existsSync('/app/data/trades.json')
+        }
+      };
+      
+      // Check exchange credentials in env
+      const exchanges = ['BINANCE', 'OKX', 'BYBIT', 'BITGET', 'KUCOIN', 'MEXC', 'GATEIO', 'HYPERLIQUID'];
+      state.exchange_credentials = {};
+      exchanges.forEach(ex => {
+        state.exchange_credentials[ex] = {
+          api_key: process.env[ex + '_API_KEY'] ? 'set' : 'not set',
+          api_secret: process.env[ex + '_API_SECRET'] ? 'set' : 'not set'
+        };
+      });
+      
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, state, timestamp: Date.now() }));
+    } catch (err) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
   } else {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not found' }));
