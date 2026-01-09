@@ -162,6 +162,8 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
   const [runningProfit, setRunningProfit] = useState(0);
   const [errorHistory, setErrorHistory] = useState<EnhancedError[]>([]);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+  const [showLiveConfirmation, setShowLiveConfirmation] = useState(false);
+  const [vpsHealthy, setVpsHealthy] = useState(false);
   const tradeFeedRef = useRef<HTMLDivElement>(null);
 
   // Fetch progress data on modal open
@@ -179,6 +181,8 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
       setRunningProfit(0);
       setErrorHistory([]);
       setShowTechnicalDetails(false);
+      setShowLiveConfirmation(false);
+      setVpsHealthy(false);
       
       // Fetch unlock status
       const fetchProgress = async () => {
@@ -653,6 +657,21 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
     runSimulation();
   };
 
+  // VPS health check and confirmation for live trading
+  const handleLiveConfirmation = async () => {
+    // Check VPS health before showing confirmation
+    const { data: vpsConfig } = await supabase
+      .from('vps_config')
+      .select('outbound_ip, status')
+      .eq('status', 'running')
+      .not('outbound_ip', 'is', null)
+      .limit(1);
+    
+    const hasVps = !!vpsConfig?.length;
+    setVpsHealthy(hasVps);
+    setShowLiveConfirmation(true);
+  };
+
   const progress = ((currentStageIndex + 1) / stages.length) * 100;
   const overallProgress = (tradeCount / totalTradesTarget) * 100;
 
@@ -660,7 +679,7 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
   const isPaperLocked = !progressData.paperUnlocked;
   const isLiveLocked = !progressData.liveUnlocked;
   const simulationTradesRemaining = Math.max(0, 20 - progressData.simulationTrades);
-  const paperTradesRemaining = Math.max(0, 50 - progressData.paperTrades);
+  const paperTradesRemaining = Math.max(0, 20 - progressData.paperTrades);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -884,7 +903,7 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
                   )}
                 </div>
 
-                {config.tradingMode === 'live' && (
+                {config.tradingMode === 'live' && !showLiveConfirmation && (
                   <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
                     <p className="text-xs text-destructive flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4" />
@@ -893,10 +912,68 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
                   </div>
                 )}
 
-                <Button onClick={runSimulation} className="w-full" size="lg" variant={config.tradingMode === 'live' ? 'destructive' : 'default'}>
-                  <Zap className="w-4 h-4 mr-2" />
-                  Run {totalTradesTarget} {config.tradingMode === 'simulation' ? 'Simulations' : config.tradingMode === 'paper' ? 'Paper Trades' : 'Live Trades'}
-                </Button>
+                {/* Live Trading Confirmation Dialog */}
+                {config.tradingMode === 'live' && showLiveConfirmation && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 rounded-lg bg-destructive/20 border-2 border-destructive space-y-3"
+                  >
+                    <div className="flex items-center gap-2 text-destructive font-semibold">
+                      <AlertTriangle className="w-5 h-5" />
+                      Confirm Live Trading
+                    </div>
+                    <div className="text-sm space-y-2">
+                      <p>You are about to execute <strong>{totalTradesTarget} real trades</strong> with:</p>
+                      <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
+                        <li>Strategy: {STRATEGIES.find(s => s.id === config.strategy)?.name}</li>
+                        <li>Position Size: ${config.amountPerPosition}</li>
+                        <li>Profit Target: ${config.profitTarget}</li>
+                        {config.useLeverage && <li>Leverage: {config.leverageAmount}x</li>}
+                      </ul>
+                      {vpsHealthy ? (
+                        <p className="text-success text-xs flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> VPS connected and healthy
+                        </p>
+                      ) : (
+                        <p className="text-destructive text-xs flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" /> VPS required for some exchanges
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setShowLiveConfirmation(false)}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        onClick={runSimulation}
+                        className="flex-1"
+                      >
+                        <Zap className="w-4 h-4 mr-1" />
+                        Confirm & Execute
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {(!showLiveConfirmation || config.tradingMode !== 'live') && (
+                  <Button 
+                    onClick={config.tradingMode === 'live' ? handleLiveConfirmation : runSimulation} 
+                    className="w-full" 
+                    size="lg" 
+                    variant={config.tradingMode === 'live' ? 'destructive' : 'default'}
+                  >
+                    <Zap className="w-4 h-4 mr-2" />
+                    Run {totalTradesTarget} {config.tradingMode === 'simulation' ? 'Simulations' : config.tradingMode === 'paper' ? 'Paper Trades' : 'Live Trades'}
+                  </Button>
+                )}
               </motion.div>
             )}
 
