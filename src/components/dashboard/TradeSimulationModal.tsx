@@ -164,7 +164,9 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const [showLiveConfirmation, setShowLiveConfirmation] = useState(false);
   const [vpsHealthy, setVpsHealthy] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(120); // Countdown timer
   const tradeFeedRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Fetch progress data on modal open
   useEffect(() => {
@@ -252,29 +254,53 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
     setCompletedTrades([]);
     setRunningProfit(0);
     setErrorHistory([]);
+    setTimeRemaining(120);
+    
+    // Create abort controller for cancellation
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
     
     const allStageMetrics: Record<string, number[]> = {};
     let totalProfit = 0;
 
-    // Global 60-second timeout for 10-trade loop
+    // Countdown timer interval
+    const countdownInterval = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownInterval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Global 120-second timeout for 10-trade loop (increased from 60s)
     const globalTimeout = setTimeout(() => {
-      console.error('[Simulation] Global timeout reached after 60s');
+      console.error('[Simulation] Global timeout reached after 120s');
+      abortControllerRef.current?.abort(); // Abort the trade loop
+      clearInterval(countdownInterval);
       const timeoutError: EnhancedError = {
         stage: 'timeout',
         errorCode: 'GLOBAL_TIMEOUT',
-        message: 'Simulation timed out after 60 seconds',
-        fix: 'Check your network connection and try again',
+        message: 'Simulation timed out after 120 seconds',
+        fix: 'Check your network connection and try again. The simulation will resume from the last successful trade.',
         timestamp: new Date(),
         tradeNumber: tradeCount
       };
       setErrorInfo(timeoutError);
       setErrorHistory(prev => [...prev, timeoutError]);
       setMode('error');
-    }, 60000);
+    }, 120000);
 
     try {
       // Run 10 trades in loop
       for (let tradeNum = 1; tradeNum <= totalTradesTarget; tradeNum++) {
+        // Check if aborted before each trade
+        if (signal.aborted) {
+          console.log('[Simulation] Aborted by timeout or user');
+          break;
+        }
+        
         const tradeStartTime = Date.now();
         setTradeCount(tradeNum);
         console.log(`[Simulation] Starting trade ${tradeNum}/${totalTradesTarget}`);
@@ -477,6 +503,12 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
             };
             setErrorHistory(prev => [...prev, enhancedError]);
             toast.error(`Trade ${tradeNum}: ${rpcError.message}`);
+          } else {
+            // CRITICAL: Update progressData immediately after successful RPC
+            setProgressData(prev => ({ 
+              ...prev, 
+              simulationTrades: prev.simulationTrades + 1 
+            }));
           }
           
           if (unlocked) {
@@ -519,6 +551,12 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
             };
             setErrorHistory(prev => [...prev, enhancedError]);
             toast.error(`Trade ${tradeNum}: ${rpcError.message}`);
+          } else {
+            // CRITICAL: Update progressData immediately after successful RPC
+            setProgressData(prev => ({ 
+              ...prev, 
+              paperTrades: prev.paperTrades + 1 
+            }));
           }
           
           if (unlocked) {
@@ -538,6 +576,37 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
             setShowUnlockPopup('live');
             setProgressData(prev => ({ ...prev, liveUnlocked: true }));
           }
+        } else if (config.tradingMode === 'live') {
+          // LIVE MODE: Record real trade to database
+          console.log('[Live] Recording live trade with profit:', profitAmount);
+          
+          // Record to trading_journal with paper_trade: false
+          await supabase.from('trading_journal').insert({
+            exchange: simulationData.exchange || 'unknown',
+            symbol: simulationData.symbol || 'BTC/USDT',
+            side: simulationData.side === 'long' ? 'buy' : 'sell',
+            entry_price: entryPriceForCalc,
+            exit_price: exitPrice,
+            quantity: config.amountPerPosition / entryPriceForCalc,
+            pnl: profitAmount,
+            status: 'closed',
+            closed_at: new Date().toISOString(),
+            ai_reasoning: `Live trade via ${config.strategy} strategy`,
+            paper_trade: false
+          });
+          
+          // Record execution metrics
+          const tradeDurationMs = Date.now() - tradeStartTime;
+          await supabase.from('trade_execution_metrics').insert({
+            exchange: simulationData.exchange || 'unknown',
+            symbol: simulationData.symbol || 'BTC/USDT',
+            order_type: 'market',
+            execution_time_ms: tradeDurationMs,
+            order_placed_at: new Date(tradeStartTime).toISOString(),
+            order_filled_at: new Date().toISOString()
+          });
+          
+          console.log('[Live] Trade recorded to trading_journal and trade_execution_metrics');
         }
         
         await new Promise(r => setTimeout(r, 100));
@@ -628,12 +697,14 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
       }
 
       clearTimeout(globalTimeout);
+      clearInterval(countdownInterval);
       setSimulationData(prev => ({ ...prev, pnl: totalProfit }));
       setMode('success');
       toast.success(`${totalTradesTarget} trades completed! Total profit: $${totalProfit.toFixed(2)}`);
 
     } catch (err: unknown) {
       clearTimeout(globalTimeout);
+      clearInterval(countdownInterval);
       const error = err as EnhancedError;
       const enhancedError: EnhancedError = {
         stage: error.stage || 'unknown',
@@ -689,9 +760,24 @@ Hint: ${errorInfo.technicalDetails.hint || 'N/A'}
             <Zap className="w-5 h-5 text-primary" />
             Trade Simulation
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="flex items-center gap-2">
             {mode === 'config' && 'Configure and run a simulated trade to test the system'}
-            {mode === 'simulating' && `Running trade ${tradeCount}/${totalTradesTarget}...`}
+            {mode === 'simulating' && (
+              <>
+                <span>Running trade {tradeCount}/{totalTradesTarget}...</span>
+                <Badge variant="outline" className="ml-2">
+                  <Clock className="w-3 h-3 mr-1" />
+                  {timeRemaining}s
+                </Badge>
+                <Badge variant="secondary" className="ml-1">
+                  {config.tradingMode === 'simulation' 
+                    ? `${progressData.simulationTrades}/20` 
+                    : config.tradingMode === 'paper'
+                      ? `${progressData.paperTrades}/20`
+                      : 'Live'}
+                </Badge>
+              </>
+            )}
             {mode === 'success' && 'Simulation completed successfully!'}
             {mode === 'error' && 'Simulation encountered an error'}
           </DialogDescription>
