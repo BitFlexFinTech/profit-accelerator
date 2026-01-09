@@ -123,13 +123,15 @@ export function useSystemStatus() {
       }
     }, 30000);
 
-    // Subscribe to realtime changes
+    // Subscribe to realtime changes - include hft_deployments and trading_config for bot status
     const channel = supabase
       .channel('system-status-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_config' }, handleRealtimeChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exchange_connections' }, handleRealtimeChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_config' }, handleRealtimeChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vps_metrics' }, handleRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hft_deployments' }, handleRealtimeChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_config' }, handleRealtimeChange)
       .subscribe();
 
     return () => {
