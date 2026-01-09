@@ -687,6 +687,34 @@ serve(async (req) => {
         console.log('[ai-analyze] Daily reset check error:', e);
       }
       
+      // CAPACITY CHECK: Verify we have available AI providers before scanning
+      const now = new Date();
+      const { data: availableProviders } = await supabase
+        .from('ai_providers')
+        .select('provider_name, daily_usage, rate_limit_rpd, cooldown_until, is_enabled')
+        .eq('is_enabled', true);
+      
+      const readyProviders = (availableProviders || []).filter(p => {
+        const hasCapacity = p.daily_usage < (p.rate_limit_rpd || 1000) * 0.95;
+        const notInCooldown = !p.cooldown_until || new Date(p.cooldown_until) < now;
+        const hasKey = !!Deno.env.get(AI_PROVIDER_CONFIG[p.provider_name]?.envKey || '');
+        return hasCapacity && notInCooldown && hasKey;
+      });
+      
+      if (readyProviders.length === 0) {
+        console.error('[ai-analyze] No AI providers available - all at capacity or in cooldown');
+        const nextReset = new Date();
+        nextReset.setUTCHours(nextReset.getUTCHours() + 1, 0, 0, 0);
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'All AI providers at capacity',
+          availableProviders: 0,
+          nextAvailableIn: Math.ceil((nextReset.getTime() - now.getTime()) / 60000) + ' minutes'
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      
+      console.log(`[ai-analyze] ${readyProviders.length} providers ready:`, readyProviders.map(p => p.provider_name));
+      
       // Get ALL connected exchanges
       const { data: exchanges } = await supabase
         .from('exchange_connections')
