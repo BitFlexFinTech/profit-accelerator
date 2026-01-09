@@ -173,6 +173,7 @@ export type Database = {
           border_class: string
           color_class: string
           color_hex: string
+          cooldown_until: string | null
           created_at: string | null
           current_usage: number | null
           daily_usage: number | null
@@ -204,6 +205,7 @@ export type Database = {
           border_class: string
           color_class: string
           color_hex: string
+          cooldown_until?: string | null
           created_at?: string | null
           current_usage?: number | null
           daily_usage?: number | null
@@ -235,6 +237,7 @@ export type Database = {
           border_class?: string
           color_class?: string
           color_hex?: string
+          cooldown_until?: string | null
           created_at?: string | null
           current_usage?: number | null
           daily_usage?: number | null
