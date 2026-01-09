@@ -15,6 +15,8 @@ interface SystemStatus {
   };
   isFullyOperational: boolean;
   isLoading: boolean;
+  lastHealthCheck: Date | null;
+  isHealthChecking: boolean;
 }
 
 const initialStatus: SystemStatus = {
@@ -23,7 +25,14 @@ const initialStatus: SystemStatus = {
   vps: { status: 'inactive', region: 'ap-northeast-1', ip: null, provider: null, botStatus: 'idle', healthStatus: 'unknown' },
   isFullyOperational: false,
   isLoading: true,
+  lastHealthCheck: null,
+  isHealthChecking: false,
 };
+
+// Polling intervals
+const HEALTHY_POLL_INTERVAL = 30000; // 30 seconds when healthy
+const ERROR_POLL_INTERVAL = 10000;   // 10 seconds after error (faster recovery)
+const MAX_RETRIES = 3;
 
 export function useSystemStatus() {
   const [status, setStatus] = useState<SystemStatus>(initialStatus);
@@ -33,6 +42,9 @@ export function useSystemStatus() {
   const fetchingRef = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryCountRef = useRef(0);
+  const currentIntervalRef = useRef(HEALTHY_POLL_INTERVAL);
 
   const fetchStatus = useCallback(async () => {
     if (fetchingRef.current || !mountedRef.current) return;
@@ -109,6 +121,8 @@ export function useSystemStatus() {
           connectedExchanges.length > 0 && 
           isRunning,
         isLoading: false,
+        lastHealthCheck: status.lastHealthCheck,
+        isHealthChecking: status.isHealthChecking,
       };
 
       // Show toast notifications for important state changes
@@ -146,25 +160,81 @@ export function useSystemStatus() {
     } finally {
       fetchingRef.current = false;
     }
-  }, []);
+  }, [status.lastHealthCheck, status.isHealthChecking]);
 
   const checkVpsHealth = useCallback(async () => {
     if (!mountedRef.current) return;
     
-    try {
-      const { error } = await supabase.functions.invoke('check-vps-health');
-      if (error) {
-        console.error('[useSystemStatus] Health check error:', error);
+    setStatus(prev => ({ ...prev, isHealthChecking: true }));
+    
+    let success = false;
+    let retries = 0;
+    
+    // Retry logic with exponential backoff
+    while (retries < MAX_RETRIES && !success && mountedRef.current) {
+      try {
+        const { error } = await supabase.functions.invoke('check-vps-health');
+        if (error) {
+          console.error(`[useSystemStatus] Health check error (attempt ${retries + 1}):`, error);
+          retries++;
+          if (retries < MAX_RETRIES) {
+            // Exponential backoff: 1s, 2s, 4s
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries - 1)));
+          }
+        } else {
+          success = true;
+          retryCountRef.current = 0;
+        }
+      } catch (err) {
+        console.error(`[useSystemStatus] Health check failed (attempt ${retries + 1}):`, err);
+        retries++;
+        if (retries < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries - 1)));
+        }
       }
-    } catch (err) {
-      console.error('[useSystemStatus] Health check failed:', err);
     }
     
-    // Always refetch after health check
     if (mountedRef.current) {
+      const now = new Date();
+      setStatus(prev => ({ 
+        ...prev, 
+        lastHealthCheck: now,
+        isHealthChecking: false 
+      }));
+      
+      // Adjust polling interval based on success/failure
+      if (!success) {
+        retryCountRef.current++;
+        // Switch to faster polling after error
+        if (currentIntervalRef.current !== ERROR_POLL_INTERVAL) {
+          currentIntervalRef.current = ERROR_POLL_INTERVAL;
+          updateHealthCheckInterval();
+        }
+      } else {
+        // Switch back to normal polling after success
+        if (currentIntervalRef.current !== HEALTHY_POLL_INTERVAL) {
+          currentIntervalRef.current = HEALTHY_POLL_INTERVAL;
+          updateHealthCheckInterval();
+        }
+      }
+      
       await fetchStatus();
     }
   }, [fetchStatus]);
+
+  // Update health check interval dynamically
+  const updateHealthCheckInterval = useCallback(() => {
+    if (healthIntervalRef.current) {
+      clearInterval(healthIntervalRef.current);
+    }
+    if (mountedRef.current) {
+      healthIntervalRef.current = setInterval(() => {
+        if (mountedRef.current) {
+          checkVpsHealth();
+        }
+      }, currentIntervalRef.current);
+    }
+  }, [checkVpsHealth]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -191,12 +261,12 @@ export function useSystemStatus() {
       }
     }, 1000);
 
-    // Auto-refresh health every 30 seconds
-    const healthInterval = setInterval(() => {
+    // Auto-refresh health with adaptive interval
+    healthIntervalRef.current = setInterval(() => {
       if (mountedRef.current) {
         checkVpsHealth();
       }
-    }, 30000);
+    }, currentIntervalRef.current);
 
     // Subscribe to realtime changes - include all VPS-related tables
     const channel = supabase
@@ -213,7 +283,9 @@ export function useSystemStatus() {
     return () => {
       mountedRef.current = false;
       clearTimeout(healthCheckTimeout);
-      clearInterval(healthInterval);
+      if (healthIntervalRef.current) {
+        clearInterval(healthIntervalRef.current);
+      }
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -221,5 +293,9 @@ export function useSystemStatus() {
     };
   }, [fetchStatus, checkVpsHealth]);
 
-  return { ...status, refetch: fetchStatus, checkHealth: checkVpsHealth };
+  return { 
+    ...status, 
+    refetch: fetchStatus, 
+    checkHealth: checkVpsHealth,
+  };
 }
