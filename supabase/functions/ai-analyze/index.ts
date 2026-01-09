@@ -559,6 +559,34 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Manual reset of all daily limits (admin action from AI Provider Health Dashboard)
+    if (action === 'reset-daily-limits') {
+      console.log('[ai-analyze] Resetting all AI provider daily limits');
+      
+      const { error } = await supabase
+        .from('ai_providers')
+        .update({ 
+          daily_usage: 0, 
+          current_usage: 0,
+          cooldown_until: null,
+          error_count: 0,
+          last_daily_reset_at: new Date().toISOString() 
+        })
+        .neq('provider_name', '');
+      
+      if (error) {
+        console.log('[ai-analyze] Reset error:', error);
+        return new Response(JSON.stringify({ success: false, error: error.message }), 
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      
+      console.log('[ai-analyze] All provider daily limits reset successfully');
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: 'All provider daily limits reset' 
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     if (action === 'validate-key') {
       const validation = await validateProviderKey(targetProvider || 'groq');
       return new Response(JSON.stringify({ success: validation.valid, error: validation.error }), 
