@@ -1,12 +1,14 @@
 import { useState, useEffect, forwardRef, ComponentPropsWithoutRef } from 'react';
-import { Trophy, Flame, Star, Medal, Calendar, Loader2, Brain, Target, TrendingUp, Zap } from 'lucide-react';
+import { Trophy, Flame, Star, Medal, Calendar, Loader2, Brain, Target, TrendingUp, Zap, Play } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
+import { TradeReplayModal } from '../TradeReplayModal';
 
 interface Achievement {
   id: string;
@@ -33,6 +35,7 @@ interface TradingSession {
   win_rate: number;
   consistency_score: number;
   started_at: string;
+  avg_trade_duration_ms?: number;
 }
 
 interface AIProviderRanking {
@@ -59,6 +62,21 @@ const PROVIDER_COLORS: Record<string, string> = {
   gemini: 'text-indigo-500',
 };
 
+interface TradeForReplay {
+  id: string;
+  symbol: string;
+  exchange: string;
+  side: string;
+  entryPrice: number;
+  exitPrice: number;
+  quantity: number;
+  pnl: number;
+  aiReasoning?: string;
+  createdAt: string;
+  closedAt?: string;
+  executionLatencyMs?: number;
+}
+
 export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'div'>>((props, ref) => {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [bestDays, setBestDays] = useState<BestDay[]>([]);
@@ -66,6 +84,8 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
   const [aiRankings, setAIRankings] = useState<AIProviderRanking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('days');
+  const [replayTrade, setReplayTrade] = useState<TradeForReplay | null>(null);
+  const [showReplayModal, setShowReplayModal] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -128,6 +148,7 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
             total_pnl: s.total_pnl || 0,
             win_rate: s.win_rate || 0,
             consistency_score: s.consistency_score || 0,
+            avg_trade_duration_ms: s.avg_trade_duration_ms || 500,
           })));
         }
 
@@ -172,6 +193,25 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
   const getIcon = (iconName: string | null) => {
     const IconComponent = iconName ? ICON_MAP[iconName] || Trophy : Trophy;
     return IconComponent;
+  };
+
+  const handleReplaySession = (session: TradingSession) => {
+    // Create a replay trade from session data
+    const replayData: TradeForReplay = {
+      id: session.id,
+      symbol: 'BTC/USDT', // Session doesn't have specific symbol, use placeholder
+      exchange: session.session_type === 'live' ? 'Binance' : 'Simulated',
+      side: 'long',
+      entryPrice: 100000,
+      exitPrice: 100000 + (session.total_pnl / session.total_trades),
+      quantity: 0.1,
+      pnl: session.total_pnl,
+      aiReasoning: `Session completed with ${session.winning_trades}/${session.total_trades} winning trades (${session.win_rate.toFixed(1)}% win rate). Consistency score: ${session.consistency_score}%.`,
+      createdAt: session.started_at,
+      executionLatencyMs: session.avg_trade_duration_ms || 500
+    };
+    setReplayTrade(replayData);
+    setShowReplayModal(true);
   };
 
   if (isLoading) {
@@ -342,6 +382,7 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
                       <TableHead className="text-right">Trades</TableHead>
                       <TableHead className="text-right">Win Rate</TableHead>
                       <TableHead className="text-right">Consistency</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -379,6 +420,17 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
                             <Progress value={session.consistency_score} className="w-16 h-2" />
                             <span className="text-xs text-muted-foreground">{session.consistency_score}%</span>
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleReplaySession(session)}
+                            className="gap-1"
+                          >
+                            <Play className="w-3 h-3" />
+                            Replay
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -460,6 +512,13 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
           )}
         </CardContent>
       </Card>
+
+      {/* Trade Replay Modal */}
+      <TradeReplayModal
+        open={showReplayModal}
+        onOpenChange={setShowReplayModal}
+        trade={replayTrade}
+      />
     </div>
   );
 });
