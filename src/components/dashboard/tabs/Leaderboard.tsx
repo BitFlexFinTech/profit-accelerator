@@ -370,7 +370,19 @@ export const Leaderboard = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<'
                 <div className="text-center py-8 text-muted-foreground">
                   <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-20" />
                   <p className="text-sm">No trading sessions yet</p>
-                  <p className="text-xs mt-1">Complete trading sessions to see rankings</p>
+                  <p className="text-xs mt-1">Run a simulation to create your first session</p>
+                  <Button 
+                    variant="default" 
+                    size="sm" 
+                    className="mt-4 gap-2"
+                    onClick={() => {
+                      // Dispatch custom event to open simulation modal
+                      window.dispatchEvent(new CustomEvent('open-simulation-modal'));
+                    }}
+                  >
+                    <Play className="w-4 h-4" />
+                    Run Simulation
+                  </Button>
                 </div>
               ) : (
                 <Table>

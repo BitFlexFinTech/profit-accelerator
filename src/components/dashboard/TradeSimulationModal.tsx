@@ -356,36 +356,52 @@ export function TradeSimulationModal({ open, onOpenChange }: TradeSimulationModa
         
         // Call RPC to increment trade count based on mode
         if (config.tradingMode === 'simulation') {
+          console.log('[Simulation] Calling increment_simulation_trade RPC with profit:', profitAmount);
           const { data: unlocked, error: rpcError } = await supabase.rpc('increment_simulation_trade', { profit: profitAmount });
+          console.log('[Simulation] RPC result:', { unlocked, error: rpcError?.message });
           if (rpcError) {
-            console.error('[Simulation] RPC error:', rpcError);
+            console.error('[Simulation] RPC error details:', rpcError.message, rpcError.details, rpcError.hint);
+            toast.error(`Failed to record trade: ${rpcError.message}`);
           }
           if (unlocked) {
-            // Insert unlock notification
-            await supabase.from('system_notifications').insert({
+            console.log('[Simulation] Paper trading unlocked! Inserting notification...');
+            const { error: notifError } = await supabase.from('system_notifications').insert({
               type: 'mode_unlock',
               title: 'Paper Trading Unlocked!',
               message: 'Congratulations! You completed 20 profitable simulation trades. Paper trading is now available.',
-              severity: 'success',
-              category: 'achievement'
+              severity: 'achievement',
+              category: 'unlock'
             });
+            if (notifError) {
+              console.error('[Simulation] Failed to insert unlock notification:', notifError);
+            } else {
+              console.log('[Simulation] Unlock notification inserted successfully');
+            }
             setShowUnlockPopup('paper');
             setProgressData(prev => ({ ...prev, paperUnlocked: true }));
           }
         } else if (config.tradingMode === 'paper') {
+          console.log('[Simulation] Calling increment_paper_trade_v2 RPC with profit:', profitAmount);
           const { data: unlocked, error: rpcError } = await supabase.rpc('increment_paper_trade_v2', { profit: profitAmount });
+          console.log('[Simulation] RPC result:', { unlocked, error: rpcError?.message });
           if (rpcError) {
-            console.error('[Simulation] RPC error:', rpcError);
+            console.error('[Simulation] RPC error details:', rpcError.message, rpcError.details, rpcError.hint);
+            toast.error(`Failed to record trade: ${rpcError.message}`);
           }
           if (unlocked) {
-            // Insert unlock notification
-            await supabase.from('system_notifications').insert({
+            console.log('[Simulation] Live trading unlocked! Inserting notification...');
+            const { error: notifError } = await supabase.from('system_notifications').insert({
               type: 'mode_unlock',
               title: 'Live Trading Unlocked!',
               message: 'Congratulations! You completed 50 profitable paper trades. Live trading is now available.',
-              severity: 'success',
-              category: 'achievement'
+              severity: 'achievement',
+              category: 'unlock'
             });
+            if (notifError) {
+              console.error('[Simulation] Failed to insert unlock notification:', notifError);
+            } else {
+              console.log('[Simulation] Unlock notification inserted successfully');
+            }
             setShowUnlockPopup('live');
             setProgressData(prev => ({ ...prev, liveUnlocked: true }));
           }
