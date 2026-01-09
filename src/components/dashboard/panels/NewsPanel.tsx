@@ -24,18 +24,18 @@ function analyzeSentiment(title: string): 'bullish' | 'bearish' | 'neutral' {
 
 function SentimentBadge({ sentiment }: { sentiment: 'bullish' | 'bearish' | 'neutral' }) {
   const config = {
-    bullish: { icon: TrendingUp, label: 'BULLISH', className: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-    bearish: { icon: TrendingDown, label: 'BEARISH', className: 'bg-rose-500/20 text-rose-400 border-rose-500/30' },
-    neutral: { icon: Minus, label: 'NEUTRAL', className: 'bg-muted/50 text-muted-foreground border-muted' },
+    bullish: { icon: TrendingUp, color: 'text-emerald-400' },
+    bearish: { icon: TrendingDown, color: 'text-rose-400' },
+    neutral: { icon: Minus, color: 'text-muted-foreground' },
   };
   
-  const { icon: Icon, label, className } = config[sentiment];
+  const { icon: Icon, color } = config[sentiment];
   
+  // Tiny icon-only badge - no text label to save space
   return (
-    <Badge variant="outline" className={cn('text-[6px] px-0.5 py-0 h-3 gap-0.5 transition-all duration-300', className)}>
-      <Icon className="w-2 h-2" />
-      {label}
-    </Badge>
+    <span className={cn('flex-shrink-0', color)}>
+      <Icon className="w-3 h-3" />
+    </span>
   );
 }
 
@@ -111,29 +111,33 @@ export function NewsPanel() {
                         style={{ animationDelay: `${index * 30}ms` }}
                         onClick={() => setSelectedArticle({ title: item.title, url: item.url })}
                       >
-                        <div className="flex items-start gap-2">
+                        <div className="flex items-start gap-3 w-full">
+                          {/* Large Image */}
                           {item.imageUrl && (
                             <img 
                               src={item.imageUrl} 
                               alt=""
-                              className="w-16 h-12 rounded object-cover flex-shrink-0 border border-cyan-400/20"
+                              className="w-24 h-16 rounded-lg object-cover flex-shrink-0 border border-cyan-400/20"
                               onError={(e) => (e.currentTarget.style.display = 'none')}
                             />
                           )}
-                          <SentimentBadge sentiment={sentiment} />
+                          
+                          {/* Content */}
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium leading-tight line-clamp-2 text-cyan-100">
-                              {item.title}
-                            </p>
+                            <div className="flex items-start gap-1">
+                              <SentimentBadge sentiment={sentiment} />
+                              <p className="text-xs font-medium leading-tight line-clamp-2 text-cyan-100">
+                                {item.title}
+                              </p>
+                            </div>
                             <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[9px] text-cyan-400/70">
-                                {item.source}
-                              </span>
+                              <span className="text-[9px] text-cyan-400/70">{item.source}</span>
                               <span className="text-[9px] text-muted-foreground">
                                 • {formatDistanceToNow(item.pubDate, { addSuffix: true })}
                               </span>
                             </div>
                           </div>
+                          
                           <ExternalLink className="w-3 h-3 text-cyan-400/50 flex-shrink-0 mt-0.5" />
                         </div>
                       </Button>
