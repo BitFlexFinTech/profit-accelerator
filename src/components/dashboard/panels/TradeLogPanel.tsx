@@ -33,11 +33,11 @@ export function TradeLogPanel() {
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
   const fetchTrades = async () => {
+    // STRICT RULE: Fetch ALL trades - no limits
     const { data, error } = await supabase
       .from('trading_journal')
       .select('*')
-      .order('created_at', { ascending: false })
-      .limit(20);
+      .order('created_at', { ascending: false });
 
     if (!error && data) {
       setTrades(data as Trade[]);
@@ -58,7 +58,11 @@ export function TradeLogPanel() {
         table: 'trading_journal'
       }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          setTrades(prev => [payload.new as Trade, ...prev.slice(0, 19)]);
+          // STRICT RULE: No slicing - keep ALL trades
+          setTrades(prev => {
+            if (prev.some(t => t.id === (payload.new as Trade).id)) return prev;
+            return [payload.new as Trade, ...prev];
+          });
         } else if (payload.eventType === 'UPDATE') {
           setTrades(prev => prev.map(t => 
             t.id === (payload.new as Trade).id ? payload.new as Trade : t
@@ -111,7 +115,7 @@ export function TradeLogPanel() {
             <Activity className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h3 className="font-semibold">Live Trade Log</h3>
+            <h3 className="font-semibold">Trade Log ({trades.length} trades)</h3>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               Real-time feed • Updated {timeSinceUpdate()}

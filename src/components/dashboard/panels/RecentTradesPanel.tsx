@@ -21,11 +21,11 @@ export function RecentTradesPanel() {
 
   const fetchTrades = useCallback(async () => {
     try {
+      // STRICT RULE: Fetch ALL trades - no limits
       const { data, error } = await supabase
         .from('trading_journal')
         .select('id, symbol, exchange, side, pnl, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       setTrades(data || []);
@@ -78,7 +78,7 @@ export function RecentTradesPanel() {
           <div className="icon-container-pink animate-float">
             <TrendingUp className="w-5 h-5" />
           </div>
-          <h3 className="text-lg font-semibold text-pink-300">Recent Trades</h3>
+          <h3 className="text-lg font-semibold text-pink-300">Recent Trades ({trades.length})</h3>
         </div>
         
         {trades.length === 0 ? (

@@ -20,6 +20,7 @@ export function CompactMetricsBar() {
   const isLive = lastUpdate > Date.now() - 60000; // Consider live if updated in last minute
   
   const [activeTrades, setActiveTrades] = useState(0);
+  const [totalTrades, setTotalTrades] = useState(0);
   const [latestAI, setLatestAI] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
 
@@ -29,13 +30,15 @@ export function CompactMetricsBar() {
     
     const fetchLocalData = async () => {
       try {
-        // Fetch active trades count
+        // STRICT RULE: Fetch ALL trades, not just open
         const { data: trades } = await supabase
           .from('trading_journal')
-          .select('status')
-          .eq('status', 'open');
+          .select('status');
 
-        setActiveTrades(trades?.length || 0);
+        const openCount = trades?.filter(t => t.status === 'open').length || 0;
+        const totalCount = trades?.length || 0;
+        setActiveTrades(openCount);
+        setTotalTrades(totalCount);
 
         // Fetch latest AI insight
         const { data: aiUpdate } = await supabase
@@ -185,9 +188,9 @@ export function CompactMetricsBar() {
           <Skeleton className="h-6 w-12" />
         ) : (
           <div className="flex items-center gap-1">
-            <span className="text-lg font-bold">{activeTrades}</span>
+            <span className="text-lg font-bold">{totalTrades}</span>
             <span className="text-[10px] text-muted-foreground">
-              {activeTrades > 0 ? 'open' : 'none'}
+              ({activeTrades} open)
             </span>
           </div>
         )}

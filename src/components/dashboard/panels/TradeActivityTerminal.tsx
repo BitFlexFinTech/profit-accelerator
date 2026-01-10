@@ -53,13 +53,11 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
 
   const fetchTrades = useCallback(async () => {
     try {
-      const limit = expanded ? 50 : compact ? 10 : 15;
-      
+      // STRICT RULE: Fetch ALL trades - no limits
       const { data: tradesData, error } = await supabase
         .from('trading_journal')
         .select('id, symbol, exchange, side, entry_price, exit_price, quantity, pnl, status, created_at, execution_latency_ms')
-        .order('created_at', { ascending: false })
-        .limit(limit);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       
@@ -70,7 +68,7 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [expanded, compact]);
+  }, []);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -99,7 +97,11 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
           table: 'trading_journal'
         }, (payload) => {
           console.log('[TradeActivityTerminal] New trade received:', payload.new);
-          setTrades(prev => [payload.new as Trade, ...prev].slice(0, expanded ? 50 : 15));
+          // STRICT RULE: No slicing - keep ALL trades, deduplicate
+          setTrades(prev => {
+            if (prev.some(t => t.id === (payload.new as Trade).id)) return prev;
+            return [payload.new as Trade, ...prev];
+          });
         })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
@@ -138,7 +140,7 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
       if (retryTimeout) clearTimeout(retryTimeout);
       if (pollingInterval) clearInterval(pollingInterval);
     };
-  }, [expanded, fetchTrades]);
+  }, [fetchTrades]);
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '--';
@@ -171,7 +173,7 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
             <IconContainer color="green" size="sm">
               <Terminal className="h-3.5 w-3.5" />
             </IconContainer>
-            <CardTitle className="text-sm font-medium">Live Trade Activity</CardTitle>
+            <CardTitle className="text-sm font-medium">Live Trade Activity ({trades.length} trades)</CardTitle>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">

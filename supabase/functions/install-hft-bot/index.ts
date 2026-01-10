@@ -2201,7 +2201,7 @@ async function runPiranha() {
       }
       
       // ═══════════════════════════════════════════════════════════
-      // POSITION MONITORING - Check profit targets (100ms interval)
+      // POSITION MONITORING - Check profit targets AND STOP-LOSS (100ms interval)
       // ═══════════════════════════════════════════════════════════
       for (const position of state.positions) {
         const currentPrice = await fetchPrice(position.exchange, position.symbol);
@@ -2219,16 +2219,31 @@ async function runPiranha() {
         position.currentPrice = currentPrice;
         position.unrealizedPnL = netPnL;
         
-        // Check if profit target reached
-        if (isProfitTargetReached(netPnL, position.isLeverage)) {
+        // ═══════════════════════════════════════════════════════════
+        // STRICT RULE: STOP-LOSS CHECK - Close if loss exceeds threshold
+        // ═══════════════════════════════════════════════════════════
+        const MAX_LOSS_SPOT = -50;      // Close if losing more than $50 on spot
+        const MAX_LOSS_LEVERAGE = -100; // Close if losing more than $100 on leverage
+        const stopLossThreshold = position.isLeverage ? MAX_LOSS_LEVERAGE : MAX_LOSS_SPOT;
+        const stopLossHit = netPnL <= stopLossThreshold;
+        
+        // Check if profit target reached OR stop-loss hit
+        const profitTargetHit = isProfitTargetReached(netPnL, position.isLeverage);
+        const shouldClose = profitTargetHit || stopLossHit;
+        
+        if (shouldClose) {
+          const exitReason = profitTargetHit ? 'PROFIT TARGET' : 'STOP-LOSS';
+          const emoji = profitTargetHit ? '💰' : '🛑';
+          
           console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-          console.log('[🐟 PIRANHA] 💰 PROFIT TARGET HIT - EXECUTING EXIT ORDER');
+          console.log('[🐟 PIRANHA] ' + emoji + ' ' + exitReason + ' HIT - EXECUTING EXIT ORDER');
           console.log('[🐟 PIRANHA]   Symbol: ' + position.symbol);
           console.log('[🐟 PIRANHA]   Exchange: ' + position.exchange.toUpperCase());
           console.log('[🐟 PIRANHA]   Side: ' + position.side.toUpperCase());
           console.log('[🐟 PIRANHA]   Entry: $' + position.entryPrice);
           console.log('[🐟 PIRANHA]   Exit: $' + currentPrice);
           console.log('[🐟 PIRANHA]   Net P&L: $' + netPnL.toFixed(2));
+          console.log('[🐟 PIRANHA]   Exit Reason: ' + exitReason);
           console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
           
           // EXECUTE REAL SELL ORDER TO CLOSE POSITION
@@ -2271,19 +2286,20 @@ async function runPiranha() {
             clientOrderId: position.id + '-exit'
           });
           
-          // Log the completed trade
+          // Log the completed trade - CRITICAL: Record ALL trades including losses
           const completedTrade = {
             ...position,
             exitPrice: exitResult.executedPrice || currentPrice,
             exitTime: new Date().toISOString(),
             netPnL: netPnL,
             status: 'closed',
+            exitReason: exitReason.toLowerCase().replace(' ', '_'),
             exitOrderId: exitResult.orderId,
             exitLatencyMs: exitResult.latencyMs
           };
           logTrade(completedTrade);
           
-          // Sync closed trade to Supabase trading_journal
+          // STRICT RULE: Sync ALL closed trades to Supabase trading_journal (wins AND losses)
           await recordTradeToSupabase(completedTrade, 'closed');
           
           // Close position in Supabase positions table
@@ -2293,7 +2309,7 @@ async function runPiranha() {
           
           // Track live trade progress
           await incrementLiveTradeProgress();
-          console.log('[🐟 PIRANHA] 💰 Live trade closed and synced to dashboard');
+          console.log('[🐟 PIRANHA] ' + (profitTargetHit ? '💰' : '🛑') + ' Trade closed and synced to dashboard');
           
           // Update totals
           state.totalTrades++;
@@ -2304,25 +2320,37 @@ async function runPiranha() {
           
           console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
           console.log('[🐟 PIRANHA] 📊 TRADE COMPLETE');
+          console.log('[🐟 PIRANHA]   Exit Reason: ' + exitReason);
           console.log('[🐟 PIRANHA]   Total trades: ' + state.totalTrades);
           console.log('[🐟 PIRANHA]   Total P&L: $' + state.totalPnL.toFixed(2));
           console.log('[🐟 PIRANHA]   Open positions: ' + state.positions.length);
           console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
           
-          // Send Telegram alert for profit target hit
-          await sendTelegramAlert('💰 <b>TRADE CLOSED - PROFIT!</b>\\n' +
-            '📊 ' + position.symbol + '\\n' +
-            '🏦 Exchange: ' + position.exchange.toUpperCase() + '\\n' +
-            '📈 Side: ' + position.side.toUpperCase() + '\\n' +
-            '💵 P&L: +$' + netPnL.toFixed(2) + '\\n' +
-            '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
-            '✅ Exit: $' + currentPrice.toFixed(4) + '\\n' +
-            '⚡ Latency: ' + exitResult.latencyMs + 'ms');
+          // Send Telegram alert
+          const telegramMessage = profitTargetHit 
+            ? '💰 <b>TRADE CLOSED - PROFIT!</b>\\n' +
+              '📊 ' + position.symbol + '\\n' +
+              '🏦 Exchange: ' + position.exchange.toUpperCase() + '\\n' +
+              '📈 Side: ' + position.side.toUpperCase() + '\\n' +
+              '💵 P&L: +$' + netPnL.toFixed(2) + '\\n' +
+              '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
+              '✅ Exit: $' + currentPrice.toFixed(4) + '\\n' +
+              '⚡ Latency: ' + exitResult.latencyMs + 'ms'
+            : '🛑 <b>TRADE CLOSED - STOP-LOSS!</b>\\n' +
+              '📊 ' + position.symbol + '\\n' +
+              '🏦 Exchange: ' + position.exchange.toUpperCase() + '\\n' +
+              '📉 Side: ' + position.side.toUpperCase() + '\\n' +
+              '💸 Loss: $' + netPnL.toFixed(2) + '\\n' +
+              '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
+              '❌ Exit: $' + currentPrice.toFixed(4) + '\\n' +
+              '⚡ Latency: ' + exitResult.latencyMs + 'ms';
+          
+          await sendTelegramAlert(telegramMessage);
           
           // ═══════════════════════════════════════════════════════════
-          // INSTANT REDEPLOY - Look for next opportunity immediately
+          // INSTANT REDEPLOY - Only after profitable trades
           // ═══════════════════════════════════════════════════════════
-          if (state.positions.length < CONFIG.MAX_CONCURRENT_POSITIONS) {
+          if (profitTargetHit && state.positions.length < CONFIG.MAX_CONCURRENT_POSITIONS) {
             console.log('[🐟 PIRANHA] 🔄 Searching for instant redeploy opportunity...');
             const redeploySignals = await fetchAIRecommendations();
             let bestSignal = redeploySignals.find(s => 
