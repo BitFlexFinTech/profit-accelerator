@@ -44,7 +44,7 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
   const [healthData, setHealthData] = useState<VpsHealthData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const { vpsStatus, syncFromDatabase } = useAppStore();
+  const { syncFromDatabase } = useAppStore();
 
   const fetchHealthData = async () => {
     try {
@@ -70,16 +70,31 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
         ? Math.round(pulseData.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / pulseData.length)
         : 0;
 
-      const providers = ['aws', 'digitalocean', 'vultr', 'contabo', 'oracle', 'gcp', 'alibaba', 'azure'];
+      // CRITICAL FIX: Only show DEPLOYED providers (not all 8!)
+      const { data: hftDeploys } = await supabase
+        .from('hft_deployments')
+        .select('provider, ip_address, status, bot_status, region')
+        .in('status', ['active', 'running']);
+
       const healthList: VpsHealthData[] = [];
 
-      for (const provider of providers) {
+      // Only iterate over deployed providers
+      const deployedProviders = new Set<string>();
+      vpsConfigs?.forEach(c => {
+        if (c.status === 'running') deployedProviders.add(c.provider);
+      });
+      hftDeploys?.forEach(d => {
+        if (d.status === 'active' || d.status === 'running') deployedProviders.add(d.provider.toLowerCase());
+      });
+
+      for (const provider of Array.from(deployedProviders)) {
         const config = vpsConfigs?.find(v => v.provider === provider);
+        const hft = hftDeploys?.find(d => d.provider.toLowerCase() === provider);
         const metrics = metricsData?.find(m => m.provider === provider);
-        const isDeployed = config?.status === 'running';
         
         const statusMap: Record<string, 'healthy' | 'warning' | 'error' | 'offline'> = {
           running: 'healthy',
+          active: 'healthy',
           provisioning: 'warning',
           stopped: 'offline',
           error: 'error',
@@ -87,14 +102,14 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
 
         healthList.push({
           provider,
-          status: config?.status 
-            ? statusMap[config.status] || 'error' 
-            : 'not_deployed',
-          publicIp: config?.outbound_ip || null,
-          region: config?.region || '---',
+          status: hft?.status 
+            ? statusMap[hft.status] || 'healthy'
+            : (config?.status ? statusMap[config.status] || 'error' : 'not_deployed'),
+          publicIp: hft?.ip_address || config?.outbound_ip || null,
+          region: hft?.region || config?.region || '---',
           cpuPercent: metrics?.cpu_percent || 0,
           memoryPercent: metrics?.ram_percent || 0,
-          latencyMs: isDeployed ? avgExchangeLatency : 0,
+          latencyMs: avgExchangeLatency,
           lastHealthCheck: metrics?.recorded_at ? new Date(metrics.recorded_at) : null,
         });
       }
@@ -148,8 +163,9 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
     return 'text-emerald-400';
   };
 
-  const deployedCount = healthData.filter(h => h.status !== 'not_deployed').length;
+  const deployedCount = healthData.length;
   const healthyCount = healthData.filter(h => h.status === 'healthy').length;
+  const noDeployments = deployedCount === 0;
 
   return (
     <div ref={ref} className="glass-card overflow-hidden">
@@ -157,9 +173,15 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-primary animate-blink" />
           <h2 className="font-semibold">VPS Health Monitoring</h2>
-          <span className="text-xs text-muted-foreground px-2 py-0.5 bg-secondary rounded-full">
-            {healthyCount}/{deployedCount} healthy
-          </span>
+          {noDeployments ? (
+            <span className="text-xs text-muted-foreground px-2 py-0.5 bg-secondary rounded-full">
+              No deployments
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground px-2 py-0.5 bg-secondary rounded-full">
+              {healthyCount}/{deployedCount} healthy
+            </span>
+          )}
           <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 rounded">10s refresh</span>
         </div>
         <ActionButton 
@@ -178,12 +200,17 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
       <div className="p-4">
         {isLoading ? (
           <div className="text-center text-muted-foreground py-8">Loading health data...</div>
+        ) : noDeployments ? (
+          <div className="text-center py-8">
+            <Server className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-muted-foreground">No VPS deployed yet</p>
+            <p className="text-xs text-muted-foreground mt-1">Deploy a VPS from Settings to start trading</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             {healthData.map((vps, index) => {
               const colors = PROVIDER_COLORS[vps.provider] || PROVIDER_COLORS.aws;
               const name = PROVIDER_NAMES[vps.provider] || vps.provider.toUpperCase();
-              const isDeployed = vps.status !== 'not_deployed';
 
               return (
                 <div 
@@ -204,77 +231,63 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
                     {getStatusIcon(vps.status)}
                   </div>
 
-                  {isDeployed ? (
-                    <>
-                      {/* IP Address */}
-                      <div className="text-xs text-muted-foreground mb-2">
-                        <span className="font-mono">
-                          {vps.publicIp || 'Provisioning...'}
-                        </span>
+                  {/* IP Address */}
+                  <div className="text-xs text-muted-foreground mb-2">
+                    <span className="font-mono">
+                      {vps.publicIp || 'Provisioning...'}
+                    </span>
+                  </div>
+
+                  {/* Metrics */}
+                  <div className="space-y-2">
+                    {/* CPU */}
+                    <div className="flex items-center gap-2">
+                      <Cpu className="w-3 h-3 text-muted-foreground" />
+                      <div className="flex-1">
+                        <Progress value={vps.cpuPercent} className="h-1.5" />
                       </div>
-
-                      {/* Metrics */}
-                      <div className="space-y-2">
-                        {/* CPU */}
-                        <div className="flex items-center gap-2">
-                          <Cpu className="w-3 h-3 text-muted-foreground" />
-                          <div className="flex-1">
-                            <Progress 
-                              value={vps.cpuPercent} 
-                              className="h-1.5"
-                            />
-                          </div>
-                          <span className={cn(
-                            "text-xs font-mono transition-colors duration-300",
-                            getCpuColor(vps.cpuPercent)
-                          )}>
-                            {vps.cpuPercent}%
-                          </span>
-                        </div>
-
-                        {/* Memory */}
-                        <div className="flex items-center gap-2">
-                          <HardDrive className="w-3 h-3 text-muted-foreground" />
-                          <div className="flex-1">
-                            <Progress 
-                              value={vps.memoryPercent} 
-                              className="h-1.5"
-                            />
-                          </div>
-                          <span className={cn(
-                            "text-xs font-mono transition-colors duration-300",
-                            getCpuColor(vps.memoryPercent)
-                          )}>
-                            {vps.memoryPercent}%
-                          </span>
-                        </div>
-
-                        {/* Latency - VPS→Exchange (HFT-relevant) */}
-                        <div className="flex items-center gap-2">
-                          <Wifi className="w-3 h-3 text-muted-foreground animate-blink" />
-                          <span className="text-xs text-muted-foreground flex-1">VPS→Exchange</span>
-                          <span className={cn(
-                            "text-xs font-mono transition-colors duration-300",
-                            vps.latencyMs < 50 ? 'text-emerald-400' : 
-                            vps.latencyMs < 100 ? 'text-amber-400' : 'text-rose-400'
-                          )}>
-                            {vps.latencyMs > 0 ? `${vps.latencyMs}ms` : '---'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Region */}
-                      <div className="mt-2 pt-2 border-t border-border/50">
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {vps.region}
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="py-4 text-center">
-                      <span className="text-xs text-muted-foreground">Not Deployed</span>
+                      <span className={cn(
+                        "text-xs font-mono transition-colors duration-300",
+                        getCpuColor(vps.cpuPercent)
+                      )}>
+                        {vps.cpuPercent}%
+                      </span>
                     </div>
-                  )}
+
+                    {/* Memory */}
+                    <div className="flex items-center gap-2">
+                      <HardDrive className="w-3 h-3 text-muted-foreground" />
+                      <div className="flex-1">
+                        <Progress value={vps.memoryPercent} className="h-1.5" />
+                      </div>
+                      <span className={cn(
+                        "text-xs font-mono transition-colors duration-300",
+                        getCpuColor(vps.memoryPercent)
+                      )}>
+                        {vps.memoryPercent}%
+                      </span>
+                    </div>
+
+                    {/* Latency - VPS→Exchange (HFT-relevant) */}
+                    <div className="flex items-center gap-2">
+                      <Wifi className="w-3 h-3 text-muted-foreground animate-blink" />
+                      <span className="text-xs text-muted-foreground flex-1">VPS→Exchange</span>
+                      <span className={cn(
+                        "text-xs font-mono transition-colors duration-300",
+                        vps.latencyMs < 50 ? 'text-emerald-400' : 
+                        vps.latencyMs < 100 ? 'text-amber-400' : 'text-rose-400'
+                      )}>
+                        {vps.latencyMs > 0 ? `${vps.latencyMs}ms` : '---'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Region */}
+                  <div className="mt-2 pt-2 border-t border-border/50">
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {vps.region}
+                    </span>
+                  </div>
                 </div>
               );
             })}

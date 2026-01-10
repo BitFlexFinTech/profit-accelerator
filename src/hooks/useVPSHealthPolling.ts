@@ -6,9 +6,12 @@ export interface VPSHealthStatus {
   botStatus: string | null;
   lastVerified: Date | null;
   ipAddress: string | null;
-  latencyMs: number | null;
+  latencyMs: number | null; // Dashboard-to-VPS latency (for health check)
+  tradingLatencyMs: number | null; // VPS-to-Exchange latency (HFT-relevant!)
   healthData: Record<string, unknown> | null;
   desync: boolean; // True if VPS state differs from database
+  provider: string | null;
+  region: string | null;
 }
 
 interface UseVPSHealthPollingOptions {
@@ -25,8 +28,11 @@ export function useVPSHealthPolling(options: UseVPSHealthPollingOptions = {}) {
     lastVerified: null,
     ipAddress: null,
     latencyMs: null,
+    tradingLatencyMs: null,
     healthData: null,
     desync: false,
+    provider: null,
+    region: null,
   });
   const [isPolling, setIsPolling] = useState(false);
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
@@ -62,6 +68,23 @@ export function useVPSHealthPolling(options: UseVPSHealthPollingOptions = {}) {
     return null;
   }, []);
 
+  // Fetch VPS→Exchange trading latency (HFT-relevant)
+  const fetchTradingLatency = useCallback(async (): Promise<number | null> => {
+    try {
+      const { data } = await supabase
+        .from('exchange_pulse')
+        .select('latency_ms')
+        .eq('source', 'vps');
+      
+      if (data && data.length > 0) {
+        return Math.round(data.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / data.length);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   // Poll VPS health
   const pollHealth = useCallback(async () => {
     if (!enabled) return;
@@ -82,11 +105,20 @@ export function useVPSHealthPolling(options: UseVPSHealthPollingOptions = {}) {
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke('bot-control', {
-        body: { action: 'status', deploymentId: deployment.id },
-      });
+      // Fetch trading latency in parallel with health check
+      const [tradingLatency, healthResult] = await Promise.all([
+        fetchTradingLatency(),
+        supabase.functions.invoke('bot-control', {
+          body: { action: 'status', deploymentId: deployment.id },
+        })
+      ]);
 
+      const { data, error } = healthResult;
       const latencyMs = Date.now() - startTime;
+
+      // Extract provider/region from deployment
+      const provider = (deployment as any).provider || null;
+      const region = (deployment as any).region || null;
 
       if (error || !data?.success) {
         setHealth({
@@ -95,8 +127,11 @@ export function useVPSHealthPolling(options: UseVPSHealthPollingOptions = {}) {
           lastVerified: new Date(),
           ipAddress: deployment.ip_address,
           latencyMs,
+          tradingLatencyMs: tradingLatency,
           healthData: null,
           desync: false,
+          provider,
+          region,
         });
         return;
       }
@@ -116,8 +151,11 @@ export function useVPSHealthPolling(options: UseVPSHealthPollingOptions = {}) {
         lastVerified: new Date(),
         ipAddress: data.ipAddress || deployment.ip_address,
         latencyMs,
+        tradingLatencyMs: tradingLatency,
         healthData: data.health || null,
         desync: isDesync,
+        provider,
+        region,
       });
 
       // Auto-sync if desync detected
