@@ -491,7 +491,11 @@ export default function Setup() {
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-400' : 'bg-muted'}`} />
+                          {/* Status dot uses explicit colors */}
+                          <span className={cn(
+                            "w-2 h-2 rounded-full",
+                            isActive ? 'bg-emerald-500' : 'bg-slate-400'
+                          )} />
                           <span className="font-medium">{provider.shortName}</span>
                         </div>
                       </td>
@@ -542,9 +546,11 @@ export default function Setup() {
                         </span>
                       </td>
                       <td className="p-3 text-center">
-                        <div className={`w-3 h-3 rounded-full mx-auto ${
-                          isActive ? 'bg-green-400 animate-pulse' : 'bg-muted'
-                        }`} />
+                        {/* Status dot - only the small dot pulses, using explicit colors */}
+                        <div className={cn(
+                          "w-3 h-3 rounded-full mx-auto",
+                          isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                        )} />
                       </td>
                       <td className="p-3 text-center">
                         <Button

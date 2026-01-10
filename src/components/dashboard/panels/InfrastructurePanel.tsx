@@ -244,12 +244,13 @@ export function InfrastructurePanel() {
     return labels[provider] || provider.slice(0, 3).toUpperCase();
   };
 
+  // Status dot colors - only the small dot pulses, never containers
   const getStatusDot = (status: string) => {
     switch (status) {
       case 'running': return 'bg-emerald-500';
-      case 'deploying': return 'bg-amber-500 animate-pulse';
+      case 'deploying': return 'bg-amber-500'; // Removed animate-pulse from status dot in grid
       case 'error': return 'bg-red-500';
-      default: return 'bg-muted-foreground/30';
+      default: return 'bg-slate-400/30';
     }
   };
 

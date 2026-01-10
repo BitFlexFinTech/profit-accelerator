@@ -317,14 +317,14 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
         {/* Header */}
         <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
           <div className="flex items-center gap-1.5">
-            <div className="p-1 rounded-md bg-purple-500/20 animate-glow-pulse">
+            <div className="p-1 rounded-md bg-purple-500/20">
               <Brain className="w-3.5 h-3.5 text-purple-400" />
             </div>
             <div>
               <h3 className="font-semibold text-xs text-purple-300">AI Market Analysis</h3>
               <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
                 <span className="flex items-center gap-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   LIVE
                 </span>
                 <span className="flex items-center gap-0.5 font-mono text-amber-400">

@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { StatusDot, type StatusDotColor } from '@/components/ui/StatusDot';
 
 export type PulseStatus = 'running' | 'initializing' | 'stopped' | 'unknown';
 
@@ -9,49 +10,20 @@ interface VPSPulseIndicatorProps {
   showLabel?: boolean;
 }
 
-const STATUS_CONFIG = {
-  running: {
-    color: 'bg-success',
-    pulseClass: 'pulse-success',
-    label: 'Running',
-    ringColor: 'ring-success/30',
-  },
-  initializing: {
-    color: 'bg-warning',
-    pulseClass: 'pulse-warning',
-    label: 'Initializing',
-    ringColor: 'ring-warning/30',
-  },
-  stopped: {
-    color: 'bg-destructive',
-    pulseClass: 'pulse-danger',
-    label: 'Stopped',
-    ringColor: 'ring-destructive/30',
-  },
-  unknown: {
-    color: 'bg-muted-foreground',
-    pulseClass: '',
-    label: 'Unknown',
-    ringColor: 'ring-muted-foreground/30',
-  },
+/**
+ * Maps PulseStatus to StatusDot color - using explicit colors
+ */
+const STATUS_CONFIG: Record<PulseStatus, { color: StatusDotColor; label: string }> = {
+  running: { color: 'success', label: 'Running' },
+  initializing: { color: 'warning', label: 'Initializing' },
+  stopped: { color: 'destructive', label: 'Stopped' },
+  unknown: { color: 'muted', label: 'Unknown' },
 };
 
 const SIZE_CONFIG = {
-  sm: {
-    dot: 'w-2 h-2',
-    wrapper: 'w-3 h-3',
-    text: 'text-[10px]',
-  },
-  md: {
-    dot: 'w-3 h-3',
-    wrapper: 'w-4 h-4',
-    text: 'text-xs',
-  },
-  lg: {
-    dot: 'w-4 h-4',
-    wrapper: 'w-5 h-5',
-    text: 'text-sm',
-  },
+  sm: { dotSize: 'xs' as const, text: 'text-[10px]' },
+  md: { dotSize: 'sm' as const, text: 'text-xs' },
+  lg: { dotSize: 'md' as const, text: 'text-sm' },
 };
 
 export function getStatusFromVPS(
@@ -81,6 +53,10 @@ export function getStatusFromVPS(
   }
 }
 
+/**
+ * VPSPulseIndicator - Shows VPS status with a small pulsing dot
+ * STRICT RULE: Only the StatusDot pulses, not the container
+ */
 export function VPSPulseIndicator({
   status,
   latencyMs,
@@ -99,30 +75,15 @@ export function VPSPulseIndicator({
 
   const config = STATUS_CONFIG[effectiveStatus];
   const sizeConfig = SIZE_CONFIG[size];
+  const shouldPulse = effectiveStatus === 'running' || effectiveStatus === 'initializing';
 
   return (
     <div className="flex items-center gap-1.5">
-      <div 
-        className={cn(
-          "relative flex items-center justify-center rounded-full",
-          sizeConfig.wrapper
-        )}
-      >
-        <div
-          className={cn(
-            "absolute inset-0 rounded-full",
-            config.color,
-            config.pulseClass && `${config.pulseClass}`
-          )}
-        />
-        <div
-          className={cn(
-            "relative rounded-full",
-            config.color,
-            sizeConfig.dot
-          )}
-        />
-      </div>
+      <StatusDot 
+        color={config.color} 
+        size={sizeConfig.dotSize} 
+        pulse={shouldPulse}
+      />
       {showLabel && (
         <span className={cn("font-medium", sizeConfig.text)}>
           {config.label}
@@ -132,6 +93,10 @@ export function VPSPulseIndicator({
   );
 }
 
+/**
+ * VPSStatusBadge - Badge with status indicator
+ * STRICT RULE: Only the StatusDot pulses, the badge itself does NOT animate
+ */
 export function VPSStatusBadge({
   status,
   latencyMs,
@@ -142,19 +107,20 @@ export function VPSStatusBadge({
   className?: string;
 }) {
   const config = STATUS_CONFIG[status];
+  const shouldPulse = status === 'running' || status === 'initializing';
   
   return (
     <div
       className={cn(
         "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
-        status === 'running' && "bg-success/10 text-success",
-        status === 'initializing' && "bg-warning/10 text-warning",
-        status === 'stopped' && "bg-destructive/10 text-destructive",
-        status === 'unknown' && "bg-muted text-muted-foreground",
+        status === 'running' && "bg-emerald-500/10 text-emerald-400",
+        status === 'initializing' && "bg-amber-500/10 text-amber-400",
+        status === 'stopped' && "bg-red-500/10 text-red-400",
+        status === 'unknown' && "bg-slate-500/10 text-slate-400",
         className
       )}
     >
-      <VPSPulseIndicator status={status} latencyMs={latencyMs} size="sm" />
+      <StatusDot color={config.color} size="xs" pulse={shouldPulse} />
       <span>{config.label}</span>
       {latencyMs !== undefined && latencyMs > 0 && (
         <span className="text-muted-foreground ml-1">
