@@ -8,7 +8,7 @@ import { NewsPanel } from '../panels/NewsPanel';
 import { InfrastructurePanel } from '../panels/InfrastructurePanel';
 import { AIProviderHealthDashboard } from '../panels/AIProviderHealthDashboard';
 import { UnderwaterPositionsPanel } from '../panels/UnderwaterPositionsPanel';
-import { AutoStartWarningBanner } from '../panels/AutoStartWarningBanner';
+// AutoStartWarningBanner removed - bot auto-start is disabled by design
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
@@ -45,9 +45,6 @@ export function LiveDashboard() {
 
   return (
     <div className="h-full flex flex-col gap-1.5 overflow-hidden">
-      {/* Safety Mode Banner - STRICT RULE: Bot never auto-starts */}
-      <AutoStartWarningBanner />
-      
       {/* Scrolling Price Ticker - Very Top */}
       {isVisible('ticker') && <ScrollingPriceTicker />}
       
@@ -73,32 +70,32 @@ export function LiveDashboard() {
           </div>
         )}
         
-        {/* RIGHT Column - News + Underwater + AI Health + Infrastructure */}
+        {/* RIGHT Column - News (longest) + Smaller panels */}
         <div className="flex flex-col gap-1 min-h-0 h-full">
-          {/* Underwater Positions Panel - CRITICAL monitoring */}
-          {isVisible('underwater') && (
-            <div className="h-[180px] flex-shrink-0">
-              <UnderwaterPositionsPanel />
-            </div>
-          )}
-          
-          {/* News Panel */}
+          {/* News Panel - PRIMARY: Takes most space */}
           {isVisible('news') && (
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-[200px]">
               <NewsPanel />
             </div>
           )}
           
-          {/* AI Provider Health Dashboard */}
+          {/* Underwater Positions Panel - Compact */}
+          {isVisible('underwater') && (
+            <div className="h-[90px] flex-shrink-0">
+              <UnderwaterPositionsPanel />
+            </div>
+          )}
+          
+          {/* AI Provider Health Dashboard - Compact */}
           {isVisible('ai-health') && (
-            <div className="h-[160px] flex-shrink-0">
+            <div className="h-[80px] flex-shrink-0">
               <AIProviderHealthDashboard />
             </div>
           )}
           
-          {/* Infrastructure Panel - Shows latency */}
+          {/* Infrastructure Panel - Compact */}
           {isVisible('infrastructure') && (
-            <div className="h-[160px] flex-shrink-0">
+            <div className="h-[80px] flex-shrink-0">
               <InfrastructurePanel />
             </div>
           )}

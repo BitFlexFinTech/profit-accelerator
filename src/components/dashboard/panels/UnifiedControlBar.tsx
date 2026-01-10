@@ -513,7 +513,7 @@ export function UnifiedControlBar() {
               disabled={isTestingApi}
               className="h-5 px-1.5 text-[9px]"
             >
-              {isTestingApi ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : 'Test'}
+              {isTestingApi ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : 'Ping VPS'}
             </Button>
           </div>
         )}

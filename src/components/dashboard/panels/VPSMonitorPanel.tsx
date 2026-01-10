@@ -163,7 +163,7 @@ export function VPSMonitorPanel() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold">🌏 Contabo Singapore</h3>
+                <h3 className="font-semibold">🌏 {vpsConfig?.provider?.toUpperCase() || 'VPS'}</h3>
                 <span className={cn(
                   "text-xs px-2 py-0.5 rounded-full transition-all duration-300",
                   vpsConfig?.status === 'running' 

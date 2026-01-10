@@ -1,0 +1,46 @@
+import { cn } from '@/lib/utils';
+
+export type StatusDotColor = 'success' | 'warning' | 'destructive' | 'muted' | 'cyan' | 'orange' | 'purple';
+
+interface StatusDotProps {
+  color: StatusDotColor;
+  pulse?: boolean;
+  size?: 'xs' | 'sm' | 'md';
+  className?: string;
+}
+
+const colorClasses: Record<StatusDotColor, string> = {
+  success: 'bg-emerald-500',
+  warning: 'bg-amber-500',
+  destructive: 'bg-red-500',
+  muted: 'bg-muted-foreground',
+  cyan: 'bg-cyan-500',
+  orange: 'bg-orange-500',
+  purple: 'bg-purple-500',
+};
+
+const sizeClasses: Record<'xs' | 'sm' | 'md', string> = {
+  xs: 'w-1.5 h-1.5',
+  sm: 'w-2 h-2',
+  md: 'w-2.5 h-2.5',
+};
+
+/**
+ * StatusDot - A small pulsing dot indicator for connection/health status
+ * 
+ * STRICT RULE: Only this small dot should pulse, NOT the entire card or container.
+ * This component is the standardized way to show status indicators across the app.
+ */
+export function StatusDot({ color, pulse = false, size = 'sm', className }: StatusDotProps) {
+  return (
+    <span
+      className={cn(
+        'inline-block rounded-full flex-shrink-0',
+        sizeClasses[size],
+        colorClasses[color],
+        pulse && 'animate-pulse',
+        className
+      )}
+    />
+  );
+}
