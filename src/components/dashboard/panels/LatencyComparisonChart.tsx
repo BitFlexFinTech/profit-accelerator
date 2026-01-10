@@ -43,30 +43,36 @@ export function LatencyComparisonChart() {
       }
     }
 
-    // Build comparison data
+    // Build comparison data - ONLY real VPS latency, no mock edge data
     const exchanges = ['binance', 'okx', 'bybit', 'bitget', 'kucoin', 'hyperliquid'];
     const comparisonData: LatencyData[] = [];
-    let totalSaved = 0;
 
     for (const exchange of exchanges) {
       const vpsLatency = vpsLatencyMap.get(exchange) || 0;
-      // Edge latency is typically 5-10x higher than VPS
-      const edgeLatency = vpsLatency > 0 ? Math.round(vpsLatency * 6 + Math.random() * 50) : 250;
-      const savings = edgeLatency - vpsLatency;
       
+      // Only show exchanges with REAL measured VPS latency - no fake data
       if (vpsLatency > 0) {
+        // Get edge latency from pulse data if available
+        const pulseEntry = pulseData?.find(p => p.exchange_name === exchange && p.source === 'edge');
+        const edgeLatency = pulseEntry?.latency_ms || 0;
+        
         comparisonData.push({
           exchange: exchange.charAt(0).toUpperCase() + exchange.slice(1),
           vps: Math.round(vpsLatency),
-          edge: edgeLatency,
-          savings: savings
+          edge: edgeLatency, // Real data only, 0 if not available
+          savings: edgeLatency > 0 ? edgeLatency - vpsLatency : 0
         });
-        totalSaved += savings;
       }
     }
 
+    // Calculate average savings only from exchanges with both VPS and edge data
+    const withBothMetrics = comparisonData.filter(d => d.vps > 0 && d.edge > 0);
+    const avgSavings = withBothMetrics.length > 0
+      ? Math.round(withBothMetrics.reduce((sum, d) => sum + d.savings, 0) / withBothMetrics.length)
+      : 0;
+
     setData(comparisonData);
-    setTotalSavings(Math.round(totalSaved / comparisonData.length));
+    setTotalSavings(avgSavings);
   };
 
   if (data.length === 0) {
