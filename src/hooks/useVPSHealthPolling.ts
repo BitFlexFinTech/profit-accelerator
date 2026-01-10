@@ -136,45 +136,49 @@ export function useVPSHealthPolling(options: UseVPSHealthPollingOptions = {}) {
         return;
       }
 
-      // Parse VPS actual status
+      // Parse VPS actual status - now includes 'standby' state
       const vpsActualStatus = data.status || 'unknown';
       const dbStatus = deployment.bot_status || 'unknown';
+      const signalExists = data.signalExists || false;
+      const dockerRunning = data.dockerRunning || false;
       
-      // Check for desync: VPS says running but DB says stopped, or vice versa
-      const isDesync = 
-        (vpsActualStatus === 'running' && dbStatus !== 'running') ||
-        (vpsActualStatus === 'stopped' && dbStatus === 'running');
+      console.log('[VPSHealthPolling] VPS status:', { 
+        vpsActualStatus, 
+        dbStatus, 
+        signalExists, 
+        dockerRunning 
+      });
+      
+      // Check for desync: VPS and DB disagree
+      // Important: 'standby' (docker up, no signal) is NOT the same as 'running'
+      const normalizedVpsStatus = vpsActualStatus === 'standby' ? 'stopped' : vpsActualStatus;
+      const isDesync = normalizedVpsStatus !== dbStatus && 
+        !(normalizedVpsStatus === 'unknown' || dbStatus === 'unknown');
 
       setHealth({
-        status: data.status === 'running' ? 'healthy' : 'unhealthy',
+        status: vpsActualStatus === 'running' ? 'healthy' : 
+                vpsActualStatus === 'standby' ? 'unhealthy' : 'unhealthy',
         botStatus: vpsActualStatus,
         lastVerified: new Date(),
         ipAddress: data.ipAddress || deployment.ip_address,
         latencyMs,
         tradingLatencyMs: tradingLatency,
-        healthData: data.health || null,
+        healthData: { 
+          ...data.health, 
+          signalExists, 
+          dockerRunning 
+        },
         desync: isDesync,
         provider,
         region,
       });
 
-      // Auto-sync if desync detected
+      // REMOVED: Auto-sync logic that was causing the bug!
+      // DO NOT automatically update database when desync is detected.
+      // The user must manually click to reconcile.
       if (isDesync) {
         console.warn('[VPSHealthPolling] Desync detected! VPS:', vpsActualStatus, 'DB:', dbStatus);
-        
-        // Update database to match VPS reality
-        const updateTime = new Date().toISOString();
-        await supabase.from('hft_deployments')
-          .update({ bot_status: vpsActualStatus, updated_at: updateTime })
-          .eq('id', deployment.id);
-        
-        await supabase.from('trading_config')
-          .update({ 
-            bot_status: vpsActualStatus, 
-            trading_enabled: vpsActualStatus === 'running',
-            updated_at: updateTime 
-          })
-          .neq('id', '00000000-0000-0000-0000-000000000000');
+        console.warn('[VPSHealthPolling] User must manually reconcile - NO auto-sync');
       }
     } catch (err) {
       console.error('[VPSHealthPolling] Error:', err);
