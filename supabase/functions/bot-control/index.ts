@@ -234,7 +234,7 @@ serve(async (req) => {
         command = `
           DOCKER_UP=$(docker ps --filter name=hft-bot --format "{{.Status}}" 2>/dev/null | head -1);
           SIGNAL_EXISTS=$(test -f /opt/hft-bot/app/data/START_SIGNAL && echo "true" || echo "false");
-          HEALTH_OK=$(curl -s http://localhost:8080/health 2>/dev/null | grep -q '"status":"ok"' && echo "true" || echo "false");
+          HEALTH_OK=$(curl -s http://localhost:3000/health 2>/dev/null | grep -q '"status":"ok"' && echo "true" || echo "false");
           echo "DOCKER:$DOCKER_UP|SIGNAL:$SIGNAL_EXISTS|HEALTH:$HEALTH_OK";
           if [ "$SIGNAL_EXISTS" = "true" ] && [ -n "$DOCKER_UP" ]; then
             echo "STATUS:running";
@@ -249,7 +249,7 @@ serve(async (req) => {
         command = 'docker compose -f /opt/hft-bot/docker-compose.yml logs --tail=50 2>/dev/null || docker logs hft-bot --tail=50 2>/dev/null || pm2 logs trading-bot --lines 50 --nostream 2>/dev/null || echo "no_logs"';
         break;
       case 'health':
-        command = 'curl -s http://localhost:8080/health';
+        command = 'curl -s http://localhost:3000/health';
         break;
       default:
         return new Response(
@@ -363,7 +363,7 @@ serve(async (req) => {
           ipAddress,
           command: `
             SIGNAL_OK=$(test -f /opt/hft-bot/app/data/START_SIGNAL && echo "true" || echo "false");
-            HEALTH_OK=$(curl -sf http://localhost:8080/health 2>/dev/null && echo "true" || echo "false");
+            HEALTH_OK=$(curl -sf http://localhost:3000/health 2>/dev/null && echo "true" || echo "false");
             DOCKER_OK=$(docker ps --filter name=hft -q 2>/dev/null | head -1);
             echo "FINAL_CHECK|SIGNAL:$SIGNAL_OK|HEALTH:$HEALTH_OK|DOCKER:$DOCKER_OK"
           `,

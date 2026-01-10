@@ -77,12 +77,12 @@ serve(async (req) => {
     
     // Health check commands - make HTTP request to VPS
     if (command.includes('curl') && command.includes('health')) {
-      console.log(`[ssh-command] Health check via HTTP to ${ipAddress}:8080`);
+      console.log(`[ssh-command] Health check via HTTP to ${ipAddress}`);
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
         
-        const response = await fetch(`http://${ipAddress}:8080/health`, {
+        const response = await fetch(`http://${ipAddress}/health`, {
           signal: controller.signal,
           headers: { 'Accept': 'application/json' }
         });
@@ -128,12 +128,12 @@ serve(async (req) => {
     
     // Docker container check - try HTTP to control API
     if (command.includes('docker ps')) {
-      console.log(`[ssh-command] Container status check via HTTP to ${ipAddress}:8080/status`);
+      console.log(`[ssh-command] Container status check via HTTP to ${ipAddress}/status`);
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
-        const response = await fetch(`http://${ipAddress}:8080/status`, {
+        const response = await fetch(`http://${ipAddress}/status`, {
           signal: controller.signal
         });
         
@@ -172,13 +172,13 @@ serve(async (req) => {
       const isStop = command.includes('down');
       const action = isStart ? 'start' : (isStop ? 'stop' : 'restart');
       
-      console.log(`[ssh-command] Bot ${action} via HTTP to ${ipAddress}:8080/control`);
+      console.log(`[ssh-command] Bot ${action} via HTTP to ${ipAddress}/control`);
       
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
         
-        const response = await fetch(`http://${ipAddress}:8080/control`, {
+        const response = await fetch(`http://${ipAddress}/control`, {
           method: 'POST',
           signal: controller.signal,
           headers: { 
@@ -224,7 +224,7 @@ serve(async (req) => {
           JSON.stringify({
             success: false,
             exitCode: 1,
-            output: `VPS control API not available at ${ipAddress}:8080/control`,
+            output: `VPS control API not available at ${ipAddress}/control`,
             error: `Control API failed: ${errMsg}. Redeploy VPS with updated bot code.`
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

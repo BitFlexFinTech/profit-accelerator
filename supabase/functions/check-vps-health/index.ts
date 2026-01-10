@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const healthUrl = `http://${targetIp}:8080/health`;
+    const healthUrl = `http://${targetIp}/health`;
     console.log(`[check-vps-health] Checking health at: ${healthUrl}`);
 
     const startTime = Date.now();
