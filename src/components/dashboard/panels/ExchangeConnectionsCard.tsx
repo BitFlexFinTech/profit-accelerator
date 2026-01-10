@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Wifi, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle, Edit, Server, Circle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useExchangeStatus, ExchangeConnection } from '@/hooks/useExchangeStatus';
@@ -39,9 +39,9 @@ export function ExchangeConnectionsCard() {
   const [wizardExchangeId, setWizardExchangeId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   
-  // Update "now" every second for freshness display
+  // Update "now" every 10 seconds instead of every second to prevent glitching
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000);
+    const interval = setInterval(() => setNow(Date.now()), 10000);
     return () => clearInterval(interval);
   }, []);
   
@@ -192,12 +192,12 @@ export function ExchangeConnectionsCard() {
       <div className="glass-card card-teal p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <div className="icon-container-teal p-1.5 rounded-md animate-bounce-subtle">
+            <div className="icon-container-teal p-1.5 rounded-md">
               <Wifi className="w-5 h-5 text-teal" />
             </div>
             <h3 className="text-lg font-semibold">Exchange Connections</h3>
             {isVpsActive && (
-              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-accent/20 text-green-accent animate-pulse">
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-accent/20 text-green-accent">
                 <Server className="w-3 h-3" />
                 VPS Active
               </span>

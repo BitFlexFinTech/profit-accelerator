@@ -30,13 +30,15 @@ const initialStatus: SystemStatus = {
 };
 
 // Polling intervals
-const HEALTHY_POLL_INTERVAL = 30000; // 30 seconds when healthy
-const ERROR_POLL_INTERVAL = 10000;   // 10 seconds after error (faster recovery)
+const HEALTHY_POLL_INTERVAL = 60000; // 60 seconds when healthy (increased from 30s)
+const ERROR_POLL_INTERVAL = 30000;   // 30 seconds after error (increased from 10s)
 const MAX_RETRIES = 3;
+const MAX_CONSECUTIVE_FAILURES = 5;  // Stop health checks after this many consecutive failures
 
 export function useSystemStatus() {
   const [status, setStatus] = useState<SystemStatus>(initialStatus);
   const prevStatusRef = useRef<SystemStatus | null>(null);
+  const [healthCheckDisabled, setHealthCheckDisabled] = useState(false);
 
   // Use refs to avoid closure/dependency issues
   const fetchingRef = useRef(false);
@@ -44,6 +46,7 @@ export function useSystemStatus() {
   const mountedRef = useRef(true);
   const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryCountRef = useRef(0);
+  const consecutiveFailuresRef = useRef(0);
   const currentIntervalRef = useRef(HEALTHY_POLL_INTERVAL);
 
   const fetchStatus = useCallback(async () => {
@@ -163,7 +166,7 @@ export function useSystemStatus() {
   }, [status.lastHealthCheck, status.isHealthChecking]);
 
   const checkVpsHealth = useCallback(async () => {
-    if (!mountedRef.current) return;
+    if (!mountedRef.current || healthCheckDisabled) return;
     
     setStatus(prev => ({ ...prev, isHealthChecking: true }));
     
@@ -184,6 +187,7 @@ export function useSystemStatus() {
         } else {
           success = true;
           retryCountRef.current = 0;
+          consecutiveFailuresRef.current = 0;
         }
       } catch (err) {
         console.error(`[useSystemStatus] Health check failed (attempt ${retries + 1}):`, err);
@@ -202,11 +206,22 @@ export function useSystemStatus() {
         isHealthChecking: false 
       }));
       
-      // Adjust polling interval based on success/failure
+      // Track consecutive failures and disable health checks if too many
       if (!success) {
+        consecutiveFailuresRef.current++;
         retryCountRef.current++;
-        // Switch to faster polling after error
-        if (currentIntervalRef.current !== ERROR_POLL_INTERVAL) {
+        
+        // Stop health checks after too many consecutive failures
+        if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+          console.warn('[useSystemStatus] Health checks disabled after repeated failures. Manual retry required.');
+          setHealthCheckDisabled(true);
+          if (healthIntervalRef.current) {
+            clearInterval(healthIntervalRef.current);
+            healthIntervalRef.current = null;
+          }
+          toast.error('VPS health checks disabled due to repeated failures. Check VPS settings.');
+        } else if (currentIntervalRef.current !== ERROR_POLL_INTERVAL) {
+          // Switch to slower error polling
           currentIntervalRef.current = ERROR_POLL_INTERVAL;
           updateHealthCheckInterval();
         }
@@ -220,7 +235,7 @@ export function useSystemStatus() {
       
       await fetchStatus();
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, healthCheckDisabled]);
 
   // Update health check interval dynamically
   const updateHealthCheckInterval = useCallback(() => {
@@ -239,7 +254,7 @@ export function useSystemStatus() {
   useEffect(() => {
     mountedRef.current = true;
 
-    // Debounced fetch handler for realtime events
+    // Debounced fetch handler for realtime events (increased debounce to reduce updates)
     const handleRealtimeChange = () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
@@ -248,7 +263,7 @@ export function useSystemStatus() {
         if (mountedRef.current) {
           fetchStatus();
         }
-      }, 300);
+      }, 500); // Increased from 300ms to 500ms
     };
 
     // Initial fetch
@@ -293,9 +308,20 @@ export function useSystemStatus() {
     };
   }, [fetchStatus, checkVpsHealth]);
 
+  // Manual retry function to re-enable health checks
+  const retryHealthChecks = useCallback(() => {
+    setHealthCheckDisabled(false);
+    consecutiveFailuresRef.current = 0;
+    retryCountRef.current = 0;
+    currentIntervalRef.current = HEALTHY_POLL_INTERVAL;
+    checkVpsHealth();
+  }, [checkVpsHealth]);
+
   return { 
     ...status, 
     refetch: fetchStatus, 
     checkHealth: checkVpsHealth,
+    healthCheckDisabled,
+    retryHealthChecks,
   };
 }
