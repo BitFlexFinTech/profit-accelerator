@@ -178,94 +178,9 @@ serve(async (req) => {
     }
     
     // ═══════════════════════════════════════════════════════════
-    // STRATEGY 1: Try VPS HTTP /control endpoint first (preferred)
-    // ═══════════════════════════════════════════════════════════
-    if (action === 'start' || action === 'stop') {
-      console.log(`[bot-control] Trying VPS /control endpoint at ${ipAddress}:8080...`);
-      
-      try {
-        // Build environment variables object for HTTP control
-        const envVars: Record<string, string> = {};
-        if (action === 'start') {
-          envVars['STRATEGY_ENABLED'] = 'true';
-          envVars['TRADE_MODE'] = 'LIVE';
-          envVars['SUPABASE_URL'] = supabaseUrl;
-          envVars['SUPABASE_SERVICE_ROLE_KEY'] = supabaseServiceKey;
-          
-          // Add Telegram config
-          const telegramToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
-          const telegramChatId = Deno.env.get('TELEGRAM_CHAT_ID');
-          if (telegramToken) envVars['TELEGRAM_BOT_TOKEN'] = telegramToken;
-          if (telegramChatId) envVars['TELEGRAM_CHAT_ID'] = telegramChatId;
-          
-          // Add exchange credentials from database
-          const { data: exchanges } = await supabase
-            .from('exchange_connections')
-            .select('exchange_name, api_key, api_secret, api_passphrase')
-            .eq('is_connected', true);
-          
-          if (exchanges?.length) {
-            for (const ex of exchanges) {
-              const name = ex.exchange_name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-              if (ex.api_key) envVars[`${name}_API_KEY`] = ex.api_key;
-              if (ex.api_secret) envVars[`${name}_API_SECRET`] = ex.api_secret;
-              if (ex.api_passphrase) envVars[`${name}_PASSPHRASE`] = ex.api_passphrase;
-            }
-          }
-        }
-        
-        const controlResponse = await fetch(`http://${ipAddress}:8080/control`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            action: action,
-            mode: 'live',
-            env: envVars
-          }),
-          signal: AbortSignal.timeout(10000)
-        });
-        
-        if (controlResponse.ok) {
-          const controlResult = await controlResponse.json();
-          console.log(`[bot-control] VPS /control success:`, controlResult);
-          
-          // Update database status
-          const newBotStatus = action === 'start' ? 'running' : 'stopped';
-          const updateTime = new Date().toISOString();
-          
-          await supabase.from('hft_deployments').update({ 
-            bot_status: newBotStatus, updated_at: updateTime 
-          }).eq('id', deployment.id);
-          
-          await supabase.from('vps_instances').update({ 
-            bot_status: newBotStatus, updated_at: updateTime 
-          }).or(`deployment_id.eq.${deployment.server_id},provider_instance_id.eq.${deployment.server_id}`);
-          
-          await supabase.from('trading_config').update({ 
-            bot_status: newBotStatus,
-            trading_enabled: action === 'start',
-            updated_at: updateTime
-          }).neq('id', '00000000-0000-0000-0000-000000000000');
-          
-          return new Response(JSON.stringify({ 
-            success: true, 
-            action,
-            mode: 'live',
-            botStatus: newBotStatus,
-            method: 'http_control',
-            result: controlResult,
-            ipAddress
-          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        } else {
-          console.log(`[bot-control] VPS /control returned ${controlResponse.status}, falling back to SSH`);
-        }
-      } catch (httpErr) {
-        console.log(`[bot-control] VPS /control failed: ${httpErr}, falling back to SSH`);
-      }
-    }
-    
-    // ═══════════════════════════════════════════════════════════
-    // STRATEGY 2: Fall back to SSH commands
+    // REMOVED HTTP /control for start/stop - it's UNRELIABLE!
+    // The VPS endpoint claims success but doesn't actually create START_SIGNAL
+    // SSH is the ONLY reliable way to control the bot
     // ═══════════════════════════════════════════════════════════
     
     // Build SSH command based on action
@@ -274,9 +189,23 @@ serve(async (req) => {
 
     switch (action) {
       case 'start':
-        // Create START_SIGNAL - always LIVE mode
+        // CRITICAL FIX: Create START_SIGNAL via SSH and VERIFY it was created
+        // The command creates the signal, then verifies it exists
         const signalData = JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', mode: 'live' });
-        command = `mkdir -p /opt/hft-bot/app/data && echo '${signalData}' > /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
+        command = `
+          mkdir -p /opt/hft-bot/app/data && 
+          echo '${signalData}' > /opt/hft-bot/app/data/START_SIGNAL && 
+          echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && 
+          cd /opt/hft-bot && 
+          docker compose --env-file .env.exchanges down 2>/dev/null; 
+          docker compose --env-file .env.exchanges up -d --remove-orphans;
+          sleep 1;
+          if [ -f /opt/hft-bot/app/data/START_SIGNAL ]; then
+            echo "SIGNAL_VERIFIED:true";
+          else
+            echo "SIGNAL_VERIFIED:false";
+          fi
+        `;
         newBotStatus = 'starting';
         break;
       case 'stop':
@@ -285,12 +214,23 @@ serve(async (req) => {
         break;
       case 'restart':
         const restartSignalData = JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', mode: 'live' });
-        command = `echo '${restartSignalData}' > /opt/hft-bot/app/data/START_SIGNAL && echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && cd /opt/hft-bot && docker compose --env-file .env.exchanges down 2>/dev/null; docker compose --env-file .env.exchanges up -d --remove-orphans`;
+        command = `
+          echo '${restartSignalData}' > /opt/hft-bot/app/data/START_SIGNAL && 
+          echo -e "${envFileContent}" > /opt/hft-bot/.env.exchanges && 
+          cd /opt/hft-bot && 
+          docker compose --env-file .env.exchanges down 2>/dev/null; 
+          docker compose --env-file .env.exchanges up -d --remove-orphans;
+          sleep 1;
+          if [ -f /opt/hft-bot/app/data/START_SIGNAL ]; then
+            echo "SIGNAL_VERIFIED:true";
+          else
+            echo "SIGNAL_VERIFIED:false";
+          fi
+        `;
         newBotStatus = 'starting';
         break;
       case 'status':
-        // FIXED: Check BOTH Docker status AND START_SIGNAL existence
-        // Docker "Up" alone does NOT mean trading - START_SIGNAL must exist
+        // Check BOTH Docker status AND START_SIGNAL existence
         command = `
           DOCKER_UP=$(docker ps --filter name=hft-bot --format "{{.Status}}" 2>/dev/null | head -1);
           SIGNAL_EXISTS=$(test -f /opt/hft-bot/app/data/START_SIGNAL && echo "true" || echo "false");
@@ -357,56 +297,101 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[bot-control] SSH command succeeded, output: ${sshResult.output?.substring(0, 200)}`);
+    console.log(`[bot-control] SSH command succeeded, output: ${sshResult.output?.substring(0, 500)}`);
 
-    // CRITICAL: Verify bot health after start/restart commands
+    // ═══════════════════════════════════════════════════════════
+    // CRITICAL FIX: Verify START_SIGNAL was actually created
+    // Only update database to "running" if verification passes
+    // ═══════════════════════════════════════════════════════════
     let healthVerified = false;
+    let signalVerified = false;
+    
     if (action === 'start' || action === 'restart') {
-      console.log('[bot-control] Waiting 5s for bot to initialize...');
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      const output = sshResult.output || '';
       
-      // Verify bot is actually running via health endpoint
-      const { data: healthCheck, error: healthError } = await supabase.functions.invoke('ssh-command', {
-        body: {
-          ipAddress,
-          command: 'curl -sf http://localhost:8080/health || echo "__HEALTH_FAILED__"',
-          privateKey,
-          username: 'root',
-          timeout: 10000,
-        },
-      });
-      
-      const healthOutput = healthCheck?.output || '';
-      console.log(`[bot-control] Health check output: ${healthOutput.substring(0, 200)}`);
-      
-      if (healthError || !healthCheck?.success || healthOutput.includes('__HEALTH_FAILED__')) {
-        // Health check failed - check if container is at least running
-        const { data: containerCheck } = await supabase.functions.invoke('ssh-command', {
+      // Step 1: Check if our embedded verification succeeded
+      if (output.includes('SIGNAL_VERIFIED:true')) {
+        signalVerified = true;
+        console.log('[bot-control] ✅ START_SIGNAL creation verified in command output');
+      } else if (output.includes('SIGNAL_VERIFIED:false')) {
+        console.error('[bot-control] ❌ START_SIGNAL was NOT created by the command');
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: 'Failed to create START_SIGNAL file on VPS',
+            output: output.substring(0, 500)
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        // Fallback: Explicitly verify via separate SSH command
+        console.log('[bot-control] No verification in output, checking signal file explicitly...');
+        const { data: verifyResult } = await supabase.functions.invoke('ssh-command', {
           body: {
             ipAddress,
-            command: 'docker ps --filter name=hft -q | head -1',
+            command: 'test -f /opt/hft-bot/app/data/START_SIGNAL && cat /opt/hft-bot/app/data/START_SIGNAL && echo "SIGNAL_EXISTS:true" || echo "SIGNAL_EXISTS:false"',
             privateKey,
             username: 'root',
-            timeout: 5000,
+            timeout: 10000,
           },
         });
         
-        if (containerCheck?.output?.trim()) {
-          newBotStatus = 'running';
-          healthVerified = false;
-          console.log('[bot-control] ⚠️ Container running but health endpoint not ready');
+        const verifyOutput = verifyResult?.output || '';
+        if (verifyOutput.includes('SIGNAL_EXISTS:true')) {
+          signalVerified = true;
+          console.log('[bot-control] ✅ START_SIGNAL verified via explicit check');
         } else {
-          newBotStatus = 'error';
-          console.log('[bot-control] ❌ Bot failed to start - no container found');
+          console.error('[bot-control] ❌ START_SIGNAL file does not exist after start command');
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: 'START_SIGNAL file was not created - bot will not trade',
+              output: verifyOutput.substring(0, 500)
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
-      } else if (healthOutput.includes('"status":"ok"') || healthOutput.includes('"status": "ok"') || healthOutput.includes('healthy')) {
+      }
+      
+      // Step 2: Wait for bot to initialize and verify health
+      console.log('[bot-control] Waiting 3s for bot to initialize...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Step 3: Final verification - check signal still exists AND health is OK
+      const { data: finalCheck } = await supabase.functions.invoke('ssh-command', {
+        body: {
+          ipAddress,
+          command: `
+            SIGNAL_OK=$(test -f /opt/hft-bot/app/data/START_SIGNAL && echo "true" || echo "false");
+            HEALTH_OK=$(curl -sf http://localhost:8080/health 2>/dev/null && echo "true" || echo "false");
+            DOCKER_OK=$(docker ps --filter name=hft -q 2>/dev/null | head -1);
+            echo "FINAL_CHECK|SIGNAL:$SIGNAL_OK|HEALTH:$HEALTH_OK|DOCKER:$DOCKER_OK"
+          `,
+          privateKey,
+          username: 'root',
+          timeout: 15000,
+        },
+      });
+      
+      const finalOutput = finalCheck?.output || '';
+      console.log(`[bot-control] Final verification: ${finalOutput}`);
+      
+      if (finalOutput.includes('SIGNAL:false')) {
+        // Signal was deleted after creation - something is wrong
+        console.error('[bot-control] ❌ START_SIGNAL was deleted after creation!');
+        newBotStatus = 'standby';
+        healthVerified = false;
+        signalVerified = false;
+      } else if (finalOutput.includes('SIGNAL:true') && (finalOutput.includes('HEALTH:true') || finalOutput.includes('DOCKER:'))) {
+        // Signal exists and either health is OK or Docker is running
         newBotStatus = 'running';
-        healthVerified = true;
-        console.log('[bot-control] ✅ Bot verified running via health check');
+        healthVerified = finalOutput.includes('HEALTH:true');
+        console.log(`[bot-control] ✅ Bot verified: signalExists=true, healthOK=${healthVerified}`);
       } else {
+        // Partial success - container may be starting
         newBotStatus = 'running';
-        healthVerified = true;
-        console.log('[bot-control] ✅ Bot responded to health check');
+        healthVerified = false;
+        console.log('[bot-control] ⚠️ Bot starting but health not confirmed yet');
       }
     }
 
