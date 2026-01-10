@@ -255,6 +255,8 @@ export function VPSSwitcher({ onSwitch }: VPSSwitcherProps) {
                 <div className="flex items-center gap-2">
                   {deployment.bot_status === 'running' ? (
                     <CheckCircle className="w-4 h-4 text-success" />
+                  ) : deployment.bot_status === 'standby' ? (
+                    <AlertCircle className="w-4 h-4 text-warning" />
                   ) : (
                     <AlertCircle className="w-4 h-4 text-muted-foreground" />
                   )}

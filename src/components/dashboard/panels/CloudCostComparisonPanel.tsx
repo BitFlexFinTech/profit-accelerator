@@ -102,6 +102,9 @@ export function CloudCostComparisonPanel() {
     if (status === 'running') {
       return <Badge className="bg-success/20 text-success text-xs">Running</Badge>;
     }
+    if (status === 'standby') {
+      return <Badge className="bg-warning/20 text-warning text-xs">Standby</Badge>;
+    }
     if (status === 'idle') {
       return <Badge className="bg-primary/20 text-primary text-xs">Idle</Badge>;
     }
