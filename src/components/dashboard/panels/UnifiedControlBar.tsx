@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { 
-  Play, Square, RefreshCw, Bell, Activity, RotateCcw, FileText, Server, Zap, AlertTriangle
+  Play, Square, RefreshCw, Bell, Activity, RotateCcw, FileText, Server, Zap, AlertTriangle, XCircle, Wifi
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { checkVpsApiHealth, pingVpsExchanges } from '@/services/vpsApiService';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
 import { useVPSHealthPolling } from '@/hooks/useVPSHealthPolling';
@@ -48,6 +49,10 @@ export function UnifiedControlBar() {
   const startTimeRef = useRef<number | null>(null);
   
   const [deploymentId, setDeploymentId] = useState<string | null>(null);
+  
+  // VPS API status
+  const [vpsApiStatus, setVpsApiStatus] = useState<{ ok: boolean; latencyMs: number | null }>({ ok: false, latencyMs: null });
+  const [isTestingApi, setIsTestingApi] = useState(false);
 
   // Sync startupStage with ref
   useEffect(() => {
@@ -96,6 +101,80 @@ export function UnifiedControlBar() {
     const interval = setInterval(fetchBotStatus, 10000);
     return () => clearInterval(interval);
   }, [fetchBotStatus]);
+
+  // Check VPS API health on mount and periodically
+  useEffect(() => {
+    const checkApi = async () => {
+      if (vpsHealth.ipAddress) {
+        const result = await checkVpsApiHealth(vpsHealth.ipAddress);
+        setVpsApiStatus({ ok: result.ok, latencyMs: result.responseMs });
+      }
+    };
+    checkApi();
+    const interval = setInterval(checkApi, 30000);
+    return () => clearInterval(interval);
+  }, [vpsHealth.ipAddress]);
+
+  // Clear error state handler
+  const handleClearError = async () => {
+    setIsLoading(true);
+    try {
+      // Update trading_config
+      await supabase
+        .from('trading_config')
+        .update({ bot_status: 'stopped', updated_at: new Date().toISOString() })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      // Update hft_deployments
+      await supabase
+        .from('hft_deployments')
+        .update({ bot_status: 'stopped', updated_at: new Date().toISOString() })
+        .eq('bot_status', 'error');
+      
+      setBotStatus('stopped');
+      setStartupStage('idle');
+      setStartupProgress(0);
+      toast.success('Error cleared - bot status reset to stopped');
+      refreshVpsHealth();
+      syncFromDatabase();
+    } catch (err) {
+      console.error('Failed to clear error:', err);
+      toast.error('Failed to clear error state');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Test VPS API handler
+  const handleTestVpsApi = async () => {
+    if (!vpsHealth.ipAddress) {
+      toast.error('No VPS IP available');
+      return;
+    }
+    setIsTestingApi(true);
+    try {
+      const healthResult = await checkVpsApiHealth(vpsHealth.ipAddress);
+      setVpsApiStatus({ ok: healthResult.ok, latencyMs: healthResult.responseMs });
+      
+      if (healthResult.ok) {
+        const pingResult = await pingVpsExchanges(vpsHealth.ipAddress);
+        if (pingResult.success && pingResult.pings.length > 0) {
+          const summary = pingResult.pings
+            .map((r) => `${r.exchange}: ${r.latencyMs}ms`)
+            .join(', ');
+          toast.success(`VPS API OK (${healthResult.responseMs}ms) | ${summary}`);
+        } else {
+          toast.success(`VPS API OK (${healthResult.responseMs}ms)`);
+        }
+      } else {
+        toast.error(`VPS API failed: ${healthResult.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      toast.error('VPS API test failed');
+    } finally {
+      setIsTestingApi(false);
+    }
+  };
 
   // Subscribe to first trade for startup completion
   const subscribeToFirstTrade = useCallback(() => {
@@ -403,10 +482,62 @@ export function UnifiedControlBar() {
                   <TooltipContent side="bottom">
                     <p className="text-xs">VPS→Exchange trading latency (avg)</p>
                     <p className="text-[10px] text-muted-foreground">This is the actual HFT latency</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            )}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+
+        {/* VPS API Status - NEW */}
+        {vpsHealth.ipAddress && (
+          <div className="flex items-center gap-2 pl-3 border-l border-border/50">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1.5 cursor-help">
+                  <Wifi className={cn(
+                    "w-3 h-3",
+                    vpsApiStatus.ok ? 'text-success' : 'text-destructive'
+                  )} />
+                  <span className={cn(
+                    "text-[10px] font-mono",
+                    vpsApiStatus.ok ? 'text-success' : 'text-destructive'
+                  )}>
+                    {vpsApiStatus.ok ? `API ${vpsApiStatus.latencyMs}ms` : 'API Offline'}
+                  </span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">VPS Bot API Status</p>
+                <p className="text-[10px] text-muted-foreground">Click "Test" to ping exchanges from VPS</p>
+              </TooltipContent>
+            </Tooltip>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleTestVpsApi}
+              disabled={isTestingApi}
+              className="h-5 px-1.5 text-[9px]"
+            >
+              {isTestingApi ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : 'Test'}
+            </Button>
+          </div>
+        )}
+
+        {/* Error State - Clear Error Button */}
+        {botStatus === 'error' && (
+          <div className="flex items-center gap-2 pl-3 border-l border-destructive/50 bg-destructive/10 px-2 py-1 rounded">
+            <XCircle className="w-3.5 h-3.5 text-destructive" />
+            <span className="text-[10px] text-destructive font-medium">Bot Error</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleClearError}
+              disabled={isLoading}
+              className="h-5 px-2 text-[9px] border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            >
+              Clear Error
+            </Button>
+          </div>
+        )}
 
             {/* Desync Warning - requires manual action */}
             {vpsHealth.desync && (
