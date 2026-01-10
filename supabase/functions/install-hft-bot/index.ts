@@ -267,19 +267,71 @@ log_info "Creating directory structure..."
 mkdir -p /opt/hft-bot/{app,logs,config,data,strategies}
 cd /opt/hft-bot
 
-# Create docker-compose.yml with SUPERVISOR for reliable multi-process management
-log_info "Creating Docker configuration with supervisor..."
+# ============================================================================
+# INSTALL VERSION MARKER - For debugging and verification
+# ============================================================================
+INSTALL_VERSION="2.2.0-\$(date +%Y%m%d%H%M%S)"
+log_info "Install version: \$INSTALL_VERSION"
+echo "\$INSTALL_VERSION" > /opt/hft-bot/VERSION
+
+# ============================================================================
+# CREATE STOP_SIGNAL BY DEFAULT - Safe mode on fresh install
+# ============================================================================
+log_info "Creating STOP_SIGNAL for safe mode (bot will not trade until started)..."
+mkdir -p /opt/hft-bot/data
+echo '{"created_at":"'\$(date -Iseconds)'","reason":"fresh_install","source":"installer"}' > /opt/hft-bot/data/STOP_SIGNAL
+rm -f /opt/hft-bot/data/START_SIGNAL
+log_info "✅ STOP_SIGNAL created - bot will start in SAFE MODE"
+
+# ============================================================================
+# CREATE DOCKERFILE - Bake JS files into image (no bind-mount for /app)
+# ============================================================================
+log_info "Creating Dockerfile (bakes code into image to prevent truncation)..."
+cat > Dockerfile << 'DOCKERFILE_EOF'
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install any build dependencies if needed
+RUN apk add --no-cache curl
+
+# Copy version marker for debugging
+COPY VERSION /app/VERSION
+
+# Copy application files into image at build time
+# This prevents runtime truncation issues from bind mounts
+COPY app/supervisor.js /app/supervisor.js
+COPY app/health.js /app/health.js
+COPY app/strategy.js /app/strategy.js
+COPY app/package.json /app/package.json
+
+# Create directories that will be bind-mounted at runtime
+RUN mkdir -p /app/logs /app/config /app/data /app/strategies
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["node", "supervisor.js"]
+DOCKERFILE_EOF
+
+# Create docker-compose.yml with BUILD context (code baked into image)
+log_info "Creating Docker Compose configuration..."
 cat > docker-compose.yml << 'COMPOSE_EOF'
 version: '3.8'
 services:
   hft-bot:
-    image: node:20-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: profit-piranha-bot:latest
     container_name: hft-bot
     working_dir: /app
     env_file:
       - .env.exchanges
     volumes:
-      - ./app:/app
+      # ONLY mount persistent data directories, NOT application code
+      # This prevents truncated/corrupted JS files from surviving restarts
       - ./logs:/app/logs
       - ./config:/app/config
       - ./data:/app/data
@@ -294,7 +346,6 @@ services:
       - PROFIT_TARGET_LEVERAGE=3
     restart: always
     network_mode: host
-    command: ["node", "supervisor.js"]
     
   redis:
     image: redis:alpine
@@ -325,7 +376,16 @@ cat > app/supervisor.js << 'SUPERVISOR_EOF'
 const { spawn } = require('child_process');
 const fs = require('fs');
 
-console.log('[SUPERVISOR] 🐟 Starting Profit Piranha bot supervisor v2.1...');
+// Read install version if available
+let installVersion = 'unknown';
+try {
+  if (fs.existsSync('/app/VERSION')) {
+    installVersion = fs.readFileSync('/app/VERSION', 'utf8').trim();
+  }
+} catch (e) {}
+
+console.log('[SUPERVISOR] 🐟 Starting Profit Piranha bot supervisor v2.2...');
+console.log('[SUPERVISOR] Install version:', installVersion);
 console.log('[SUPERVISOR] Time:', new Date().toISOString());
 
 let healthProcess = null;
@@ -2723,11 +2783,77 @@ process.on('SIGINT', () => {
 });
 STRATEGY_EOF
 
+# ============================================================================
+# POST-WRITE FILE VALIDATION - Detect truncation/corruption before proceeding
+# ============================================================================
+log_info "Validating generated JavaScript files..."
+
+validate_js_file() {
+  local file="\$1"
+  local min_size="\$2"
+  local required_pattern="\$3"
+  local file_name=\$(basename "\$file")
+  
+  # Check file exists
+  if [ ! -f "\$file" ]; then
+    log_error "❌ VALIDATION FAILED: \$file_name does not exist!"
+    return 1
+  fi
+  
+  # Check file size (bytes)
+  local size=\$(wc -c < "\$file")
+  if [ "\$size" -lt "\$min_size" ]; then
+    log_error "❌ VALIDATION FAILED: \$file_name is truncated! Size: \$size bytes (expected >= \$min_size)"
+    log_error "   This indicates the heredoc was not written completely."
+    return 1
+  fi
+  
+  # Check for required pattern (proves key sections exist)
+  if ! grep -q "\$required_pattern" "\$file"; then
+    log_error "❌ VALIDATION FAILED: \$file_name missing required pattern: \$required_pattern"
+    log_error "   This indicates file corruption or incomplete write."
+    return 1
+  fi
+  
+  log_info "✅ \$file_name validated: \$size bytes, pattern found"
+  return 0
+}
+
+# Validate supervisor.js (should be ~4KB+, must contain "startStrategy")
+validate_js_file "app/supervisor.js" 3000 "startStrategy" || {
+  log_error "FATAL: supervisor.js validation failed. Aborting install."
+  exit 1
+}
+
+# Validate health.js (should be ~20KB+, must contain "ping-exchanges")
+validate_js_file "app/health.js" 15000 "ping-exchanges" || {
+  log_error "FATAL: health.js validation failed. Aborting install."
+  exit 1
+}
+
+# Validate strategy.js (should be ~50KB+, must contain the FIXED regex pattern)
+validate_js_file "app/strategy.js" 40000 "replace(/\\\x0D/g" || {
+  log_error "FATAL: strategy.js validation failed. Aborting install."
+  log_error "       This is the file that was causing the 'Invalid regular expression: missing /' error."
+  exit 1
+}
+
+# Additional check: Ensure the problematic regex line is complete
+if grep -q 'envContent.replace(/$' app/strategy.js; then
+  log_error "❌ CRITICAL: strategy.js contains truncated regex pattern!"
+  log_error "   Found: envContent.replace(/ (incomplete)"
+  log_error "   Expected: envContent.replace(/\\x0D/g, '').split(...)"
+  log_error "   Aborting install to prevent broken container."
+  exit 1
+fi
+
+log_info "✅ All JavaScript files validated successfully!"
+
 # Create package.json
 cat > app/package.json << 'PKG_EOF'
 {
   "name": "profit-piranha-hft-bot",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "Profit Piranha - 24/7 Micro-Scalping Trading Bot",
   "main": "health.js",
   "scripts": {
@@ -2879,21 +3005,52 @@ FAIL2BAN_EOF
 systemctl enable fail2ban
 systemctl restart fail2ban
 
-# Pull images BEFORE starting service (avoids systemd timeout)
-log_info "Pulling Docker images (this may take a few minutes)..."
+# ============================================================================
+# BUILD AND START CONTAINERS - Code is baked into image (no bind-mount issues)
+# ============================================================================
+log_info "Building Docker image with validated JavaScript files..."
 cd /opt/hft-bot
-$COMPOSE pull --quiet || {
-  log_warn "Pull failed, retrying..."
-  $COMPOSE pull
+
+# Pull base images first
+$COMPOSE pull redis --quiet || true
+
+# Build the hft-bot image (bakes in the validated JS files)
+log_info "Building profit-piranha-bot image..."
+$COMPOSE build --no-cache hft-bot || {
+  log_error "Docker build failed! Checking logs..."
+  cat Dockerfile
+  ls -la app/
+  exit 1
 }
 
-# Start containers directly first
+log_info "✅ Docker image built successfully with validated code baked in"
+
+# Start containers
 log_piranha "Starting Profit Piranha containers..."
 $COMPOSE up -d --remove-orphans
 
 # Wait for containers to be healthy
 log_info "Waiting for containers to start..."
-sleep 5
+sleep 8
+
+# Verify the container has the correct strategy.js
+log_info "Verifying strategy.js inside container..."
+if docker exec hft-bot sh -c 'grep -q "replace(/\\\x0D/g" /app/strategy.js'; then
+  log_info "✅ Container has correct strategy.js (regex pattern validated)"
+else
+  log_error "❌ Container strategy.js validation failed!"
+  docker exec hft-bot sh -c 'nl -ba /app/strategy.js | sed -n "18,30p"'
+  exit 1
+fi
+
+# Verify STOP_SIGNAL is visible inside container
+log_info "Verifying STOP_SIGNAL inside container..."
+if docker exec hft-bot sh -c 'test -f /app/data/STOP_SIGNAL'; then
+  log_info "✅ STOP_SIGNAL present - bot is in SAFE MODE"
+else
+  log_warn "STOP_SIGNAL not found in container, creating..."
+  docker exec hft-bot sh -c 'echo "{\"created_at\":\"$(date -Iseconds)\",\"reason\":\"post_install\",\"source\":\"installer\"}" > /app/data/STOP_SIGNAL'
+fi
 
 # STRICT RULE: Bot NEVER starts automatically - manual start required
 log_info "Configuring Profit Piranha service (MANUAL START ONLY)..."
