@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo } from 'react';
-import { Wifi, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle, Edit, Server, Circle } from 'lucide-react';
+import { Wifi, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle, Edit, Server, Circle, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useExchangeStatus, ExchangeConnection } from '@/hooks/useExchangeStatus';
 import { useVpsStatusLite } from '@/hooks/useVpsStatusLite';
@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ExchangeWizard } from '../wizards/ExchangeWizard';
+import { pingVpsExchanges, type ExchangePing } from '@/services/vpsApiService';
 
 interface TestResult {
   exchange: string;
@@ -34,6 +35,7 @@ const ExchangeRow = memo(function ExchangeRow({
   testResult,
   testingExchange,
   disconnectingExchange,
+  vpsPing,
   onTest,
   onAddEdit,
   onConfirmDisconnect,
@@ -48,6 +50,7 @@ const ExchangeRow = memo(function ExchangeRow({
   testResult?: TestResult;
   testingExchange: string | null;
   disconnectingExchange: string | null;
+  vpsPing?: ExchangePing;
   onTest: (exchange: ExchangeConnection) => void;
   onAddEdit: (exchange: ExchangeConnection) => void;
   onConfirmDisconnect: (name: string) => void;
@@ -105,6 +108,12 @@ const ExchangeRow = memo(function ExchangeRow({
             </span>
             {exchange.last_ping_ms && (
               <span className="text-success">{exchange.last_ping_ms}ms</span>
+            )}
+            {vpsPing && (
+              <span className={`flex items-center gap-1 ${vpsPing.success ? 'text-amber-400' : 'text-destructive'}`}>
+                <Zap className="w-3 h-3" />
+                VPS: {vpsPing.success ? `${vpsPing.latencyMs}ms` : 'err'}
+              </span>
             )}
           </div>
           {exchange.last_error && exchange.is_connected && (
@@ -172,7 +181,7 @@ const ExchangeRow = memo(function ExchangeRow({
 export function ExchangeConnectionsCard() {
   const { exchanges, connectedCount, totalBalance, isLoading } = useExchangeStatus();
   // Use lightweight VPS hook that doesn't subscribe to vps_metrics
-  const { isActive: isVpsActive } = useVpsStatusLite();
+  const { isActive: isVpsActive, ip: vpsIp } = useVpsStatusLite();
   const [testingExchange, setTestingExchange] = useState<string | null>(null);
   const [disconnectingExchange, setDisconnectingExchange] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -181,6 +190,8 @@ export function ExchangeConnectionsCard() {
   const [showExchangeWizard, setShowExchangeWizard] = useState(false);
   const [wizardExchangeId, setWizardExchangeId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [vpsPingResults, setVpsPingResults] = useState<Record<string, ExchangePing>>({});
+  const [isVpsPinging, setIsVpsPinging] = useState(false);
   
   // Update "now" every 60 seconds to minimize rerenders (was 10s)
   useEffect(() => {
@@ -296,6 +307,31 @@ export function ExchangeConnectionsCard() {
     }
   }, []);
 
+  const handleVpsPing = useCallback(async () => {
+    if (!vpsIp) {
+      toast.error('No VPS IP available');
+      return;
+    }
+    setIsVpsPinging(true);
+    try {
+      const result = await pingVpsExchanges(vpsIp);
+      if (result.success) {
+        const pingMap: Record<string, ExchangePing> = {};
+        result.pings.forEach(p => {
+          pingMap[p.exchange.toLowerCase()] = p;
+        });
+        setVpsPingResults(pingMap);
+        toast.success(`VPS ping complete: ${result.pings.length} exchanges (${result.responseMs}ms)`);
+      } else {
+        toast.error(`VPS ping failed: ${result.error}`);
+      }
+    } catch (err) {
+      toast.error('Failed to ping exchanges via VPS');
+    } finally {
+      setIsVpsPinging(false);
+    }
+  }, [vpsIp]);
+
   const handleAddEdit = useCallback((exchange: ExchangeConnection) => {
     setWizardExchangeId(exchange.exchange_id);
     setShowExchangeWizard(true);
@@ -338,16 +374,45 @@ export function ExchangeConnectionsCard() {
             </div>
             <h3 className="text-lg font-semibold">Exchange Connections</h3>
             {isVpsActive && (
-              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-accent/20 text-green-accent">
-                <Server className="w-3 h-3" />
-                VPS Active
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-accent/20 text-green-accent cursor-help">
+                    <Server className="w-3 h-3" />
+                    VPS Proxy
+                    {vpsIp && <span className="font-mono text-[10px] opacity-70">({vpsIp})</span>}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Balances fetched via VPS whitelisted IP for exchange API access
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
               {connectedCount}/11 connected • <span className="text-teal">${totalBalance.toLocaleString()}</span>
             </span>
+            {isVpsActive && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleVpsPing}
+                    disabled={isVpsPinging}
+                    className="hover:border-amber-500/50 hover:bg-amber-500/10 transition-all duration-300"
+                  >
+                    {isVpsPinging ? (
+                      <RefreshCw className="w-4 h-4 mr-1 text-amber-400 animate-spin" />
+                    ) : (
+                      <Zap className="w-4 h-4 mr-1 text-amber-400" />
+                    )}
+                    VPS Ping
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Test exchange latency from VPS</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -394,6 +459,7 @@ export function ExchangeConnectionsCard() {
                 testResult={testResults[exchange.exchange_name]}
                 testingExchange={testingExchange}
                 disconnectingExchange={disconnectingExchange}
+                vpsPing={vpsPingResults[exchange.exchange_name.toLowerCase()]}
                 onTest={handleTestConnection}
                 onAddEdit={handleAddEdit}
                 onConfirmDisconnect={setConfirmDisconnect}
