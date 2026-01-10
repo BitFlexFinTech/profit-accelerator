@@ -1,44 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
 import { ArrowUpRight, ArrowDownRight, TrendingUp } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAppStore } from '@/store/useAppStore';
+import { useTradesRealtime, Trade } from '@/hooks/useTradesRealtime';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-interface Trade {
-  id: string;
-  symbol: string;
-  exchange: string;
-  side: string;
-  pnl: number | null;
-  created_at: string | null;
-}
-
 export function RecentTradesPanel() {
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [loading, setLoading] = useState(true);
-  const lastUpdate = useAppStore((s) => s.lastUpdate);
-
-  const fetchTrades = useCallback(async () => {
-    try {
-      // STRICT RULE: Fetch ALL trades - no limits
-      const { data, error } = await supabase
-        .from('trading_journal')
-        .select('id, symbol, exchange, side, pnl, created_at')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setTrades(data || []);
-    } catch (err) {
-      console.error('Failed to fetch recent trades:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchTrades();
-  }, [fetchTrades, lastUpdate]);
+  // Use unified trades hook - single source of truth
+  const { trades, loading } = useTradesRealtime();
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '--';

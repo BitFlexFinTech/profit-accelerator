@@ -8,6 +8,7 @@ import { NewsPanel } from '../panels/NewsPanel';
 import { InfrastructurePanel } from '../panels/InfrastructurePanel';
 import { AIProviderHealthDashboard } from '../panels/AIProviderHealthDashboard';
 import { UnderwaterPositionsPanel } from '../panels/UnderwaterPositionsPanel';
+import { AutoStartWarningBanner } from '../panels/AutoStartWarningBanner';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
@@ -44,6 +45,9 @@ export function LiveDashboard() {
 
   return (
     <div className="h-full flex flex-col gap-1.5 overflow-hidden">
+      {/* Safety Mode Banner - STRICT RULE: Bot never auto-starts */}
+      <AutoStartWarningBanner />
+      
       {/* Scrolling Price Ticker - Very Top */}
       {isVisible('ticker') && <ScrollingPriceTicker />}
       

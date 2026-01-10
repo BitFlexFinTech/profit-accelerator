@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { 
   Activity, 
   TrendingUp, 
@@ -7,75 +6,14 @@ import {
   Zap,
   RefreshCw
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
-interface Trade {
-  id: string;
-  symbol: string;
-  side: string;
-  exchange: string;
-  entry_price: number;
-  exit_price: number | null;
-  quantity: number;
-  pnl: number | null;
-  status: string | null;
-  created_at: string | null;
-  closed_at: string | null;
-  execution_latency_ms?: number | null;
-}
+import { useTradesRealtime } from '@/hooks/useTradesRealtime';
 
 export function TradeLogPanel() {
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastUpdate, setLastUpdate] = useState(new Date());
-
-  const fetchTrades = async () => {
-    // STRICT RULE: Fetch ALL trades - no limits
-    const { data, error } = await supabase
-      .from('trading_journal')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setTrades(data as Trade[]);
-    }
-    setIsLoading(false);
-    setLastUpdate(new Date());
-  };
-
-  useEffect(() => {
-    fetchTrades();
-
-    // Subscribe to real-time updates
-    const channel = supabase
-      .channel('trade_log_realtime')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'trading_journal'
-      }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          // STRICT RULE: No slicing - keep ALL trades
-          setTrades(prev => {
-            if (prev.some(t => t.id === (payload.new as Trade).id)) return prev;
-            return [payload.new as Trade, ...prev];
-          });
-        } else if (payload.eventType === 'UPDATE') {
-          setTrades(prev => prev.map(t => 
-            t.id === (payload.new as Trade).id ? payload.new as Trade : t
-          ));
-        }
-        setLastUpdate(new Date());
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  // Use unified trades hook - single source of truth
+  const { trades, loading: isLoading, lastEventAt, refetch } = useTradesRealtime();
 
   const sessionStats = {
     totalPnL: trades.reduce((sum, t) => sum + (t.pnl || 0), 0),
@@ -100,7 +38,8 @@ export function TradeLogPanel() {
   };
 
   const timeSinceUpdate = () => {
-    const seconds = Math.floor((new Date().getTime() - lastUpdate.getTime()) / 1000);
+    if (!lastEventAt) return 'waiting...';
+    const seconds = Math.floor((new Date().getTime() - lastEventAt.getTime()) / 1000);
     if (seconds < 5) return 'just now';
     if (seconds < 60) return `${seconds}s ago`;
     return `${Math.floor(seconds / 60)}m ago`;
@@ -122,7 +61,7 @@ export function TradeLogPanel() {
             </p>
           </div>
         </div>
-        <Button size="icon" variant="ghost" onClick={fetchTrades}>
+        <Button size="icon" variant="ghost" onClick={refetch}>
           <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
         </Button>
       </div>
