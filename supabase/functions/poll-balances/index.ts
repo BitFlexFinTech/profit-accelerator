@@ -52,7 +52,7 @@ async function fetchBalanceViaVPSProxy(
     // Normalize exchange name to lowercase for VPS proxy compatibility
     const normalizedExchange = EXCHANGE_MAP[exchangeName.toLowerCase()] || exchangeName.toLowerCase();
     
-    const response = await fetch(`http://${vpsIP}:8080/balance`, {
+    const response = await fetch(`http://${vpsIP}/balance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

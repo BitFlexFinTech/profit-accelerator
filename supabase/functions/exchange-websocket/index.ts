@@ -69,7 +69,7 @@ serve(async (req) => {
           // Try VPS proxy first if available (for IP-whitelisted exchanges)
           if (vpsProxyAvailable && (exchangeName === 'binance' || exchangeName === 'okx')) {
             try {
-              const proxyUrl = `http://${vpsConfig.outbound_ip}:8080/balance`;
+              const proxyUrl = `http://${vpsConfig.outbound_ip}/balance`;
               console.log(`[exchange-websocket] Trying VPS proxy: ${proxyUrl}`);
               
               const proxyResponse = await fetch(proxyUrl, {
