@@ -201,20 +201,28 @@ export function CloudCostComparisonPanel() {
                     )}
                   </TableCell>
 
-                  {/* Latency */}
+                  {/* Latency - Show "—" if no data instead of 0 */}
                   <TableCell>
                     <div className="flex items-center gap-2 min-w-[120px]">
-                      <Progress 
-                        value={(provider.latency_ms / maxLatency) * 100} 
-                        className="h-2 flex-1"
-                      />
-                      <span className={cn(
-                        "font-mono text-xs w-12 text-right",
-                        provider.latency_ms > 150 ? "text-destructive" : 
-                        provider.latency_ms > 100 ? "text-warning" : "text-success"
-                      )}>
-                        {provider.latency_ms ? `${provider.latency_ms}ms` : '—'}
-                      </span>
+                      {provider.latency_ms > 0 ? (
+                        <>
+                          <Progress 
+                            value={(provider.latency_ms / maxLatency) * 100} 
+                            className="h-2 flex-1"
+                          />
+                          <span className={cn(
+                            "font-mono text-xs w-12 text-right",
+                            provider.latency_ms > 150 ? "text-destructive" : 
+                            provider.latency_ms > 100 ? "text-warning" : "text-success"
+                          )}>
+                            {provider.latency_ms}ms
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">
+                          {provider.status === 'running' ? 'Waiting...' : '—'}
+                        </span>
+                      )}
                     </div>
                   </TableCell>
 

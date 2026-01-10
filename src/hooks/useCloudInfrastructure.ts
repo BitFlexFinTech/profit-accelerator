@@ -167,10 +167,21 @@ export function useCloudInfrastructure() {
         .select('latency_ms')
         .eq('source', 'vps');
       
-      // Calculate average VPS→Exchange latency (same source as InfrastructurePanel)
-      const avgVpsExchangeLatency = vpsPulseData?.length 
-        ? Math.round(vpsPulseData.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / vpsPulseData.length)
-        : 0;
+      // FALLBACK: If exchange_pulse has no VPS data, use vps_metrics.latency_ms
+      let avgVpsExchangeLatency = 0;
+      if (vpsPulseData && vpsPulseData.length > 0) {
+        avgVpsExchangeLatency = Math.round(
+          vpsPulseData.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / vpsPulseData.length
+        );
+      } else if (allMetrics && allMetrics.length > 0) {
+        // Fallback to vps_metrics latency if no exchange_pulse data
+        const latencyMetrics = allMetrics.filter(m => m.latency_ms && m.latency_ms > 0);
+        if (latencyMetrics.length > 0) {
+          avgVpsExchangeLatency = Math.round(
+            latencyMetrics.reduce((sum, m) => sum + (m.latency_ms || 0), 0) / latencyMetrics.length
+          );
+        }
+      }
 
       // Build providers list from failover configs
       const providers: CloudProvider[] = (failoverConfigs || []).map(fc => {
@@ -178,7 +189,7 @@ export function useCloudInfrastructure() {
         const pricing = PROVIDER_PRICING[fc.provider] || { monthly: 0, free: false, region: 'unknown' };
         const isDeployed = vps?.status === 'running';
         
-        // Use VPS→Exchange latency for deployed VPS, otherwise 0
+        // Use VPS→Exchange latency for deployed VPS, otherwise show as "—" (null) not 0
         const actualLatency = isDeployed ? avgVpsExchangeLatency : 0;
         
         return {

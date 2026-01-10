@@ -162,15 +162,27 @@ export function VPSMonitorPanel() {
               <Server className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold">🌏 {vpsConfig?.provider?.toUpperCase() || 'VPS'}</h3>
+            <div className="flex items-center gap-2">
+                <h3 className="font-semibold">
+                  {vpsConfig?.provider === 'vultr' ? '🦅' : 
+                   vpsConfig?.provider === 'aws' ? '☁️' : 
+                   vpsConfig?.provider === 'digitalocean' ? '🌊' : 
+                   vpsConfig?.provider === 'contabo' ? '🌏' : 
+                   vpsConfig?.provider === 'gcp' ? '🔵' : 
+                   vpsConfig?.provider === 'oracle' ? '🔴' : '🖥️'} {vpsConfig?.provider?.toUpperCase() || 'VPS'}
+                </h3>
+                {/* Status badge - NO animate-glow-pulse on container, only small dot pulses */}
                 <span className={cn(
-                  "text-xs px-2 py-0.5 rounded-full transition-all duration-300",
+                  "text-xs px-2 py-0.5 rounded-full flex items-center gap-1.5",
                   vpsConfig?.status === 'running' 
-                    ? 'bg-emerald-500/20 text-emerald-400 animate-glow-pulse' 
+                    ? 'bg-emerald-500/20 text-emerald-400' 
                     : 'bg-muted text-muted-foreground'
                 )}>
-                  {vpsConfig?.status === 'running' ? '● Online' : '○ Offline'}
+                  <span className={cn(
+                    "w-1.5 h-1.5 rounded-full",
+                    vpsConfig?.status === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                  )} />
+                  {vpsConfig?.status === 'running' ? 'Online' : 'Offline'}
                 </span>
               </div>
               <p className="text-sm text-muted-foreground font-mono">{vpsConfig?.outbound_ip || 'No IP'}</p>
@@ -263,10 +275,10 @@ export function VPSMonitorPanel() {
           </div>
         </div>
 
-        {/* Network Chart */}
-        {metricsHistory.length > 0 && (
-          <div className="p-4 rounded-lg bg-gradient-to-br from-secondary/30 to-secondary/10 border border-border/30 mb-4">
-            <h4 className="text-sm font-medium mb-3 text-orange-300">Network Traffic (Recent)</h4>
+        {/* Network Chart - Always render section, show message if no data */}
+        <div className="p-4 rounded-lg bg-gradient-to-br from-secondary/30 to-secondary/10 border border-border/30 mb-4">
+          <h4 className="text-sm font-medium mb-3 text-orange-300">Network Traffic (Recent)</h4>
+          {metricsHistory.length > 0 && metricsHistory.some(m => m.netIn > 0 || m.netOut > 0) ? (
             <div className="h-32">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={metricsHistory}>
@@ -299,8 +311,15 @@ export function VPSMonitorPanel() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="h-32 flex items-center justify-center text-muted-foreground text-sm">
+              <div className="text-center">
+                <Wifi className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p>Waiting for network telemetry...</p>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Actions */}
         <div className="flex gap-2">

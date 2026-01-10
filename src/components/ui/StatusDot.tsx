@@ -9,11 +9,15 @@ interface StatusDotProps {
   className?: string;
 }
 
+/**
+ * EXPLICIT COLOR MAPPINGS - Never use CSS variables for status dots.
+ * These are raw Tailwind colors that work identically in light and dark themes.
+ */
 const colorClasses: Record<StatusDotColor, string> = {
   success: 'bg-emerald-500',
   warning: 'bg-amber-500',
   destructive: 'bg-red-500',
-  muted: 'bg-muted-foreground',
+  muted: 'bg-slate-400',
   cyan: 'bg-cyan-500',
   orange: 'bg-orange-500',
   purple: 'bg-purple-500',
@@ -30,6 +34,9 @@ const sizeClasses: Record<'xs' | 'sm' | 'md', string> = {
  * 
  * STRICT RULE: Only this small dot should pulse, NOT the entire card or container.
  * This component is the standardized way to show status indicators across the app.
+ * 
+ * Colors use explicit Tailwind classes (emerald-500, amber-500, red-500) to ensure
+ * consistent appearance regardless of theme.
  */
 export function StatusDot({ color, pulse = false, size = 'sm', className }: StatusDotProps) {
   return (

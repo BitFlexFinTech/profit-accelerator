@@ -408,7 +408,16 @@ export function UnifiedControlBar() {
           {/* Bot Status Section */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${statusColor[botStatus]} ${botStatus === 'running' || botStatus === 'starting' ? 'animate-pulse' : ''}`} />
+              {/* Status dot - uses explicit Tailwind colors, only the dot pulses */}
+              <span className={cn(
+                "w-2 h-2 rounded-full flex-shrink-0",
+                botStatus === 'running' && 'bg-emerald-500 animate-pulse',
+                botStatus === 'starting' && 'bg-amber-500 animate-pulse',
+                botStatus === 'stopped' && 'bg-red-500',
+                botStatus === 'standby' && 'bg-slate-400',
+                botStatus === 'idle' && 'bg-amber-500',
+                botStatus === 'error' && 'bg-red-500'
+              )} />
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Bot
               </span>
@@ -441,7 +450,7 @@ export function UnifiedControlBar() {
                       {vpsHealth.ipAddress || 'No VPS'}
                     </span>
                     {vpsHealth.status === 'healthy' && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     )}
                   </div>
                 </TooltipTrigger>
