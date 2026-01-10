@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Server,
   ArrowRightLeft,
@@ -51,6 +52,8 @@ export function VPSSwitcher({ onSwitch }: VPSSwitcherProps) {
   const [switchProgress, setSwitchProgress] = useState(0);
   const [switchStage, setSwitchStage] = useState('');
   const [confirmSwitch, setConfirmSwitch] = useState<HFTDeployment | null>(null);
+  // STRICT RULE: Bot never auto-starts - user must opt-in
+  const [startBotAfterSwitch, setStartBotAfterSwitch] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -109,12 +112,17 @@ export function VPSSwitcher({ onSwitch }: VPSSwitcherProps) {
       setSwitchStage('Waiting for graceful shutdown...');
       await new Promise(r => setTimeout(r, 3000));
 
-      // Stage 3: Start bot on new primary
+      // Stage 3: Only start bot on new primary if user explicitly opted in
       setSwitchProgress(50);
-      setSwitchStage('Starting bot on new primary...');
-      await supabase.functions.invoke('bot-control', {
-        body: { action: 'start', deploymentId: deployment.id }
-      });
+      if (startBotAfterSwitch) {
+        setSwitchStage('Starting bot on new primary...');
+        await supabase.functions.invoke('bot-control', {
+          body: { action: 'start', deploymentId: deployment.id }
+        });
+      } else {
+        setSwitchStage('Bot in STANDBY on new primary (manual start required)...');
+        // STRICT RULE: Do NOT auto-start - respect manual start requirement
+      }
 
       // Stage 4: Update failover_config
       setSwitchProgress(70);
@@ -277,10 +285,23 @@ export function VPSSwitcher({ onSwitch }: VPSSwitcherProps) {
               <ArrowRightLeft className="w-5 h-5 text-primary" />
               Switch Primary VPS?
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will gracefully stop the bot on the current primary VPS and start it on{' '}
-              <strong className="capitalize">{confirmSwitch?.provider}</strong>. 
-              The process takes about 30 seconds with zero downtime for open positions.
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                This will gracefully stop the bot on the current primary VPS and migrate to{' '}
+                <strong className="capitalize">{confirmSwitch?.provider}</strong>. 
+                The process takes about 30 seconds with zero downtime for open positions.
+              </p>
+              
+              <div className="flex items-center gap-2 mt-4 p-3 rounded-lg bg-warning/10 border border-warning/30">
+                <Checkbox 
+                  id="startAfterSwitch" 
+                  checked={startBotAfterSwitch}
+                  onCheckedChange={(checked) => setStartBotAfterSwitch(checked as boolean)}
+                />
+                <label htmlFor="startAfterSwitch" className="text-sm cursor-pointer">
+                  Start bot immediately after switch (otherwise manual start required)
+                </label>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

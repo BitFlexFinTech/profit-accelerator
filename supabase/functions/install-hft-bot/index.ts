@@ -2136,20 +2136,24 @@ async function runPiranha() {
   console.log('[🐟 PIRANHA] Start the bot from the dashboard to begin trading.');
   
   // Wait for START_SIGNAL file to be created (by bot-control edge function)
+  // ═══════════════════════════════════════════════════════════════════════
+  // STRICT RULE: Bot NEVER starts by itself. ONLY START_SIGNAL file works.
+  // Environment variable STRATEGY_ENABLED is IGNORED for safety.
+  // The START_SIGNAL file must be created by the user via the dashboard.
+  // ═══════════════════════════════════════════════════════════════════════
   const START_SIGNAL_FILE = '/app/data/START_SIGNAL';
   
   while (true) {
-    // Check for start signal file OR environment variable
+    // ONLY check for START_SIGNAL file - NO environment variable bypass
     const startSignalExists = fs.existsSync(START_SIGNAL_FILE);
-    const envEnabled = process.env.STRATEGY_ENABLED === 'true';
     
-    if (startSignalExists || envEnabled) {
-      console.log('[🐟 PIRANHA] ✅ START SIGNAL RECEIVED! Beginning trading...');
+    if (startSignalExists) {
+      console.log('[🐟 PIRANHA] ✅ START SIGNAL RECEIVED from dashboard! Beginning trading...');
       break;
     }
     
     // Log waiting status every 30 seconds
-    console.log('[🐟 PIRANHA] ⏳ Waiting for start command... (check every 10s)');
+    console.log('[🐟 PIRANHA] ⏳ STANDBY: Waiting for manual start from dashboard... (check every 10s)');
     await sleep(10000);
   }
   
@@ -2703,10 +2707,11 @@ $COMPOSE up -d --remove-orphans
 log_info "Waiting for containers to start..."
 sleep 5
 
-# Enable systemd service for boot persistence
-log_info "Enabling Profit Piranha service for auto-start..."
+# STRICT RULE: Bot NEVER starts automatically - manual start required
+log_info "Configuring Profit Piranha service (MANUAL START ONLY)..."
 systemctl daemon-reload
-systemctl enable hft-bot
+# CRITICAL: Do NOT enable auto-start on reboot - this was intentionally removed
+# systemctl enable hft-bot  ← REMOVED FOR SAFETY
 
 # Verify installation
 log_info "Verifying installation..."

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Activity, Brain, Wifi, AlertCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppStore } from '@/store/useAppStore';
+import { useTradesRealtime } from '@/hooks/useTradesRealtime';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 export function CompactMetricsBar() {
@@ -15,59 +16,42 @@ export function CompactMetricsBar() {
     lastUpdate
   } = useAppStore();
   
+  // Use unified trades hook - single source of truth for trade data
+  const { totalTrades, openCount, loading: tradesLoading } = useTradesRealtime();
+  
   const totalBalance = getTotalEquity();
   const exchangeCount = getConnectedExchangeCount();
   const isLive = lastUpdate > Date.now() - 60000; // Consider live if updated in last minute
   
-  const [activeTrades, setActiveTrades] = useState(0);
-  const [totalTrades, setTotalTrades] = useState(0);
   const [latestAI, setLatestAI] = useState<string | null>(null);
-  const [localLoading, setLocalLoading] = useState(true);
+  const [aiLoading, setAiLoading] = useState(true);
 
   useEffect(() => {
-    // NO syncFromDatabase() call here - store initializes itself via initializeAppStore()
-    // This prevents duplicate fetches and flickering
-    
-    const fetchLocalData = async () => {
+    const fetchAI = async () => {
       try {
-        // STRICT RULE: Fetch ALL trades, not just open
-        const { data: trades } = await supabase
-          .from('trading_journal')
-          .select('status');
-
-        const openCount = trades?.filter(t => t.status === 'open').length || 0;
-        const totalCount = trades?.length || 0;
-        setActiveTrades(openCount);
-        setTotalTrades(totalCount);
-
         // Fetch latest AI insight
         const { data: aiUpdate } = await supabase
           .from('ai_market_updates')
           .select('symbol, sentiment, confidence')
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (aiUpdate) {
           setLatestAI(`${aiUpdate.symbol} ${aiUpdate.sentiment} ${aiUpdate.confidence}%`);
         }
       } catch (err) {
-        console.error('[CompactMetricsBar] Error:', err);
+        console.error('[CompactMetricsBar] AI fetch error:', err);
       } finally {
-        setLocalLoading(false);
+        setAiLoading(false);
       }
     };
 
-    fetchLocalData();
+    fetchAI();
 
-    // Subscribe to realtime updates for LOCAL data only (trades, AI)
+    // Subscribe to AI updates only
     const channel = supabase
-      .channel('compact-metrics-local')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'trading_journal'
-      }, () => fetchLocalData())
+      .channel('compact-metrics-ai')
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -86,6 +70,7 @@ export function CompactMetricsBar() {
   const dailyPercent = totalBalance > 0 ? (dailyPnl / totalBalance) * 100 : 0;
   const weeklyPercent = totalBalance > 0 ? (weeklyPnl / totalBalance) * 100 : 0;
   const hasNoData = totalBalance === 0 && !storeLoading;
+  const localLoading = tradesLoading || aiLoading;
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
@@ -102,7 +87,7 @@ export function CompactMetricsBar() {
             <AlertCircle className="w-3 h-3" />
             <span className="text-xs">Not Connected</span>
           </div>
-        ) : dailyPnl === 0 && activeTrades === 0 ? (
+        ) : dailyPnl === 0 && openCount === 0 ? (
           <div className="flex items-center gap-1">
             <span className="text-lg font-bold text-muted-foreground">$0</span>
             <span className="text-[10px] text-muted-foreground">No trades</span>
@@ -190,7 +175,7 @@ export function CompactMetricsBar() {
           <div className="flex items-center gap-1">
             <span className="text-lg font-bold">{totalTrades}</span>
             <span className="text-[10px] text-muted-foreground">
-              ({activeTrades} open)
+              ({openCount} open)
             </span>
           </div>
         )}
