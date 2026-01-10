@@ -289,7 +289,21 @@ serve(async (req) => {
         newBotStatus = 'starting';
         break;
       case 'status':
-        command = 'curl -s http://localhost:8080/health 2>/dev/null || docker ps --filter name=hft-bot --format "{{.Status}}" 2>/dev/null || pm2 jlist 2>/dev/null || echo "not_found"';
+        // FIXED: Check BOTH Docker status AND START_SIGNAL existence
+        // Docker "Up" alone does NOT mean trading - START_SIGNAL must exist
+        command = `
+          DOCKER_UP=$(docker ps --filter name=hft-bot --format "{{.Status}}" 2>/dev/null | head -1);
+          SIGNAL_EXISTS=$(test -f /opt/hft-bot/app/data/START_SIGNAL && echo "true" || echo "false");
+          HEALTH_OK=$(curl -s http://localhost:8080/health 2>/dev/null | grep -q '"status":"ok"' && echo "true" || echo "false");
+          echo "DOCKER:$DOCKER_UP|SIGNAL:$SIGNAL_EXISTS|HEALTH:$HEALTH_OK";
+          if [ "$SIGNAL_EXISTS" = "true" ] && [ -n "$DOCKER_UP" ]; then
+            echo "STATUS:running";
+          elif [ -n "$DOCKER_UP" ]; then
+            echo "STATUS:standby";
+          else
+            echo "STATUS:stopped";
+          fi
+        `;
         break;
       case 'logs':
         command = 'docker compose -f /opt/hft-bot/docker-compose.yml logs --tail=50 2>/dev/null || docker logs hft-bot --tail=50 2>/dev/null || pm2 logs trading-bot --lines 50 --nostream 2>/dev/null || echo "no_logs"';
@@ -400,25 +414,51 @@ serve(async (req) => {
     if (action === 'status' || action === 'health') {
       let botStatus = 'unknown';
       let healthData = null;
+      let signalExists = false;
+      let dockerRunning = false;
       
       try {
         const output = sshResult.output || '';
+        console.log('[bot-control] Raw status output:', output);
         
-        if (output.includes('"status":"ok"') || output.includes('"status": "ok"')) {
+        // Parse our structured output: DOCKER:...|SIGNAL:...|HEALTH:...
+        // STATUS:running or STATUS:standby or STATUS:stopped
+        if (output.includes('STATUS:running')) {
+          botStatus = 'running';
+          signalExists = true;
+          dockerRunning = true;
+        } else if (output.includes('STATUS:standby')) {
+          botStatus = 'standby';
+          signalExists = false;
+          dockerRunning = true;
+        } else if (output.includes('STATUS:stopped')) {
+          botStatus = 'stopped';
+          signalExists = false;
+          dockerRunning = false;
+        } else if (output.includes('SIGNAL:true')) {
+          // Fallback: parse individual fields
+          signalExists = true;
+          dockerRunning = output.includes('DOCKER:Up') || output.includes('Up ');
+          botStatus = signalExists && dockerRunning ? 'running' : (dockerRunning ? 'standby' : 'stopped');
+        } else if (output.includes('Up') && !output.includes('SIGNAL:false')) {
+          // Legacy fallback - Docker is up but we don't know about signal
+          // Assume standby if SIGNAL check wasn't included
+          botStatus = 'standby';
+          dockerRunning = true;
+        } else if (output.includes('"status":"ok"') || output.includes('"status": "ok"')) {
           botStatus = 'running';
           try {
             healthData = JSON.parse(output.trim());
           } catch {}
-        } else if (output.includes('Up') || output.includes('running')) {
-          botStatus = 'running';
-        } else if (output.includes('online')) {
-          botStatus = 'running';
         } else if (output.includes('Exited') || output.includes('stopped') || output.includes('errored')) {
           botStatus = 'stopped';
         } else if (output.includes('not_found') || output.includes('no_bot_found')) {
           botStatus = 'not_deployed';
         }
-      } catch {
+        
+        console.log('[bot-control] Parsed status:', { botStatus, signalExists, dockerRunning });
+      } catch (parseErr) {
+        console.error('[bot-control] Status parse error:', parseErr);
         botStatus = 'unknown';
       }
 
@@ -427,6 +467,8 @@ serve(async (req) => {
           success: true, 
           status: botStatus,
           health: healthData,
+          signalExists,
+          dockerRunning,
           output: sshResult.output,
           ipAddress 
         }),

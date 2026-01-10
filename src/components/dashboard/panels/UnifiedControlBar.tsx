@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-type BotStatus = 'running' | 'stopped' | 'idle' | 'error' | 'starting';
+type BotStatus = 'running' | 'stopped' | 'standby' | 'idle' | 'error' | 'starting';
 type StartupStage = 'idle' | 'connecting' | 'verifying' | 'waiting_trade' | 'active' | 'timeout';
 
 export function UnifiedControlBar() {
@@ -310,6 +310,7 @@ export function UnifiedControlBar() {
   const statusColor = {
     running: 'bg-success',
     stopped: 'bg-destructive',
+    standby: 'bg-muted-foreground', // Docker up but not trading
     idle: 'bg-warning',
     error: 'bg-destructive',
     starting: 'bg-warning'
@@ -407,18 +408,42 @@ export function UnifiedControlBar() {
               </div>
             )}
 
-            {/* Desync Warning - NEW */}
+            {/* Desync Warning - requires manual action */}
             {vpsHealth.desync && (
-              <div className="flex items-center gap-1 pl-2">
-                <AlertTriangle className="w-3 h-3 text-warning animate-pulse" />
-                <span className="text-[10px] text-warning">Desync</span>
+              <div className="flex items-center gap-2 pl-2 bg-warning/10 px-2 py-1 rounded">
+                <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+                <span className="text-[10px] text-warning font-medium">
+                  VPS: {vpsHealth.botStatus} ≠ UI: {botStatus}
+                </span>
                 <Button
                   size="sm"
-                  variant="ghost"
-                  onClick={forceSync}
-                  className="h-5 px-1.5 text-[9px]"
+                  variant="outline"
+                  onClick={async () => {
+                    // Manually update DB to match VPS reality
+                    setIsLoading(true);
+                    try {
+                      const updateTime = new Date().toISOString();
+                      const newStatus = vpsHealth.botStatus === 'running' ? 'running' : 'stopped';
+                      await supabase.from('trading_config')
+                        .update({ 
+                          bot_status: newStatus, 
+                          trading_enabled: newStatus === 'running',
+                          updated_at: updateTime 
+                        })
+                        .neq('id', '00000000-0000-0000-0000-000000000000');
+                      setBotStatus(newStatus as BotStatus);
+                      toast.success(`Synced UI to VPS state: ${newStatus}`);
+                      refreshVpsHealth();
+                    } catch (err) {
+                      toast.error('Failed to sync');
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="h-5 px-2 text-[9px] border-warning text-warning hover:bg-warning hover:text-warning-foreground"
                 >
-                  Fix
+                  Adopt VPS State
                 </Button>
               </div>
             )}
