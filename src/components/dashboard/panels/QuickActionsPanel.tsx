@@ -137,10 +137,16 @@ export function QuickActionsPanel() {
               className={
                 botStatus === 'running' 
                   ? 'bg-green-accent/20 text-green-accent border-green-accent/40 animate-pulse' 
+                  : botStatus === 'standby'
+                  ? 'bg-warning/20 text-warning border-warning/40 animate-pulse'
                   : 'bg-muted text-muted-foreground'
               }
             >
-              <span className={`w-2 h-2 rounded-full mr-1.5 ${botStatus === 'running' ? 'bg-green-accent animate-blink' : 'bg-muted-foreground'}`} />
+              <span className={`w-2 h-2 rounded-full mr-1.5 ${
+                botStatus === 'running' ? 'bg-green-accent animate-blink' : 
+                botStatus === 'standby' ? 'bg-warning animate-pulse' : 
+                'bg-muted-foreground'
+              }`} />
               {botStatus.toUpperCase()}
             </Badge>
           </div>

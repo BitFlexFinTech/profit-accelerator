@@ -75,6 +75,7 @@ const STATUS_CONFIG: Record<string, { color: string; bgColor: string; label: str
 
 const BOT_STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   running: { color: 'text-success', label: 'Bot Running' },
+  standby: { color: 'text-warning', label: 'Bot Standby' },
   stopped: { color: 'text-destructive', label: 'Bot Stopped' },
   pending: { color: 'text-warning', label: 'Bot Starting...' },
   error: { color: 'text-destructive', label: 'Bot Error' },

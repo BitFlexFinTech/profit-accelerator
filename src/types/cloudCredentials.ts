@@ -171,7 +171,7 @@ export interface VPSInstance {
   region: string;
   instanceSize: string;
   status: 'creating' | 'running' | 'stopped' | 'rebooting' | 'error' | 'deleted';
-  botStatus: 'pending' | 'running' | 'stopped' | 'crashed' | 'error';
+  botStatus: 'pending' | 'running' | 'standby' | 'stopped' | 'crashed' | 'error';
   botPid?: number;
   config?: DeploymentConfig;
   monthlyCost: number;

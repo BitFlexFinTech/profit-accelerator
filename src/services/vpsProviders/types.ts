@@ -64,6 +64,7 @@ export type InstanceStatus =
 
 export type BotStatus = 
   | 'running'
+  | 'standby'
   | 'stopped'
   | 'crashed'
   | 'starting'

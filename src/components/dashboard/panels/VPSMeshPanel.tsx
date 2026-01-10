@@ -70,6 +70,7 @@ export function VPSMeshPanel() {
   const getStatusColor = (status: string | null, latency?: number, consecutiveFailures?: number) => {
     if (consecutiveFailures && consecutiveFailures >= 3) return 'text-destructive';
     if (status === 'running') return 'text-success';
+    if (status === 'standby') return 'text-warning';
     if (status === 'idle') return 'text-primary';
     if (status === 'deploying') return 'text-warning';
     if (latency && latency > 150) return 'text-warning';
