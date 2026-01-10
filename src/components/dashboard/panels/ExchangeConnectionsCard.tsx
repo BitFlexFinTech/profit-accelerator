@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Wifi, RefreshCw, Plus, Trash2, TestTube, Clock, DollarSign, AlertCircle, Edit, Server, Circle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useExchangeStatus, ExchangeConnection } from '@/hooks/useExchangeStatus';
-import { useSystemStatus } from '@/hooks/useSystemStatus';
+import { useVpsStatusLite } from '@/hooks/useVpsStatusLite';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { formatDistanceToNow, differenceInSeconds } from 'date-fns';
@@ -27,9 +27,152 @@ interface TestResult {
   error?: string;
 }
 
+// Memoized exchange row to prevent unnecessary re-renders
+const ExchangeRow = memo(function ExchangeRow({
+  exchange,
+  now,
+  testResult,
+  testingExchange,
+  disconnectingExchange,
+  onTest,
+  onAddEdit,
+  onConfirmDisconnect,
+  formatBalance,
+  formatLastSync,
+  isBalanceFresh,
+  getSecondsAgo,
+  getStatusColor,
+}: {
+  exchange: ExchangeConnection;
+  now: number;
+  testResult?: TestResult;
+  testingExchange: string | null;
+  disconnectingExchange: string | null;
+  onTest: (exchange: ExchangeConnection) => void;
+  onAddEdit: (exchange: ExchangeConnection) => void;
+  onConfirmDisconnect: (name: string) => void;
+  formatBalance: (balance: number | null) => string;
+  formatLastSync: (timestamp: string | null) => string;
+  isBalanceFresh: (timestamp: string | null) => boolean;
+  getSecondsAgo: (timestamp: string | null) => number | null;
+  getStatusColor: (exchange: ExchangeConnection) => string;
+}) {
+  const isFresh = isBalanceFresh(exchange.balance_updated_at);
+  const secsAgo = getSecondsAgo(exchange.balance_updated_at);
+  const statusColor = getStatusColor(exchange);
+
+  return (
+    <div
+      className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+    >
+      <div className="flex items-center gap-3">
+        {/* Status dot with pulse for fresh data */}
+        <div className="relative">
+          <div className={`w-2.5 h-2.5 rounded-full ${statusColor}`} />
+          {exchange.is_connected && isFresh && (
+            <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-success animate-ping opacity-75" />
+          )}
+        </div>
+        
+        {/* Exchange icon and name */}
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center"
+          style={{ backgroundColor: `${exchange.color}20` }}
+        >
+          <span className="font-bold text-xs" style={{ color: exchange.color }}>
+            {exchange.exchange_name.slice(0, 2)}
+          </span>
+        </div>
+        
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{exchange.exchange_name}</span>
+            {exchange.is_connected && isFresh && (
+              <span className="flex items-center gap-0.5 text-[10px] text-success bg-success/10 px-1 py-0.5 rounded">
+                <Circle className="w-1.5 h-1.5 fill-current" />
+                LIVE
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <DollarSign className="w-3 h-3" />
+              {formatBalance(exchange.balance_usdt)}
+            </span>
+            <span className={`flex items-center gap-1 ${isFresh ? 'text-success' : ''}`}>
+              <Clock className="w-3 h-3" />
+              {secsAgo === null ? '—' : secsAgo < 60 ? `${secsAgo}s ago` : formatLastSync(exchange.balance_updated_at)}
+            </span>
+            {exchange.last_ping_ms && (
+              <span className="text-success">{exchange.last_ping_ms}ms</span>
+            )}
+          </div>
+          {exchange.last_error && exchange.is_connected && (
+            <div className="flex items-center gap-1 text-xs text-destructive mt-1">
+              <AlertCircle className="w-3 h-3" />
+              {exchange.last_error}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1">
+        {/* Test button - only for connected */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onTest(exchange)}
+          disabled={!exchange.is_connected || testingExchange === exchange.exchange_name}
+          title={exchange.is_connected ? 'Test connection' : 'Not connected'}
+        >
+          {testingExchange === exchange.exchange_name ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <TestTube className="w-4 h-4" />
+          )}
+        </Button>
+        
+        {/* Add/Edit button */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onAddEdit(exchange)}
+        >
+          {exchange.is_connected ? (
+            <Edit className="w-4 h-4" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
+          <span className="ml-1 hidden sm:inline">
+            {exchange.is_connected ? 'Edit' : 'Add'}
+          </span>
+        </Button>
+        
+        {/* Disconnect button - only for connected */}
+        {exchange.is_connected && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onConfirmDisconnect(exchange.exchange_name)}
+            disabled={disconnectingExchange === exchange.exchange_name}
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            {disconnectingExchange === exchange.exchange_name ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4" />
+            )}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+});
+
 export function ExchangeConnectionsCard() {
   const { exchanges, connectedCount, totalBalance, isLoading } = useExchangeStatus();
-  const { vps } = useSystemStatus();
+  // Use lightweight VPS hook that doesn't subscribe to vps_metrics
+  const { isActive: isVpsActive } = useVpsStatusLite();
   const [testingExchange, setTestingExchange] = useState<string | null>(null);
   const [disconnectingExchange, setDisconnectingExchange] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -39,35 +182,33 @@ export function ExchangeConnectionsCard() {
   const [wizardExchangeId, setWizardExchangeId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   
-  // Update "now" every 10 seconds instead of every second to prevent glitching
+  // Update "now" every 60 seconds to minimize rerenders (was 10s)
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 10000);
+    const interval = setInterval(() => setNow(Date.now()), 60000);
     return () => clearInterval(interval);
   }, []);
-  
-  const isVpsActive = vps.status === 'running' || (vps.status === 'idle' && vps.ip);
 
-  // Helper to check if balance is fresh (updated within 10 seconds)
-  const isBalanceFresh = (timestamp: string | null) => {
+  // Stable helper to check if balance is fresh (updated within 10 seconds)
+  const isBalanceFresh = useCallback((timestamp: string | null) => {
     if (!timestamp) return false;
     try {
       return differenceInSeconds(now, new Date(timestamp)) < 10;
     } catch {
       return false;
     }
-  };
+  }, [now]);
 
-  // Helper to get seconds ago
-  const getSecondsAgo = (timestamp: string | null) => {
+  // Stable helper to get seconds ago
+  const getSecondsAgo = useCallback((timestamp: string | null) => {
     if (!timestamp) return null;
     try {
       return differenceInSeconds(now, new Date(timestamp));
     } catch {
       return null;
     }
-  };
+  }, [now]);
 
-  const handleTestConnection = async (exchange: ExchangeConnection) => {
+  const handleTestConnection = useCallback(async (exchange: ExchangeConnection) => {
     if (!exchange.is_connected) {
       toast.error('No credentials stored for this exchange');
       return;
@@ -107,9 +248,9 @@ export function ExchangeConnectionsCard() {
     } finally {
       setTestingExchange(null);
     }
-  };
+  }, []);
 
-  const handleDisconnect = async (exchangeName: string) => {
+  const handleDisconnect = useCallback(async (exchangeName: string) => {
     setDisconnectingExchange(exchangeName);
     try {
       const { data, error } = await supabase.functions.invoke('trade-engine', {
@@ -134,9 +275,9 @@ export function ExchangeConnectionsCard() {
       setDisconnectingExchange(null);
       setConfirmDisconnect(null);
     }
-  };
+  }, []);
 
-  const handleSyncAll = async () => {
+  const handleSyncAll = useCallback(async () => {
     setIsSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke('poll-balances');
@@ -153,39 +294,39 @@ export function ExchangeConnectionsCard() {
     } finally {
       setIsSyncing(false);
     }
-  };
+  }, []);
 
-  const handleAddEdit = (exchange: ExchangeConnection) => {
+  const handleAddEdit = useCallback((exchange: ExchangeConnection) => {
     setWizardExchangeId(exchange.exchange_id);
     setShowExchangeWizard(true);
-  };
+  }, []);
 
-  const handleOpenWizard = () => {
+  const handleOpenWizard = useCallback(() => {
     setWizardExchangeId(null);
     setShowExchangeWizard(true);
-  };
+  }, []);
 
-  const getStatusColor = (exchange: ExchangeConnection) => {
+  const getStatusColor = useCallback((exchange: ExchangeConnection) => {
     const result = testResults[exchange.exchange_name];
     if (result) {
       return result.success ? 'bg-success' : 'bg-destructive';
     }
     return exchange.is_connected ? 'bg-success' : 'bg-muted-foreground/30';
-  };
+  }, [testResults]);
 
-  const formatLastSync = (timestamp: string | null) => {
+  const formatLastSync = useCallback((timestamp: string | null) => {
     if (!timestamp) return '—';
     try {
       return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
     } catch {
       return '—';
     }
-  };
+  }, []);
 
-  const formatBalance = (balance: number | null) => {
+  const formatBalance = useCallback((balance: number | null) => {
     if (balance === null || balance === undefined) return '—';
     return `$${balance.toLocaleString()}`;
-  };
+  }, []);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -246,116 +387,22 @@ export function ExchangeConnectionsCard() {
         ) : (
           <div className="space-y-2">
             {exchanges.map((exchange) => (
-              <div
+              <ExchangeRow
                 key={exchange.id}
-                className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  {/* Status dot with pulse for fresh data */}
-                  <div className="relative">
-                    <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(exchange)}`} />
-                    {exchange.is_connected && isBalanceFresh(exchange.balance_updated_at) && (
-                      <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-success animate-ping opacity-75" />
-                    )}
-                  </div>
-                  
-                  {/* Exchange icon and name */}
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ backgroundColor: `${exchange.color}20` }}
-                  >
-                    <span className="font-bold text-xs" style={{ color: exchange.color }}>
-                      {exchange.exchange_name.slice(0, 2)}
-                    </span>
-                  </div>
-                  
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{exchange.exchange_name}</span>
-                      {exchange.is_connected && isBalanceFresh(exchange.balance_updated_at) && (
-                        <span className="flex items-center gap-0.5 text-[10px] text-success bg-success/10 px-1 py-0.5 rounded">
-                          <Circle className="w-1.5 h-1.5 fill-current" />
-                          LIVE
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <DollarSign className="w-3 h-3" />
-                        {formatBalance(exchange.balance_usdt)}
-                      </span>
-                      <span className={`flex items-center gap-1 ${isBalanceFresh(exchange.balance_updated_at) ? 'text-success' : ''}`}>
-                        <Clock className="w-3 h-3" />
-                        {(() => {
-                          const secs = getSecondsAgo(exchange.balance_updated_at);
-                          if (secs === null) return '—';
-                          if (secs < 60) return `${secs}s ago`;
-                          return formatLastSync(exchange.balance_updated_at);
-                        })()}
-                      </span>
-                      {exchange.last_ping_ms && (
-                        <span className="text-success">{exchange.last_ping_ms}ms</span>
-                      )}
-                    </div>
-                    {exchange.last_error && exchange.is_connected && (
-                      <div className="flex items-center gap-1 text-xs text-destructive mt-1">
-                        <AlertCircle className="w-3 h-3" />
-                        {exchange.last_error}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  {/* Test button - only for connected */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleTestConnection(exchange)}
-                    disabled={!exchange.is_connected || testingExchange === exchange.exchange_name}
-                    title={exchange.is_connected ? 'Test connection' : 'Not connected'}
-                  >
-                    {testingExchange === exchange.exchange_name ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <TestTube className="w-4 h-4" />
-                    )}
-                  </Button>
-                  
-                  {/* Add/Edit button */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleAddEdit(exchange)}
-                  >
-                    {exchange.is_connected ? (
-                      <Edit className="w-4 h-4" />
-                    ) : (
-                      <Plus className="w-4 h-4" />
-                    )}
-                    <span className="ml-1 hidden sm:inline">
-                      {exchange.is_connected ? 'Edit' : 'Add'}
-                    </span>
-                  </Button>
-                  
-                  {/* Disconnect button - only for connected */}
-                  {exchange.is_connected && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setConfirmDisconnect(exchange.exchange_name)}
-                      disabled={disconnectingExchange === exchange.exchange_name}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    >
-                      {disconnectingExchange === exchange.exchange_name ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
-                    </Button>
-                  )}
-                </div>
-              </div>
+                exchange={exchange}
+                now={now}
+                testResult={testResults[exchange.exchange_name]}
+                testingExchange={testingExchange}
+                disconnectingExchange={disconnectingExchange}
+                onTest={handleTestConnection}
+                onAddEdit={handleAddEdit}
+                onConfirmDisconnect={setConfirmDisconnect}
+                formatBalance={formatBalance}
+                formatLastSync={formatLastSync}
+                isBalanceFresh={isBalanceFresh}
+                getSecondsAgo={getSecondsAgo}
+                getStatusColor={getStatusColor}
+              />
             ))}
           </div>
         )}
