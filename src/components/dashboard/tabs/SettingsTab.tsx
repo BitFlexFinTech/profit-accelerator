@@ -103,13 +103,33 @@ const CLOUD_PROVIDERS = [
 function VPSStatusSection() {
   const { vps } = useSystemStatus();
   
-  const isConnected = vps.status === 'running' || vps.status === 'idle';
-  const statusText = vps.status === 'running' ? 'Running' : 
-                     vps.status === 'idle' ? 'Connected (Idle)' : 
-                     vps.status === 'deploying' ? 'Deploying...' : 'Inactive';
-  const statusClass = vps.status === 'running' ? 'text-success' : 
-                      vps.status === 'idle' ? 'text-primary' : 
-                      vps.status === 'deploying' ? 'text-warning' : 'text-muted-foreground';
+  const isConnected = vps.status === 'running' || vps.status === 'idle' || vps.status === 'standby';
+  
+  // Determine status display
+  const getStatusDisplay = () => {
+    switch (vps.status) {
+      case 'running': return { text: 'Running', class: 'text-success', dotClass: 'status-online' };
+      case 'standby': return { text: 'Standby', class: 'text-warning', dotClass: 'bg-warning rounded-full w-2 h-2 animate-pulse' };
+      case 'idle': return { text: 'Connected (Idle)', class: 'text-primary', dotClass: 'status-online' };
+      case 'deploying': return { text: 'Deploying...', class: 'text-warning', dotClass: 'bg-warning rounded-full w-2 h-2 animate-pulse' };
+      case 'stopped': return { text: 'Stopped', class: 'text-muted-foreground', dotClass: 'status-offline' };
+      default: return { text: 'Inactive', class: 'text-muted-foreground', dotClass: 'status-offline' };
+    }
+  };
+  
+  const statusDisplay = getStatusDisplay();
+  
+  // Get bot status from vps object
+  const botStatus = vps.botStatus || 'unknown';
+  const getBotStatusDisplay = () => {
+    switch (botStatus) {
+      case 'running': return { text: 'Trading', class: 'text-success bg-success/20' };
+      case 'standby': return { text: 'Standby', class: 'text-warning bg-warning/20' };
+      case 'stopped': return { text: 'Stopped', class: 'text-muted-foreground bg-muted/20' };
+      default: return { text: 'Unknown', class: 'text-muted-foreground bg-muted/20' };
+    }
+  };
+  const botStatusDisplay = getBotStatusDisplay();
   
   return (
     <div className="glass-card p-6">
@@ -117,17 +137,23 @@ function VPSStatusSection() {
         <Server className="w-5 h-5 text-primary" />
         <h3 className="font-semibold">VPS Configuration</h3>
       </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="p-4 rounded-lg bg-secondary/30">
           <p className="text-muted-foreground text-sm">Region</p>
           <p className="font-medium text-accent">{getRegionDisplayName(vps.region)} ({vps.region || 'N/A'})</p>
         </div>
         <div className="p-4 rounded-lg bg-secondary/30">
-          <p className="text-muted-foreground text-sm">Status</p>
+          <p className="text-muted-foreground text-sm">Server Status</p>
           <div className="flex items-center gap-2">
-            <div className={isConnected ? 'status-online' : 'status-offline'} />
-            <span className={`font-medium ${statusClass}`}>{statusText}</span>
+            <div className={statusDisplay.dotClass} />
+            <span className={`font-medium ${statusDisplay.class}`}>{statusDisplay.text}</span>
           </div>
+        </div>
+        <div className="p-4 rounded-lg bg-secondary/30">
+          <p className="text-muted-foreground text-sm">Bot Status</p>
+          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${botStatusDisplay.class}`}>
+            {botStatusDisplay.text}
+          </span>
         </div>
         <div className="p-4 rounded-lg bg-secondary/30">
           <p className="text-muted-foreground text-sm">IP Address</p>

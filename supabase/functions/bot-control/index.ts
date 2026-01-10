@@ -446,9 +446,21 @@ serve(async (req) => {
           botStatus = 'standby';
           dockerRunning = true;
         } else if (output.includes('"status":"ok"') || output.includes('"status": "ok"')) {
-          botStatus = 'running';
+          // Health endpoint returned OK - but this alone doesn't mean the bot is trading
+          // Only set to 'running' if we already detected SIGNAL:true
+          // Otherwise, this is just a healthy container in standby
+          if (signalExists) {
+            botStatus = 'running';
+          } else {
+            botStatus = 'standby';
+            dockerRunning = true;
+          }
           try {
-            healthData = JSON.parse(output.trim());
+            // Try to extract health data from JSON response
+            const jsonMatch = output.match(/\{[^}]+\}/);
+            if (jsonMatch) {
+              healthData = JSON.parse(jsonMatch[0]);
+            }
           } catch {}
         } else if (output.includes('Exited') || output.includes('stopped') || output.includes('errored')) {
           botStatus = 'stopped';

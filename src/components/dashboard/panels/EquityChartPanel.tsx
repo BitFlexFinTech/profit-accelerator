@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, TrendingDown, RefreshCw, LineChart } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, LineChart, Clock } from 'lucide-react';
 import { useBalanceHistory } from '@/hooks/useBalanceHistory';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Tooltip as UITooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconContainer } from '@/components/ui/IconContainer';
@@ -19,6 +19,29 @@ interface EquityChartPanelProps {
 export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('24H');
   const { history, loading, currentBalance, percentChange, refetch } = useBalanceHistory(timeRange);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [timeSinceUpdate, setTimeSinceUpdate] = useState<string>('');
+
+  // Track when data was last fetched
+  useEffect(() => {
+    if (history.length > 0 && !loading) {
+      const latestSnapshot = history[history.length - 1];
+      setLastUpdated(new Date(latestSnapshot.snapshot_time));
+    }
+  }, [history, loading]);
+
+  // Update "time since" display every 10 seconds
+  useEffect(() => {
+    if (!lastUpdated) return;
+    
+    const updateTimeSince = () => {
+      setTimeSinceUpdate(formatDistanceToNow(lastUpdated, { addSuffix: true }));
+    };
+    
+    updateTimeSince();
+    const interval = setInterval(updateTimeSince, 10000);
+    return () => clearInterval(interval);
+  }, [lastUpdated]);
 
   const chartData = history.map(snapshot => ({
     time: new Date(snapshot.snapshot_time).getTime(),
@@ -74,6 +97,18 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
                 )}
                 <span>{isPositive ? '+' : ''}{percentChange.toFixed(2)}%</span>
               </div>
+              {/* Data freshness indicator */}
+              {lastUpdated && !compact && (
+                <UITooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
+                      <Clock className="h-3 w-3" />
+                      <span>{timeSinceUpdate}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>Last data point: {format(lastUpdated, 'PPpp')}</TooltipContent>
+                </UITooltip>
+              )}
             </div>
           </div>
           
