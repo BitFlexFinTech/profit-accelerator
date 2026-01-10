@@ -8,7 +8,7 @@ import { useCloudConfig } from '@/hooks/useCloudConfig';
 import { useHFTDeployments } from '@/hooks/useHFTDeployments';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconContainer } from '@/components/ui/IconContainer';
-import { checkVpsApiHealth, pingVpsExchanges, VpsPingResponse } from '@/services/vpsApiService';
+import { checkVpsApiHealth, pingVpsExchanges } from '@/services/vpsApiService';
 import { toast } from 'sonner';
 
 interface ExchangePulse {
@@ -143,24 +143,19 @@ export function InfrastructurePanel() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await Promise.all([fetchPulses(), fetchRateLimits(), fetchVpsLatency()]);
-    if (vpsIp) {
-      const status = await checkVpsApiHealth(vpsIp);
-      setVpsApiStatus(status);
-    }
+    // Use edge function - no IP needed, it will look up from DB
+    const status = await checkVpsApiHealth();
+    setVpsApiStatus(status);
     setIsRefreshing(false);
   };
 
   const handleTestVpsApi = async () => {
-    if (!vpsIp) {
-      toast.error('No VPS IP configured');
-      return;
-    }
-    
     setIsTestingApi(true);
     try {
+      // Use edge function - no IP needed, it will look up from DB
       const [healthResult, pingResult] = await Promise.all([
-        checkVpsApiHealth(vpsIp),
-        pingVpsExchanges(vpsIp)
+        checkVpsApiHealth(),
+        pingVpsExchanges()
       ]);
       
       setVpsApiStatus(healthResult);
@@ -169,8 +164,11 @@ export function InfrastructurePanel() {
         const avgLatency = pingResult.pings.length > 0
           ? Math.round(pingResult.pings.reduce((sum, p) => sum + p.latencyMs, 0) / pingResult.pings.length)
           : 0;
+        const pingDesc = pingResult.pings.length > 0 
+          ? pingResult.pings.map(p => `${p.exchange}: ${p.latencyMs}ms`).join(', ')
+          : 'No exchange pings';
         toast.success(`VPS API Ready (${healthResult.responseMs}ms)`, {
-          description: `Exchange pings: ${pingResult.pings.map(p => `${p.exchange}: ${p.latencyMs}ms`).join(', ')}`
+          description: pingDesc
         });
       } else {
         toast.error('VPS API Error', {
@@ -201,20 +199,18 @@ export function InfrastructurePanel() {
       .then(({ data }) => {
         if (data?.ip_address) {
           setVpsIp(data.ip_address);
-          // Check API health immediately
-          checkVpsApiHealth(data.ip_address).then(setVpsApiStatus);
         }
+        // Check API health immediately via edge function (no IP needed)
+        checkVpsApiHealth().then(setVpsApiStatus);
       });
     
     const pulseInterval = setInterval(fetchPulses, 15000);
     const rateInterval = setInterval(fetchRateLimits, 10000);
     const vpsLatencyInterval = setInterval(fetchVpsLatency, 15000);
     
-    // Refresh VPS API status every 30 seconds
+    // Refresh VPS API status every 30 seconds via edge function
     const vpsApiInterval = setInterval(() => {
-      if (vpsIp) {
-        checkVpsApiHealth(vpsIp).then(setVpsApiStatus);
-      }
+      checkVpsApiHealth().then(setVpsApiStatus);
     }, 30000);
     
     return () => {

@@ -27,39 +27,59 @@ serve(async (req) => {
       );
     }
 
-    console.log('[RESET] Starting system-wide data reset...');
+    console.log('[RESET] Starting COMPLETE system-wide data reset...');
     const results: Record<string, string> = {};
 
     // ============================================
-    // PHASE 1: TRUNCATE ALL TRADING DATA TABLES
+    // PHASE 1: TRUNCATE ALL TRADING/HISTORICAL DATA TABLES
     // ============================================
     
     const tablesToTruncate = [
+      // Trading data
       'trading_journal',
       'strategy_trades',
       'orders',
       'positions',
       'trade_copies',
       'trade_execution_metrics',
+      
+      // Historical snapshots
       'balance_history',
       'portfolio_snapshots',
       'backtest_results',
+      
+      // AI data
+      'ai_trade_decisions',
+      'ai_provider_performance',
+      'ai_market_updates',
+      
+      // Logs and metrics
       'api_request_logs',
       'audit_logs',
       'alert_history',
-      'ai_trade_decisions',
-      'ai_provider_performance',
       'deployment_logs',
       'failover_events',
       'health_check_results',
       'vps_metrics',
+      'vps_proxy_health',
       'exchange_latency_history',
+      
+      // Cost tracking
       'cost_analysis',
       'cost_optimization_reports',
       'cost_recommendations',
+      
+      // Other
       'security_scores',
       'trading_sessions',
       'system_notifications',
+      'sentiment_data',
+      'bot_signals',
+      
+      // User strategies (clear sample data)
+      'trading_strategies',
+      'strategy_config',
+      'strategy_rules',
     ];
 
     for (const table of tablesToTruncate) {
@@ -112,7 +132,7 @@ serve(async (req) => {
       .update({
         bot_status: 'stopped',
         trading_enabled: false,
-        trading_mode: 'live', // Always live mode
+        trading_mode: 'live',
         updated_at: new Date().toISOString(),
       })
       .neq('id', '00000000-0000-0000-0000-000000000000');
@@ -126,13 +146,13 @@ serve(async (req) => {
     }
 
     // ============================================
-    // PHASE 4: RESET EXCHANGE BALANCES (keep connections)
+    // PHASE 4: RESET EXCHANGE BALANCES (keep connections, trigger fresh fetch)
     // ============================================
     
     const { error: exchError } = await supabase
       .from('exchange_connections')
       .update({
-        balance_usdt: 0,
+        balance_usdt: null,
         balance_updated_at: null,
         last_ping_ms: null,
         last_ping_at: null,
@@ -145,7 +165,7 @@ serve(async (req) => {
       console.log(`[RESET] Warning: exchange_connections balance reset failed: ${exchError.message}`);
       results['exchange_connections'] = `warning: ${exchError.message}`;
     } else {
-      console.log('[RESET] Reset exchange balances (connections preserved)');
+      console.log('[RESET] Reset exchange balances (connections preserved, will fetch fresh)');
       results['exchange_connections'] = 'balances_reset';
     }
 
@@ -168,6 +188,39 @@ serve(async (req) => {
       results['vps_instances'] = 'bot_status_reset';
     }
 
+    // Reset hft_deployments bot status
+    const { error: hftError } = await supabase
+      .from('hft_deployments')
+      .update({
+        bot_status: 'stopped',
+      })
+      .neq('id', '00000000-0000-0000-0000-000000000000');
+
+    if (hftError) {
+      console.log(`[RESET] Warning: hft_deployments bot status reset failed: ${hftError.message}`);
+      results['hft_deployments'] = `warning: ${hftError.message}`;
+    } else {
+      console.log('[RESET] Reset HFT deployments bot status');
+      results['hft_deployments'] = 'bot_status_reset';
+    }
+
+    // ============================================
+    // PHASE 6: CLEAR EXCHANGE PULSE (will be repopulated with real data)
+    // ============================================
+    
+    const { error: pulseError } = await supabase
+      .from('exchange_pulse')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000');
+
+    if (pulseError) {
+      console.log(`[RESET] Warning: exchange_pulse clear failed: ${pulseError.message}`);
+      results['exchange_pulse'] = `warning: ${pulseError.message}`;
+    } else {
+      console.log('[RESET] Cleared exchange_pulse (will be repopulated with real data)');
+      results['exchange_pulse'] = 'cleared';
+    }
+
     // ============================================
     // SUMMARY
     // ============================================
@@ -181,7 +234,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'System-wide data reset complete',
+        message: 'System-wide data reset complete. Fresh start with only real exchange data.',
         summary: {
           tables_cleared: clearedCount,
           tables_reset: resetCount,

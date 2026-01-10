@@ -102,18 +102,17 @@ export function UnifiedControlBar() {
     return () => clearInterval(interval);
   }, [fetchBotStatus]);
 
-  // Check VPS API health on mount and periodically
+  // Check VPS API health on mount and periodically via edge function
   useEffect(() => {
     const checkApi = async () => {
-      if (vpsHealth.ipAddress) {
-        const result = await checkVpsApiHealth(vpsHealth.ipAddress);
-        setVpsApiStatus({ ok: result.ok, latencyMs: result.responseMs });
-      }
+      // Use edge function - no IP needed, it looks up from DB
+      const result = await checkVpsApiHealth();
+      setVpsApiStatus({ ok: result.ok, latencyMs: result.responseMs });
     };
     checkApi();
     const interval = setInterval(checkApi, 30000);
     return () => clearInterval(interval);
-  }, [vpsHealth.ipAddress]);
+  }, []);
 
   // Clear error state handler
   const handleClearError = async () => {
@@ -145,19 +144,16 @@ export function UnifiedControlBar() {
     }
   };
 
-  // Test VPS API handler
+  // Test VPS API handler - uses edge function to avoid CORS
   const handleTestVpsApi = async () => {
-    if (!vpsHealth.ipAddress) {
-      toast.error('No VPS IP available');
-      return;
-    }
     setIsTestingApi(true);
     try {
-      const healthResult = await checkVpsApiHealth(vpsHealth.ipAddress);
+      // Use edge function - no IP needed, it looks up from DB
+      const healthResult = await checkVpsApiHealth();
       setVpsApiStatus({ ok: healthResult.ok, latencyMs: healthResult.responseMs });
       
       if (healthResult.ok) {
-        const pingResult = await pingVpsExchanges(vpsHealth.ipAddress);
+        const pingResult = await pingVpsExchanges();
         if (pingResult.success && pingResult.pings.length > 0) {
           const summary = pingResult.pings
             .map((r) => `${r.exchange}: ${r.latencyMs}ms`)
@@ -167,7 +163,7 @@ export function UnifiedControlBar() {
           toast.success(`VPS API OK (${healthResult.responseMs}ms)`);
         }
       } else {
-        toast.error(`VPS API failed: ${healthResult.error || 'Unknown error'}`);
+        toast.error(`VPS API Error: ${healthResult.error || 'Unknown error'}`);
       }
     } catch (err) {
       toast.error('VPS API test failed');
