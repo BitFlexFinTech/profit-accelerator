@@ -25,7 +25,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-type BotStatus = 'idle' | 'running' | 'stopped' | 'error' | 'starting';
+type BotStatus = 'idle' | 'running' | 'stopped' | 'error' | 'starting' | 'standby';
 
 interface TradingConfig {
   bot_status: BotStatus;
@@ -308,6 +308,16 @@ export function BotControlPanel() {
           <Badge className="bg-warning/20 text-warning border-warning/40 gap-1.5">
             <Loader2 className="w-3 h-3 animate-spin" />
             STARTING
+          </Badge>
+        );
+      case 'standby':
+        return (
+          <Badge className="bg-warning/20 text-warning border-warning/40 gap-1.5">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-warning opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-warning" />
+            </span>
+            STANDBY
           </Badge>
         );
       case 'stopped':
