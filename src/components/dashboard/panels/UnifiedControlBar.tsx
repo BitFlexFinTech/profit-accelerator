@@ -4,11 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { 
-  Play, Square, RefreshCw, Bell, Activity, RotateCcw, FileText
+  Play, Square, RefreshCw, Bell, Activity, RotateCcw, FileText, Server, Zap, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store/useAppStore';
+import { useVPSHealthPolling } from '@/hooks/useVPSHealthPolling';
+import { cn } from '@/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 type BotStatus = 'running' | 'stopped' | 'idle' | 'error' | 'starting';
 type StartupStage = 'idle' | 'connecting' | 'verifying' | 'waiting_trade' | 'active' | 'timeout';
@@ -26,6 +29,12 @@ type StartupStage = 'idle' | 'connecting' | 'verifying' | 'waiting_trade' | 'act
 export function UnifiedControlBar() {
   // Get state from SSOT store
   const { activeVPS, syncFromDatabase } = useAppStore();
+
+  // VPS Health Polling - provides real-time VPS status + trading latency
+  const { health: vpsHealth, isPolling: vpsPolling, refresh: refreshVpsHealth, forceSync } = useVPSHealthPolling({
+    pollIntervalMs: 30000,
+    enabled: true,
+  });
 
   // Local state
   const [botStatus, setBotStatus] = useState<BotStatus>('stopped');
@@ -317,7 +326,7 @@ export function UnifiedControlBar() {
   };
 
   return (
-    <>
+    <TooltipProvider delayDuration={200}>
       <Card className="p-2 bg-card/50 border-border/50">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           {/* Bot Status Section */}
@@ -341,6 +350,78 @@ export function UnifiedControlBar() {
                 LIVE
               </Badge>
             </div>
+
+            {/* VPS Status Indicator - NEW */}
+            <div className="flex items-center gap-2 pl-3 border-l border-border/50">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1.5 cursor-help">
+                    <Server className={cn(
+                      "w-3 h-3",
+                      vpsHealth.status === 'healthy' ? 'text-success' : 
+                      vpsHealth.status === 'unreachable' ? 'text-destructive' : 'text-muted-foreground'
+                    )} />
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      {vpsHealth.ipAddress || 'No VPS'}
+                    </span>
+                    {vpsHealth.status === 'healthy' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                    )}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <div className="text-xs space-y-1">
+                    <p>VPS: {vpsHealth.provider || 'Unknown'} ({vpsHealth.region || 'N/A'})</p>
+                    <p>Status: {vpsHealth.status}</p>
+                    <p>Bot: {vpsHealth.botStatus || 'N/A'}</p>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            {/* Trading Latency - NEW (HFT-relevant!) */}
+            {vpsHealth.tradingLatencyMs !== null && (
+              <div className="flex items-center gap-2 pl-3 border-l border-border/50">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-1 cursor-help">
+                      <Zap className={cn(
+                        "w-3 h-3",
+                        vpsHealth.tradingLatencyMs < 50 ? 'text-success' :
+                        vpsHealth.tradingLatencyMs < 100 ? 'text-warning' : 'text-destructive'
+                      )} />
+                      <span className={cn(
+                        "text-[10px] font-mono font-bold",
+                        vpsHealth.tradingLatencyMs < 50 ? 'text-success' :
+                        vpsHealth.tradingLatencyMs < 100 ? 'text-warning' : 'text-destructive'
+                      )}>
+                        {vpsHealth.tradingLatencyMs}ms
+                      </span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p className="text-xs">VPS→Exchange trading latency (avg)</p>
+                    <p className="text-[10px] text-muted-foreground">This is the actual HFT latency</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )}
+
+            {/* Desync Warning - NEW */}
+            {vpsHealth.desync && (
+              <div className="flex items-center gap-1 pl-2">
+                <AlertTriangle className="w-3 h-3 text-warning animate-pulse" />
+                <span className="text-[10px] text-warning">Desync</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={forceSync}
+                  className="h-5 px-1.5 text-[9px]"
+                >
+                  Fix
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Control Buttons */}
@@ -427,7 +508,7 @@ export function UnifiedControlBar() {
             <Progress value={startupProgress} className="h-1" />
           </div>
         )}
-      </Card>
+        </Card>
 
       {/* Live Mode Start Confirmation Dialog */}
       <AlertDialog open={showStartConfirm} onOpenChange={setShowStartConfirm}>
@@ -455,6 +536,6 @@ export function UnifiedControlBar() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </TooltipProvider>
   );
 }
