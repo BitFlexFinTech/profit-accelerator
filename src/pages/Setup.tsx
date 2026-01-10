@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { CloudKeyGuideModal } from '@/components/dashboard/wizards/CloudKeyGuideModal';
 import { ExchangePulsePanel } from '@/components/dashboard/panels/ExchangePulsePanel';
 import { VPSHealthMonitor } from '@/components/dashboard/panels/VPSHealthMonitor';
@@ -495,13 +496,23 @@ export default function Setup() {
                         </div>
                       </td>
                       <td className="p-3">
-                        <Input
-                          type="password"
-                          placeholder={`Enter ${provider.shortName} API Key`}
-                          value={cred?.apiKey || ''}
-                          onChange={(e) => handleCredentialChange(provider.id, 'apiKey', e.target.value)}
-                          className="h-8 text-sm bg-background/50"
-                        />
+                        <div className="relative">
+                          <Input
+                            type="password"
+                            placeholder={cred?.isComplete ? '••••••••' : `Enter ${provider.shortName} API Key`}
+                            value={cred?.apiKey?.startsWith('••••') ? '' : (cred?.apiKey || '')}
+                            onChange={(e) => handleCredentialChange(provider.id, 'apiKey', e.target.value)}
+                            className={cn(
+                              "h-8 text-sm bg-background/50",
+                              cred?.isComplete && "border-green-500/50 placeholder:text-green-400"
+                            )}
+                          />
+                          {cred?.isComplete && (
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-green-400 bg-green-500/20 px-1 rounded">
+                              SAVED
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3">
                         {provider.hasSecret ? (

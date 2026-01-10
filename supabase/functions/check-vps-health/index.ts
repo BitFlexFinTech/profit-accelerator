@@ -164,7 +164,8 @@ async function handleHealthCheck(
 
     if (response.ok) {
       healthData = await response.json();
-      isHealthy = healthData.status === 'ok';
+      // Support both { ok: true } and { status: 'ok' } response formats
+      isHealthy = healthData.ok === true || healthData.status === 'ok';
       console.log('[check-vps-health] Health response:', healthData);
 
       // Insert metrics if we have a provider

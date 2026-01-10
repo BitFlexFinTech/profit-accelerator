@@ -82,6 +82,8 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
   const [nextScanIn, setNextScanIn] = useState(3);
   const [activeTimeframe, setActiveTimeframe] = useState<TimeframeFilter>('all');
+  // TRADING MODE TOGGLE: SPOT = LONG only, LEVERAGE = LONG + SHORT
+  const [tradingMode, setTradingMode] = useState<'spot' | 'leverage'>('spot');
   const dbPollRef = useRef<NodeJS.Timeout | null>(null);
   
   const { vps } = useSystemStatus();
@@ -294,9 +296,17 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
-  const filteredUpdates = activeTimeframe === 'all' 
+  // Filter by timeframe
+  let filteredUpdates = activeTimeframe === 'all' 
     ? sortedUpdates 
     : sortedUpdates.filter(u => u.profit_timeframe_minutes === activeTimeframe);
+
+  // TRADING MODE FILTER: SPOT = LONG only, LEVERAGE = both
+  if (tradingMode === 'spot') {
+    filteredUpdates = filteredUpdates.filter(u => 
+      u.recommended_side?.toLowerCase() !== 'short'
+    );
+  }
 
   const binanceUpdates = updates.filter(u => u.exchange_name?.toLowerCase() === 'binance');
   const okxUpdates = updates.filter(u => u.exchange_name?.toLowerCase() === 'okx');
@@ -326,6 +336,30 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
           </div>
           
           <div className="flex items-center gap-1">
+            {/* TRADING MODE TOGGLE: SPOT vs LEVERAGE */}
+            <div className="flex items-center gap-0.5 mr-1 border border-border/50 rounded p-0.5">
+              {(['spot', 'leverage'] as const).map(mode => (
+                <Tooltip key={mode}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setTradingMode(mode)}
+                      className={cn(
+                        "px-1.5 py-0.5 text-[8px] font-bold rounded transition-all duration-300",
+                        tradingMode === mode 
+                          ? mode === 'spot' ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"
+                          : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                      )}
+                    >
+                      {mode === 'spot' ? 'SPOT' : 'LEV'}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{mode === 'spot' ? 'SPOT: Show LONG signals only' : 'LEVERAGE: Show LONG & SHORT signals'}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+
             <div className="flex items-center gap-0.5 mr-1">
               {(['all', 1, 3, 5] as TimeframeFilter[]).map(tf => (
                 <Tooltip key={tf}>

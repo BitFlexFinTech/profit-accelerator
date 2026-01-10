@@ -67,16 +67,8 @@ export function PortfolioAnalytics() {
             balance: b.total_balance,
           })));
 
-          // Calculate metrics from balance history
-          const balances = balanceData.map(b => b.total_balance);
-          const maxBalance = Math.max(...balances);
-          const minBalance = Math.min(...balances);
-          const maxDrawdown = maxBalance > 0 ? ((maxBalance - minBalance) / maxBalance) * 100 : null;
-
-          setMetrics(prev => ({
-            ...prev,
-            maxDrawdown,
-          }));
+          // NOTE: maxDrawdown will be calculated from actual trades only
+          // Balance history fluctuations without trading don't count as drawdown
         }
 
         // Fetch trading journal for win rate calculation
@@ -93,10 +85,24 @@ export function PortfolioAnalytics() {
           const totalLoss = Math.abs(trades.filter(t => (t.pnl ?? 0) < 0).reduce((sum, t) => sum + (t.pnl ?? 0), 0));
           const profitFactor = totalLoss > 0 ? totalProfit / totalLoss : null;
 
+          // Calculate max drawdown ONLY from actual closed trades
+          // Peak-to-trough calculation on cumulative PnL
+          let peak = 0;
+          let cumulative = 0;
+          let maxDrawdown: number | null = null;
+          
+          for (const t of trades) {
+            cumulative += (t.pnl ?? 0);
+            if (cumulative > peak) peak = cumulative;
+            const drawdown = peak > 0 ? ((peak - cumulative) / peak) * 100 : 0;
+            if (maxDrawdown === null || drawdown > maxDrawdown) maxDrawdown = drawdown;
+          }
+
           setMetrics(prev => ({
             ...prev,
             winRate,
             profitFactor,
+            maxDrawdown: maxDrawdown && maxDrawdown > 0 ? maxDrawdown : null,
           }));
         }
 
@@ -314,7 +320,7 @@ export function PortfolioAnalytics() {
       {vpsConfig?.outbound_ip && (
         <VPSTerminalPanel 
           serverIp={vpsConfig.outbound_ip} 
-          serverName={`${vpsConfig.provider === 'contabo' ? 'Contabo Singapore' : vpsConfig.provider}`} 
+          serverName={`${vpsConfig.provider?.toUpperCase() || 'VPS'}`} 
         />
       )}
     </div>

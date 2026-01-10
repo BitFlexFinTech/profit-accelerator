@@ -50,14 +50,23 @@ export function StrategyBuilder() {
 
   const fetchData = useCallback(async () => {
     try {
-      // Fetch strategies with new fields
+      // Fetch strategies from trading_strategies table
       const { data: strategiesData } = await supabase
         .from('trading_strategies')
         .select('*')
         .order('created_at', { ascending: true });
 
+      // Also fetch from strategy_config (contains Piranha and other default strategies)
+      const { data: configStrategies } = await supabase
+        .from('strategy_config')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      // Combine both sources, mapping strategy_config format to Strategy format
+      const combinedStrategies: Strategy[] = [];
+      
       if (strategiesData) {
-        setStrategies(strategiesData.map(s => ({
+        combinedStrategies.push(...strategiesData.map(s => ({
           ...s,
           position_size: s.position_size || 100,
           profit_target: s.profit_target || 10,
@@ -70,6 +79,37 @@ export function StrategyBuilder() {
           source_framework: s.source_framework || null,
         })) as Strategy[]);
       }
+
+      // Add strategies from strategy_config if not already present
+      if (configStrategies) {
+        for (const cs of configStrategies) {
+          const exists = combinedStrategies.some(s => 
+            s.name?.toLowerCase() === cs.display_name?.toLowerCase() ||
+            s.name?.toLowerCase() === cs.strategy_name?.toLowerCase()
+          );
+          if (!exists) {
+            combinedStrategies.push({
+              id: cs.id,
+              name: cs.display_name || cs.strategy_name,
+              description: `${cs.strategy_name} strategy`,
+              is_active: cs.is_enabled ?? false,
+              is_paused: false,
+              trading_mode: cs.use_leverage ? 'futures' : 'spot',
+              position_size: cs.min_position_size || 100,
+              profit_target: cs.profit_target_spot || 10,
+              daily_goal: 50,
+              daily_progress: 0,
+              win_rate: 0,
+              trades_today: 0,
+              pnl_today: 0,
+              leverage: cs.leverage_multiplier || 1,
+              source_framework: null,
+            });
+          }
+        }
+      }
+
+      setStrategies(combinedStrategies);
 
       // Fetch trading config
       const { data: configData } = await supabase
