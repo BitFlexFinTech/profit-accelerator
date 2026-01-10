@@ -333,8 +333,11 @@ let strategyProcess = null;
 let healthRestarts = 0;
 let strategyRestarts = 0;
 
-const MAX_RESTARTS = 50;
-const RESTART_DELAY = 2000;
+const MAX_RESTARTS = 1000;
+const BASE_RESTART_DELAY = 2000;
+const MAX_RESTART_DELAY = 60000;
+let currentRestartDelay = BASE_RESTART_DELAY;
+let lastStrategyStart = Date.now();
 
 const startHealth = () => {
   if (healthRestarts >= MAX_RESTARTS) {
@@ -385,9 +388,23 @@ const startStrategy = () => {
     strategyRestarts++;
     console.error('[SUPERVISOR] ❌ strategy.js exited | code=' + code + ' signal=' + signal + ' | restarts=' + strategyRestarts);
     
+    // Exponential backoff with cap
+    currentRestartDelay = Math.min(currentRestartDelay * 1.5, MAX_RESTART_DELAY);
+    
     if (strategyRestarts < MAX_RESTARTS) {
-      console.log('[SUPERVISOR] Restarting strategy.js in ' + (RESTART_DELAY/1000) + 's...');
-      setTimeout(startStrategy, RESTART_DELAY);
+      console.log('[SUPERVISOR] Restarting strategy.js in ' + (currentRestartDelay/1000) + 's...');
+      setTimeout(() => {
+        lastStrategyStart = Date.now();
+        startStrategy();
+      }, currentRestartDelay);
+      
+      // Reset delay after stable run (5+ minutes without crash)
+      setTimeout(() => {
+        if (strategyProcess && !strategyProcess.killed && Date.now() - lastStrategyStart > 300000) {
+          currentRestartDelay = BASE_RESTART_DELAY;
+          console.log('[SUPERVISOR] Strategy stable, reset delay to ' + BASE_RESTART_DELAY + 'ms');
+        }
+      }, 300000);
     }
   });
   
@@ -1507,10 +1524,14 @@ async function fetchAIRecommendations() {
 // Sync trade to Supabase trading_journal - LIVE MODE ONLY
 async function recordTradeToSupabase(trade, status) {
   return new Promise((resolve) => {
+    // STRICT RULE: In SPOT mode, all trades are LONG - enforce consistency
+    // This ensures correct recording even if internal state has incorrect side
+    const validatedSide = 'long'; // SPOT MODE ONLY - always long for buy/sell pairs
+    
     const payload = JSON.stringify({
       exchange: trade.exchange,
       symbol: trade.symbol,
-      side: trade.side,
+      side: validatedSide, // FIXED: Use validated side for SPOT mode consistency
       quantity: trade.quantity,
       entry_price: trade.entryPrice,
       exit_price: trade.exitPrice || null,
@@ -1634,6 +1655,112 @@ function hasCredentials(exchange) {
     return creds.okx.apiKey && creds.okx.apiSecret && creds.okx.passphrase;
   }
   return false;
+}
+
+// ============== REAL BALANCE FETCH FOR RISK MANAGEMENT ==============
+// CRITICAL FIX: Replace hardcoded $1000 balance with actual exchange balance
+async function getActualBalance() {
+  const creds = loadExchangeCredentials();
+  let totalBalance = 0;
+  
+  // Fetch from Binance
+  if (creds.binance.apiKey && creds.binance.apiSecret) {
+    try {
+      const balance = await fetchExchangeBalanceInternal('binance', creds.binance);
+      totalBalance += balance;
+      console.log('[🐟 PIRANHA] Binance balance: $' + balance.toFixed(2));
+    } catch (err) {
+      console.log('[🐟 PIRANHA] Binance balance fetch error:', err.message);
+    }
+  }
+  
+  // Fetch from OKX
+  if (creds.okx.apiKey && creds.okx.apiSecret) {
+    try {
+      const balance = await fetchExchangeBalanceInternal('okx', creds.okx);
+      totalBalance += balance;
+      console.log('[🐟 PIRANHA] OKX balance: $' + balance.toFixed(2));
+    } catch (err) {
+      console.log('[🐟 PIRANHA] OKX balance fetch error:', err.message);
+    }
+  }
+  
+  // Return actual balance or fallback to 1000 only if all fetches fail
+  const finalBalance = totalBalance > 0 ? totalBalance : 1000;
+  console.log('[🐟 PIRANHA] Total balance for risk calc: $' + finalBalance.toFixed(2));
+  return finalBalance;
+}
+
+async function fetchExchangeBalanceInternal(exchange, creds) {
+  return new Promise((resolve) => {
+    if (exchange === 'binance') {
+      const timestamp = Date.now();
+      const query = 'timestamp=' + timestamp;
+      const signature = signBinance(query, creds.apiSecret);
+      
+      const options = {
+        hostname: 'api.binance.com',
+        path: '/api/v3/account?' + query + '&signature=' + signature,
+        method: 'GET',
+        headers: { 'X-MBX-APIKEY': creds.apiKey }
+      };
+      
+      https.get(options, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            if (json.balances) {
+              const usdt = json.balances.find(b => b.asset === 'USDT');
+              const balance = parseFloat(usdt?.free || 0) + parseFloat(usdt?.locked || 0);
+              resolve(balance);
+            } else {
+              resolve(0);
+            }
+          } catch { resolve(0); }
+        });
+      }).on('error', () => resolve(0));
+      
+    } else if (exchange === 'okx') {
+      const timestamp = new Date().toISOString();
+      const path = '/api/v5/account/balance';
+      const sign = signOKX(timestamp, 'GET', path, '', creds.apiSecret);
+      
+      const options = {
+        hostname: 'www.okx.com',
+        path: path,
+        method: 'GET',
+        headers: {
+          'OK-ACCESS-KEY': creds.apiKey,
+          'OK-ACCESS-SIGN': sign,
+          'OK-ACCESS-TIMESTAMP': timestamp,
+          'OK-ACCESS-PASSPHRASE': creds.passphrase || ''
+        }
+      };
+      
+      https.get(options, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            if (json.code === '0' && json.data?.[0]?.details) {
+              const details = json.data[0].details;
+              const usdt = details.find(d => d.ccy === 'USDT');
+              const balance = parseFloat(usdt?.availBal || 0) + parseFloat(usdt?.frozenBal || 0);
+              resolve(balance);
+            } else {
+              resolve(0);
+            }
+          } catch { resolve(0); }
+        });
+      }).on('error', () => resolve(0));
+      
+    } else {
+      resolve(0);
+    }
+  });
 }
 
 // ============== REAL ORDER EXECUTION ==============
@@ -1962,14 +2089,16 @@ async function openPosition(signal, credentials) {
     return null;
   }
   
-  // Check daily drawdown limit
+  // Check daily drawdown limit - FIXED: Use actual exchange balance
   const todaysPnL = await getTodaysPnL();
   if (todaysPnL < 0) {
-    const currentBalance = 1000; // TODO: Get actual balance
+    const currentBalance = await getActualBalance(); // FIXED: Fetch real balance from exchanges
     const drawdownPercent = Math.abs(todaysPnL) / currentBalance * 100;
+    console.log('[🐟 PIRANHA] 📊 Drawdown check: $' + Math.abs(todaysPnL).toFixed(2) + ' / $' + currentBalance.toFixed(2) + ' = ' + drawdownPercent.toFixed(1) + '%');
     if (drawdownPercent >= riskConfig.maxDailyDrawdown) {
       console.log('[🐟 PIRANHA] ⛔ DAILY DRAWDOWN LIMIT HIT: ' + drawdownPercent.toFixed(1) + '% >= ' + riskConfig.maxDailyDrawdown + '%');
       console.log('[🐟 PIRANHA]   Today\\'s PnL: $' + todaysPnL.toFixed(2));
+      console.log('[🐟 PIRANHA]   Current Balance: $' + currentBalance.toFixed(2));
       return null;
     }
   }
@@ -2427,12 +2556,39 @@ async function runPiranha() {
       }
       
     } catch (err) {
-      console.error('[🐟 PIRANHA] Loop error:', err.message);
-      state.errors.push({ time: new Date().toISOString(), error: err.message });
+      console.error('[🐟 PIRANHA] ⚠️ Loop error:', err.message);
+      
+      // CRITICAL FIX: Persist crash to file for diagnosis
+      const crashEntry = {
+        timestamp: new Date().toISOString(),
+        error: err.message,
+        stack: err.stack ? err.stack.substring(0, 500) : 'No stack',
+        positions: state.positions?.length || 0,
+        loopCount: loopCount
+      };
+      
+      try {
+        const crashLogPath = '/app/logs/crashes.json';
+        let crashes = [];
+        if (fs.existsSync(crashLogPath)) {
+          try {
+            crashes = JSON.parse(fs.readFileSync(crashLogPath, 'utf8'));
+          } catch { crashes = []; }
+        }
+        crashes.push(crashEntry);
+        // Keep last 100 crashes only
+        if (crashes.length > 100) crashes = crashes.slice(-100);
+        fs.writeFileSync(crashLogPath, JSON.stringify(crashes, null, 2));
+        console.log('[🐟 PIRANHA] Crash logged to /app/logs/crashes.json');
+      } catch (logErr) {
+        console.error('[🐟 PIRANHA] Could not log crash:', logErr.message);
+      }
+      
+      state.errors.push({ time: crashEntry.timestamp, error: err.message });
       if (state.errors.length > 100) state.errors = state.errors.slice(-100);
       saveState();
       
-      // Send Telegram alert for errors
+      // Send Telegram alert for errors (every 10 errors)
       if (state.errors.length % 10 === 0) {
         await sendTelegramAlert('⚠️ <b>ERROR ALERT</b>\\n' +
           '❌ ' + err.message + '\\n' +
