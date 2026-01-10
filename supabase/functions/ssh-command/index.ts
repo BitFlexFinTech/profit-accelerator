@@ -232,14 +232,14 @@ serve(async (req) => {
       }
     }
     
-    // For other commands, log and return simulated success
-    console.log(`[ssh-command] Unhandled command type, simulating: ${command.substring(0, 50)}`);
+    // For other commands, return error - no simulation
+    console.log(`[ssh-command] Unhandled command type: ${command.substring(0, 50)}`);
     return new Response(
       JSON.stringify({
-        success: true,
-        exitCode: 0,
-        output: `[Simulated] Command logged: ${command.substring(0, 100)}`,
-        simulated: true
+        success: false,
+        exitCode: 1,
+        output: `Command not supported via HTTP API: ${command.substring(0, 50)}`,
+        error: 'This command requires SSH access. Deploy VPS with control API for remote commands.'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

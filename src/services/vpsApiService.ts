@@ -1,13 +1,19 @@
 /**
  * VPS Bot Control API Service
  * Utility functions to interact with the VPS-hosted Express API
+ * Routes all calls through Supabase Edge Functions to avoid CORS issues
  */
+
+import { supabase } from '@/integrations/supabase/client';
 
 export interface VpsHealthResponse {
   ok: boolean;
   uptime?: number;
   responseMs: number;
   error?: string;
+  cpu?: number;
+  ram?: number;
+  disk?: number;
 }
 
 export interface ExchangePing {
@@ -33,28 +39,30 @@ export interface VpsBotStatus {
 }
 
 /**
- * Check VPS API health status
+ * Check VPS API health status via Edge Function (avoids CORS)
  */
-export async function checkVpsApiHealth(ip: string): Promise<VpsHealthResponse> {
+export async function checkVpsApiHealth(ip?: string): Promise<VpsHealthResponse> {
   const start = Date.now();
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    
-    const res = await fetch(`http://${ip}/health`, {
-      signal: controller.signal,
+    const { data, error } = await supabase.functions.invoke('check-vps-health', {
+      body: { action: 'health', ip }
     });
-    clearTimeout(timeout);
-    
-    if (!res.ok) {
-      return { ok: false, error: `HTTP ${res.status}`, responseMs: Date.now() - start };
+
+    if (error) {
+      return { ok: false, error: error.message, responseMs: Date.now() - start };
     }
-    
-    const data = await res.json();
+
+    if (!data?.success) {
+      return { ok: false, error: data?.error || 'Unknown error', responseMs: Date.now() - start };
+    }
+
     return { 
-      ok: data.ok === true, 
-      uptime: data.uptime, 
-      responseMs: Date.now() - start 
+      ok: data.healthy === true, 
+      uptime: data.data?.uptime || data.data?.uptime_seconds,
+      cpu: data.data?.cpu_percent,
+      ram: data.data?.ram_percent || data.data?.memory_percent,
+      disk: data.data?.disk_percent,
+      responseMs: data.latency_ms || Date.now() - start 
     };
   } catch (e) {
     const error = e instanceof Error ? e.message : 'Unknown error';
@@ -63,28 +71,35 @@ export async function checkVpsApiHealth(ip: string): Promise<VpsHealthResponse> 
 }
 
 /**
- * Ping all exchanges through VPS
+ * Ping all exchanges through VPS via Edge Function (avoids CORS)
  */
-export async function pingVpsExchanges(ip: string): Promise<VpsPingResponse> {
+export async function pingVpsExchanges(ip?: string): Promise<VpsPingResponse> {
   const start = Date.now();
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    
-    const res = await fetch(`http://${ip}/ping-exchanges`, {
-      signal: controller.signal,
+    const { data, error } = await supabase.functions.invoke('check-vps-health', {
+      body: { action: 'ping-exchanges', ip }
     });
-    clearTimeout(timeout);
-    
-    if (!res.ok) {
-      return { success: false, pings: [], error: `HTTP ${res.status}`, responseMs: Date.now() - start };
+
+    if (error) {
+      return { success: false, pings: [], error: error.message, responseMs: Date.now() - start };
     }
-    
-    const data = await res.json();
+
+    if (!data?.success) {
+      return { success: false, pings: [], error: data?.error || 'Unknown error', responseMs: Date.now() - start };
+    }
+
+    // Transform pings to expected format
+    const pings: ExchangePing[] = (data.pings || []).map((p: any) => ({
+      exchange: p.exchange || p.exchange_name,
+      latencyMs: p.latencyMs || p.latency_ms || 0,
+      success: p.success !== false,
+      error: p.error
+    }));
+
     return { 
       success: true, 
-      pings: data.results || [], 
-      responseMs: Date.now() - start 
+      pings, 
+      responseMs: data.latency_ms || Date.now() - start 
     };
   } catch (e) {
     const error = e instanceof Error ? e.message : 'Unknown error';
@@ -93,29 +108,28 @@ export async function pingVpsExchanges(ip: string): Promise<VpsPingResponse> {
 }
 
 /**
- * Get bot status from VPS
+ * Get bot status from VPS via Edge Function (avoids CORS)
  */
-export async function getVpsBotStatus(ip: string): Promise<VpsBotStatus> {
+export async function getVpsBotStatus(ip?: string): Promise<VpsBotStatus> {
   const start = Date.now();
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    
-    const res = await fetch(`http://${ip}/bot/status`, {
-      signal: controller.signal,
+    const { data, error } = await supabase.functions.invoke('check-vps-health', {
+      body: { action: 'bot-status', ip }
     });
-    clearTimeout(timeout);
-    
-    if (!res.ok) {
-      return { running: false, error: `HTTP ${res.status}`, responseMs: Date.now() - start };
+
+    if (error) {
+      return { running: false, error: error.message, responseMs: Date.now() - start };
     }
-    
-    const data = await res.json();
+
+    if (!data?.success) {
+      return { running: false, error: data?.error || 'Unknown error', responseMs: Date.now() - start };
+    }
+
     return { 
-      running: data.running === true, 
-      uptime: data.uptime,
-      lastTrade: data.lastTrade,
-      responseMs: Date.now() - start 
+      running: data.running === true || data.data?.running === true, 
+      uptime: data.uptime || data.data?.uptime,
+      lastTrade: data.lastTrade || data.data?.lastTrade,
+      responseMs: data.latency_ms || Date.now() - start 
     };
   } catch (e) {
     const error = e instanceof Error ? e.message : 'Unknown error';
@@ -126,7 +140,7 @@ export async function getVpsBotStatus(ip: string): Promise<VpsBotStatus> {
 /**
  * Test all VPS API endpoints
  */
-export async function testAllVpsEndpoints(ip: string): Promise<{
+export async function testAllVpsEndpoints(ip?: string): Promise<{
   health: VpsHealthResponse;
   ping: VpsPingResponse;
   botStatus: VpsBotStatus;

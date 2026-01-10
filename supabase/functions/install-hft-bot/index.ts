@@ -1777,10 +1777,12 @@ async function getActualBalance() {
     }
   }
   
-  // Return actual balance or fallback to 1000 only if all fetches fail
-  const finalBalance = totalBalance > 0 ? totalBalance : 1000;
-  console.log('[🐟 PIRANHA] Total balance for risk calc: $' + finalBalance.toFixed(2));
-  return finalBalance;
+  // Return actual balance only - no fake fallback
+  if (totalBalance <= 0) {
+    console.log('[🐟 PIRANHA] WARNING: No balance found from exchanges. Check API credentials.');
+  }
+  console.log('[🐟 PIRANHA] Total balance for risk calc: $' + totalBalance.toFixed(2));
+  return totalBalance;
 }
 
 async function fetchExchangeBalanceInternal(exchange, creds) {

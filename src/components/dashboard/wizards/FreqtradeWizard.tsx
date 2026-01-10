@@ -28,7 +28,7 @@ export function FreqtradeWizard({ open, onOpenChange }: FreqtradeWizardProps) {
   const [vpsId, setVpsId] = useState('');
   const [exchange, setExchange] = useState('binance');
   const [dryRun, setDryRun] = useState(true);
-  const [strategy, setStrategy] = useState('SampleStrategy');
+  const [strategy, setStrategy] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [vpsInstances, setVpsInstances] = useState<{ id: string; name: string; ip: string }[]>([]);
