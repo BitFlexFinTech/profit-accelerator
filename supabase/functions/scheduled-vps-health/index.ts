@@ -196,7 +196,7 @@ serve(async (req) => {
 
       try {
         // Try to ping the health endpoint
-        const healthUrl = `http://${ip}:8080/health`;
+        const healthUrl = `http://${ip}/health`;
         console.log(`[scheduled-vps-health] Pinging ${provider} at ${healthUrl}`);
         
         const pingStart = Date.now();

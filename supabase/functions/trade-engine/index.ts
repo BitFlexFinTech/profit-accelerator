@@ -78,7 +78,7 @@ async function fetchExchangeBalance(
     // Route through VPS proxy if available (required for IP-whitelisted API keys)
     if (vpsProxyAvailable) {
       try {
-        const proxyUrl = `http://${vpsOutboundIp}:8080/balance`;
+        const proxyUrl = `http://${vpsOutboundIp}/balance`;
         console.log(`[trade-engine] Using VPS proxy for OKX: ${proxyUrl}`);
         
         const proxyResponse = await fetch(proxyUrl, {
@@ -307,8 +307,8 @@ serve(async (req) => {
         }
 
         const vpsIp = vpsConfig[0].outbound_ip;
-        const healthUrl = `http://${vpsIp}:8080/health`;
-        const orderUrl = `http://${vpsIp}:8080/place-order`;
+        const healthUrl = `http://${vpsIp}/health`;
+        const orderUrl = `http://${vpsIp}/place-order`;
         
         let healthStatus = 'unknown';
         let healthLatencyMs = 0;
@@ -375,7 +375,7 @@ serve(async (req) => {
           vpsIp,
           connectedExchanges: exchanges?.map(e => e.exchange_name) || [],
           orderRoutingPath: vpsAvailable 
-            ? `VPS Proxy (http://${vpsIp}:8080/place-order)` 
+            ? `VPS Proxy (http://${vpsIp}/place-order)` 
             : 'BLOCKED - No VPS available for live orders',
           recommendation: vpsAvailable 
             ? 'Orders will route through your whitelisted VPS IP'

@@ -237,7 +237,7 @@ async function performHealthCheck(config: FailoverConfig): Promise<HealthCheckRe
     .single();
 
   const healthUrl = config.health_check_url || 
-    (vpsConfig?.outbound_ip ? `http://${vpsConfig.outbound_ip}:8080/health` : null);
+    (vpsConfig?.outbound_ip ? `http://${vpsConfig.outbound_ip}/health` : null);
 
   if (!healthUrl) {
     console.log(`[ScheduledHealthCheck] No health URL for ${config.provider}, marking as healthy (not configured)`);

@@ -57,7 +57,7 @@ serve(async (req) => {
         
         try {
           // Try to fetch health endpoint from the VPS
-          const healthUrl = `http://${instance.ip_address}:8080/health`;
+          const healthUrl = `http://${instance.ip_address}/health`;
           
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout

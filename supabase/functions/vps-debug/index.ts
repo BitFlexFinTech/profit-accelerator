@@ -51,7 +51,7 @@ serve(async (req) => {
     const endpoint = endpointMap[action] || '/health';
 
     try {
-      const response = await fetch(`http://${vps.ip_address}:8080${endpoint}`, {
+      const response = await fetch(`http://${vps.ip_address}${endpoint}`, {
         method: 'GET',
         signal: AbortSignal.timeout(15000)
       });
@@ -88,7 +88,7 @@ serve(async (req) => {
         },
         troubleshooting: [
           'Check if the bot is running on the VPS',
-          'Verify port 8080 is open in firewall',
+          'Verify port 80 is open in firewall and Nginx is running',
           'SSH into VPS and check: pm2 status',
           'Reinstall bot: curl -fsSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash'
         ]
