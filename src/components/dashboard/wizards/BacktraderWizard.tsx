@@ -103,7 +103,8 @@ if __name__ == '__main__':
     data = bt.feeds.PandasData(dataname=df)
     cerebro.adddata(data, name='BTC')
     
-    cerebro.broker.setcash(10000)
+    # Starting cash should be set from your actual exchange balance
+    cerebro.broker.setcash(1000)  # Update this to match your actual balance
     cerebro.broker.setcommission(commission=0.001)
     
     print(f'Starting Portfolio: \${cerebro.broker.getvalue():,.2f}')

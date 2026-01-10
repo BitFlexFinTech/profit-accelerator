@@ -159,3 +159,201 @@ export async function testAllVpsEndpoints(ip?: string): Promise<{
     allOk: health.ok && ping.success,
   };
 }
+
+// ===== NEW VPS DATA ENDPOINTS =====
+
+export interface VpsPosition {
+  id: string;
+  symbol: string;
+  side: 'long' | 'short';
+  size: number;
+  entryPrice: number;
+  currentPrice?: number;
+  unrealizedPnl?: number;
+  exchange: string;
+}
+
+export interface VpsPositionsResponse {
+  success: boolean;
+  positions: VpsPosition[];
+  responseMs: number;
+  error?: string;
+}
+
+export interface VpsTrade {
+  id: string;
+  symbol: string;
+  side: 'buy' | 'sell';
+  price: number;
+  amount: number;
+  pnl?: number;
+  timestamp: string;
+  exchange: string;
+}
+
+export interface VpsTradesResponse {
+  success: boolean;
+  trades: VpsTrade[];
+  responseMs: number;
+  error?: string;
+}
+
+export interface VpsBalance {
+  exchange: string;
+  total: number;
+  available: number;
+  currency: string;
+}
+
+export interface VpsBalancesResponse {
+  success: boolean;
+  balances: VpsBalance[];
+  totalUsd: number;
+  responseMs: number;
+  error?: string;
+}
+
+export interface VpsBotControlResponse {
+  success: boolean;
+  message?: string;
+  responseMs: number;
+  error?: string;
+}
+
+/**
+ * Get positions from VPS via Edge Function
+ */
+export async function getVpsPositions(ip?: string): Promise<VpsPositionsResponse> {
+  const start = Date.now();
+  try {
+    const { data, error } = await supabase.functions.invoke('check-vps-health', {
+      body: { action: 'positions', ip }
+    });
+
+    if (error) {
+      return { success: false, positions: [], error: error.message, responseMs: Date.now() - start };
+    }
+
+    if (!data?.success) {
+      return { success: false, positions: [], error: data?.error || 'Unknown error', responseMs: Date.now() - start };
+    }
+
+    return { 
+      success: true, 
+      positions: data.positions || [], 
+      responseMs: data.latency_ms || Date.now() - start 
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Unknown error';
+    return { success: false, positions: [], error, responseMs: Date.now() - start };
+  }
+}
+
+/**
+ * Get recent trades from VPS via Edge Function
+ */
+export async function getVpsTrades(ip?: string): Promise<VpsTradesResponse> {
+  const start = Date.now();
+  try {
+    const { data, error } = await supabase.functions.invoke('check-vps-health', {
+      body: { action: 'trades', ip }
+    });
+
+    if (error) {
+      return { success: false, trades: [], error: error.message, responseMs: Date.now() - start };
+    }
+
+    if (!data?.success) {
+      return { success: false, trades: [], error: data?.error || 'Unknown error', responseMs: Date.now() - start };
+    }
+
+    return { 
+      success: true, 
+      trades: data.trades || [], 
+      responseMs: data.latency_ms || Date.now() - start 
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Unknown error';
+    return { success: false, trades: [], error, responseMs: Date.now() - start };
+  }
+}
+
+/**
+ * Get balances from VPS via Edge Function
+ */
+export async function getVpsBalances(ip?: string): Promise<VpsBalancesResponse> {
+  const start = Date.now();
+  try {
+    const { data, error } = await supabase.functions.invoke('check-vps-health', {
+      body: { action: 'balances', ip }
+    });
+
+    if (error) {
+      return { success: false, balances: [], totalUsd: 0, error: error.message, responseMs: Date.now() - start };
+    }
+
+    if (!data?.success) {
+      return { success: false, balances: [], totalUsd: 0, error: data?.error || 'Unknown error', responseMs: Date.now() - start };
+    }
+
+    return { 
+      success: true, 
+      balances: data.balances || [], 
+      totalUsd: data.totalUsd || 0,
+      responseMs: data.latency_ms || Date.now() - start 
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Unknown error';
+    return { success: false, balances: [], totalUsd: 0, error, responseMs: Date.now() - start };
+  }
+}
+
+/**
+ * Start bot via VPS Edge Function
+ */
+export async function startVpsBot(ip?: string): Promise<VpsBotControlResponse> {
+  const start = Date.now();
+  try {
+    const { data, error } = await supabase.functions.invoke('check-vps-health', {
+      body: { action: 'bot-start', ip }
+    });
+
+    if (error) {
+      return { success: false, error: error.message, responseMs: Date.now() - start };
+    }
+
+    return { 
+      success: data?.success === true, 
+      message: data?.message,
+      responseMs: data.latency_ms || Date.now() - start 
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Unknown error';
+    return { success: false, error, responseMs: Date.now() - start };
+  }
+}
+
+/**
+ * Stop bot via VPS Edge Function
+ */
+export async function stopVpsBot(ip?: string): Promise<VpsBotControlResponse> {
+  const start = Date.now();
+  try {
+    const { data, error } = await supabase.functions.invoke('check-vps-health', {
+      body: { action: 'bot-stop', ip }
+    });
+
+    if (error) {
+      return { success: false, error: error.message, responseMs: Date.now() - start };
+    }
+
+    return { 
+      success: data?.success === true, 
+      message: data?.message,
+      responseMs: data.latency_ms || Date.now() - start 
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Unknown error';
+    return { success: false, error, responseMs: Date.now() - start };
+  }
+}
