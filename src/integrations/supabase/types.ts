@@ -2633,7 +2633,6 @@ export type Database = {
           last_error_at: string | null
           last_ping_at: string | null
           last_ping_ms: number | null
-          updated_at: string | null
         }
         Insert: {
           balance_updated_at?: string | null
@@ -2645,7 +2644,6 @@ export type Database = {
           last_error_at?: string | null
           last_ping_at?: string | null
           last_ping_ms?: number | null
-          updated_at?: string | null
         }
         Update: {
           balance_updated_at?: string | null
@@ -2657,7 +2655,6 @@ export type Database = {
           last_error_at?: string | null
           last_ping_at?: string | null
           last_ping_ms?: number | null
-          updated_at?: string | null
         }
         Relationships: []
       }
