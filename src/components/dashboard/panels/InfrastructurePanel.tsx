@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Activity, Cloud, CheckCircle2, XCircle, AlertTriangle, Zap, RefreshCw } from 'lucide-react';
+import { Activity, Cloud, CheckCircle2, XCircle, AlertTriangle, Zap, RefreshCw, Server, Wifi } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,6 +8,8 @@ import { useCloudConfig } from '@/hooks/useCloudConfig';
 import { useHFTDeployments } from '@/hooks/useHFTDeployments';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconContainer } from '@/components/ui/IconContainer';
+import { checkVpsApiHealth, pingVpsExchanges, VpsPingResponse } from '@/services/vpsApiService';
+import { toast } from 'sonner';
 
 interface ExchangePulse {
   id: string;
@@ -22,6 +24,13 @@ interface RateLimitStat {
   usagePercent: number;
 }
 
+interface VpsApiStatus {
+  ok: boolean;
+  responseMs: number;
+  uptime?: number;
+  error?: string;
+}
+
 const ALL_PROVIDERS = ['contabo', 'vultr', 'aws', 'digitalocean', 'gcp', 'oracle', 'alibaba', 'azure'];
 
 export function InfrastructurePanel() {
@@ -33,6 +42,9 @@ export function InfrastructurePanel() {
   const { configs } = useCloudConfig();
   const { deployments } = useHFTDeployments();
   const [vpsConfig, setVpsConfig] = useState<{ provider: string } | null>(null);
+  const [vpsIp, setVpsIp] = useState<string | null>(null);
+  const [vpsApiStatus, setVpsApiStatus] = useState<VpsApiStatus | null>(null);
+  const [isTestingApi, setIsTestingApi] = useState(false);
 
   const fetchPulses = useCallback(async () => {
     try {
@@ -131,7 +143,47 @@ export function InfrastructurePanel() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await Promise.all([fetchPulses(), fetchRateLimits(), fetchVpsLatency()]);
+    if (vpsIp) {
+      const status = await checkVpsApiHealth(vpsIp);
+      setVpsApiStatus(status);
+    }
     setIsRefreshing(false);
+  };
+
+  const handleTestVpsApi = async () => {
+    if (!vpsIp) {
+      toast.error('No VPS IP configured');
+      return;
+    }
+    
+    setIsTestingApi(true);
+    try {
+      const [healthResult, pingResult] = await Promise.all([
+        checkVpsApiHealth(vpsIp),
+        pingVpsExchanges(vpsIp)
+      ]);
+      
+      setVpsApiStatus(healthResult);
+      
+      if (healthResult.ok && pingResult.success) {
+        const avgLatency = pingResult.pings.length > 0
+          ? Math.round(pingResult.pings.reduce((sum, p) => sum + p.latencyMs, 0) / pingResult.pings.length)
+          : 0;
+        toast.success(`VPS API Ready (${healthResult.responseMs}ms)`, {
+          description: `Exchange pings: ${pingResult.pings.map(p => `${p.exchange}: ${p.latencyMs}ms`).join(', ')}`
+        });
+      } else {
+        toast.error('VPS API Error', {
+          description: healthResult.error || 'Failed to connect to VPS API'
+        });
+      }
+    } catch (err) {
+      toast.error('VPS API Test Failed', {
+        description: err instanceof Error ? err.message : 'Unknown error'
+      });
+    } finally {
+      setIsTestingApi(false);
+    }
   };
 
   useEffect(() => {
@@ -140,19 +192,38 @@ export function InfrastructurePanel() {
     fetchSentiment();
     fetchVpsLatency();
     
+    // Fetch VPS config and IP
     supabase.from('vps_config').select('provider').order('updated_at', { ascending: false }).limit(1).single()
       .then(({ data }) => { if (data) setVpsConfig(data); });
+    
+    // Fetch VPS IP from hft_deployments or vps_instances
+    supabase.from('hft_deployments').select('ip_address').eq('status', 'running').limit(1).single()
+      .then(({ data }) => {
+        if (data?.ip_address) {
+          setVpsIp(data.ip_address);
+          // Check API health immediately
+          checkVpsApiHealth(data.ip_address).then(setVpsApiStatus);
+        }
+      });
     
     const pulseInterval = setInterval(fetchPulses, 15000);
     const rateInterval = setInterval(fetchRateLimits, 10000);
     const vpsLatencyInterval = setInterval(fetchVpsLatency, 15000);
     
+    // Refresh VPS API status every 30 seconds
+    const vpsApiInterval = setInterval(() => {
+      if (vpsIp) {
+        checkVpsApiHealth(vpsIp).then(setVpsApiStatus);
+      }
+    }, 30000);
+    
     return () => {
       clearInterval(pulseInterval);
       clearInterval(rateInterval);
       clearInterval(vpsLatencyInterval);
+      clearInterval(vpsApiInterval);
     };
-  }, [fetchPulses, fetchRateLimits, fetchSentiment, fetchVpsLatency]);
+  }, [fetchPulses, fetchRateLimits, fetchSentiment, fetchVpsLatency, vpsIp]);
 
   const getStatusIcon = (status: string) => {
     if (status === 'healthy') return <CheckCircle2 className="w-2 h-2 text-green-400" />;
@@ -287,7 +358,57 @@ export function InfrastructurePanel() {
         </div>
       </div>
 
-      {/* Row 2: Cloud Mesh */}
+      {/* Row 2: VPS API Status */}
+      {vpsIp && (
+        <div className="flex-shrink-0">
+          <div className="flex items-center justify-between gap-1 p-1.5 rounded bg-secondary/30 border border-border/50">
+            <div className="flex items-center gap-1.5">
+              <Server className="w-3 h-3 text-orange-400" />
+              <span className="text-[9px] font-medium">VPS API</span>
+              {vpsApiStatus && (
+                <div className={cn(
+                  "flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold",
+                  vpsApiStatus.ok 
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
+                    : "bg-red-500/20 text-red-400 border border-red-500/30"
+                )}>
+                  {vpsApiStatus.ok ? (
+                    <>
+                      <Wifi className="w-2 h-2" />
+                      Ready ({vpsApiStatus.responseMs}ms)
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-2 h-2" />
+                      Offline
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestVpsApi}
+                  disabled={isTestingApi}
+                  className="h-5 px-2 text-[8px] bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20"
+                >
+                  {isTestingApi ? (
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                  ) : (
+                    'Test API'
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Test VPS API endpoints and exchange pings</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      )}
+
+      {/* Row 3: Cloud Mesh */}
       <div className="flex-shrink-0">
         <div className="flex items-center justify-between gap-1 mb-0.5">
           <div className="flex items-center gap-1">
