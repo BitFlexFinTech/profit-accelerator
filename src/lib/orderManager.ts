@@ -159,8 +159,8 @@ export class OrderManager {
       throw new Error(`Exchange ${request.exchangeName} not connected`);
     }
 
-    // Call VPS order endpoint directly for lowest latency
-    const response = await fetch(`http://${vpsIp}:8080/place-order`, {
+    // Call VPS order endpoint directly for lowest latency (port 80 via Nginx)
+    const response = await fetch(`http://${vpsIp}/place-order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
