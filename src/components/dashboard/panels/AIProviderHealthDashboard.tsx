@@ -204,30 +204,34 @@ export function AIProviderHealthDashboard() {
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchProviders}
-                  className="h-7 px-2 text-xs"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                </Button>
+                <span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchProviders}
+                    className="h-7 px-2 text-xs"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>Refresh provider status</TooltipContent>
             </Tooltip>
             
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleResetAllLimits}
-                  disabled={isResetting}
-                  className="h-7 px-2 text-xs border-amber-500/30 hover:bg-amber-500/20"
-                >
-                  <RotateCcw className={cn("w-3 h-3 mr-1", isResetting && "animate-spin")} />
-                  Reset All
-                </Button>
+                <span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetAllLimits}
+                    disabled={isResetting}
+                    className="h-7 px-2 text-xs border-amber-500/30 hover:bg-amber-500/20"
+                  >
+                    <RotateCcw className={cn("w-3 h-3 mr-1", isResetting && "animate-spin")} />
+                    Reset All
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>Reset all daily limits to 0</TooltipContent>
             </Tooltip>
