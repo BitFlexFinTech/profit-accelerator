@@ -43,14 +43,11 @@ export function LatencyComparisonChart() {
       }
     }
 
-    // Build comparison data - ONLY real VPS latency, no mock edge data
-    const exchanges = ['binance', 'okx', 'bybit', 'bitget', 'kucoin', 'hyperliquid'];
+    // Build comparison data - ONLY real VPS latency from database, no hardcoded exchanges
     const comparisonData: LatencyData[] = [];
 
-    for (const exchange of exchanges) {
-      const vpsLatency = vpsLatencyMap.get(exchange) || 0;
-      
-      // Only show exchanges with REAL measured VPS latency - no fake data
+    // Only use exchanges with REAL measured VPS latency from database
+    for (const [exchange, vpsLatency] of vpsLatencyMap.entries()) {
       if (vpsLatency > 0) {
         // Get edge latency from pulse data if available
         const pulseEntry = pulseData?.find(p => p.exchange_name === exchange && p.source === 'edge');

@@ -104,6 +104,26 @@ Deno.serve(async (req) => {
       return await handleBotStatus(targetIp, startTime, provider);
     }
 
+    if (action === 'positions') {
+      return await handlePositions(targetIp, startTime, provider);
+    }
+
+    if (action === 'trades') {
+      return await handleTrades(targetIp, startTime, provider);
+    }
+
+    if (action === 'balances') {
+      return await handleBalances(targetIp, startTime, provider);
+    }
+
+    if (action === 'bot-start') {
+      return await handleBotControl(targetIp, startTime, 'start');
+    }
+
+    if (action === 'bot-stop') {
+      return await handleBotControl(targetIp, startTime, 'stop');
+    }
+
     // Default: health check
     return await handleHealthCheck(targetIp, startTime, provider, vpsConfigId, supabase);
 
@@ -413,6 +433,173 @@ async function handleBotStatus(
         error: errMessage,
         latency_ms: Date.now() - startTime,
       }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+// ===== NEW VPS DATA HANDLERS =====
+
+async function handlePositions(
+  targetIp: string,
+  startTime: number,
+  provider: string | null
+) {
+  const url = `http://${targetIp}/positions`;
+  console.log(`[check-vps-health] Fetching positions at: ${url}`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeoutId);
+    const latencyMs = Date.now() - startTime;
+
+    if (response.ok) {
+      const data = await response.json();
+      return new Response(
+        JSON.stringify({
+          success: true,
+          positions: data.positions || data || [],
+          latency_ms: latencyMs,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else {
+      return new Response(
+        JSON.stringify({ success: false, positions: [], error: `HTTP ${response.status}`, latency_ms: latencyMs }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+  } catch (error) {
+    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(
+      JSON.stringify({ success: false, positions: [], error: errMessage, latency_ms: Date.now() - startTime }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+async function handleTrades(
+  targetIp: string,
+  startTime: number,
+  provider: string | null
+) {
+  const url = `http://${targetIp}/trades`;
+  console.log(`[check-vps-health] Fetching trades at: ${url}`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeoutId);
+    const latencyMs = Date.now() - startTime;
+
+    if (response.ok) {
+      const data = await response.json();
+      return new Response(
+        JSON.stringify({
+          success: true,
+          trades: data.trades || data || [],
+          latency_ms: latencyMs,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else {
+      return new Response(
+        JSON.stringify({ success: false, trades: [], error: `HTTP ${response.status}`, latency_ms: latencyMs }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+  } catch (error) {
+    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(
+      JSON.stringify({ success: false, trades: [], error: errMessage, latency_ms: Date.now() - startTime }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+async function handleBalances(
+  targetIp: string,
+  startTime: number,
+  provider: string | null
+) {
+  const url = `http://${targetIp}/balances`;
+  console.log(`[check-vps-health] Fetching balances at: ${url}`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeoutId);
+    const latencyMs = Date.now() - startTime;
+
+    if (response.ok) {
+      const data = await response.json();
+      return new Response(
+        JSON.stringify({
+          success: true,
+          balances: data.balances || data || [],
+          totalUsd: data.totalUsd || data.total || 0,
+          latency_ms: latencyMs,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else {
+      return new Response(
+        JSON.stringify({ success: false, balances: [], totalUsd: 0, error: `HTTP ${response.status}`, latency_ms: latencyMs }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+  } catch (error) {
+    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(
+      JSON.stringify({ success: false, balances: [], totalUsd: 0, error: errMessage, latency_ms: Date.now() - startTime }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+async function handleBotControl(
+  targetIp: string,
+  startTime: number,
+  action: 'start' | 'stop'
+) {
+  const url = `http://${targetIp}/bot/${action}`;
+  console.log(`[check-vps-health] Bot control (${action}) at: ${url}`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(url, { method: 'POST', signal: controller.signal });
+    clearTimeout(timeoutId);
+    const latencyMs = Date.now() - startTime;
+
+    if (response.ok) {
+      const data = await response.json();
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: data.message || `Bot ${action} successful`,
+          latency_ms: latencyMs,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else {
+      return new Response(
+        JSON.stringify({ success: false, error: `HTTP ${response.status}`, latency_ms: latencyMs }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+  } catch (error) {
+    const errMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(
+      JSON.stringify({ success: false, error: errMessage, latency_ms: Date.now() - startTime }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

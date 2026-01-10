@@ -30,13 +30,37 @@ export function MarketWatchPanel({ compact = false, limit = 3 }: MarketWatchPane
     return 'text-muted-foreground';
   };
 
+  // Only show coins that have real price data from the VPS/exchanges
   const allCoins = [
-    { symbol: 'BTC', name: 'Bitcoin', data: prices?.BTC },
-    { symbol: 'ETH', name: 'Ethereum', data: prices?.ETH },
-    { symbol: 'SOL', name: 'Solana', data: prices?.SOL }
-  ];
+    prices?.BTC?.price ? { symbol: 'BTC', name: 'Bitcoin', data: prices.BTC } : null,
+    prices?.ETH?.price ? { symbol: 'ETH', name: 'Ethereum', data: prices.ETH } : null,
+    prices?.SOL?.price ? { symbol: 'SOL', name: 'Solana', data: prices.SOL } : null
+  ].filter((coin): coin is { symbol: string; name: string; data: typeof prices.BTC } => coin !== null);
 
   const coins = allCoins.slice(0, limit);
+  
+  // Show message if no real price data available
+  if (coins.length === 0 && !isLoading) {
+    return (
+      <div className={cn(
+        "card-cyan glass-card h-full flex flex-col",
+        compact ? 'p-2' : 'p-6'
+      )}>
+        <div className="flex items-center gap-2 mb-2">
+          <IconContainer color="cyan" size="sm">
+            <TrendingUp className={compact ? "w-3 h-3" : "w-4 h-4"} />
+          </IconContainer>
+          <h3 className={cn("font-semibold", compact ? 'text-sm' : 'text-lg')}>Market Watch</h3>
+        </div>
+        <div className="text-center py-4 text-muted-foreground text-sm">
+          <p>Waiting for price data from VPS...</p>
+          <button onClick={refetch} className="text-cyan-400 hover:underline text-xs mt-2">
+            Refresh
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn(

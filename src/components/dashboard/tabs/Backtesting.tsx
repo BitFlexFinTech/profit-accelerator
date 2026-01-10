@@ -56,12 +56,7 @@ const TIMEFRAMES = [
   { value: '1d', label: '1 Day' },
 ];
 
-const STRATEGIES = [
-  { value: 'Momentum Scalper', label: 'Momentum Scalper' },
-  { value: 'Mean Reversion', label: 'Mean Reversion' },
-  { value: 'RSI Oversold/Overbought', label: 'RSI Strategy' },
-  { value: 'Bollinger Bands', label: 'Bollinger Bands' },
-];
+// Strategies are loaded from database - no hardcoded values
 
 export function Backtesting() {
   const [results, setResults] = useState<BacktestResult | null>(null);
@@ -69,9 +64,10 @@ export function Backtesting() {
   const [equityCurve, setEquityCurve] = useState<{ time: number; balance: number }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
+  const [strategies, setStrategies] = useState<{ value: string; label: string }[]>([]);
 
   // Configuration state
-  const [strategy, setStrategy] = useState('Momentum Scalper');
+  const [strategy, setStrategy] = useState('');
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('1h');
   const [startDate, setStartDate] = useState('2024-01-01');
@@ -82,10 +78,25 @@ export function Backtesting() {
   const [feesPct, setFeesPct] = useState(0.1);
   const [slippagePct, setSlippagePct] = useState(0.05);
 
-  // Fetch latest backtest results from database
+  // Fetch strategies and latest backtest results from database
   useEffect(() => {
-    const fetchResults = async () => {
+    const fetchData = async () => {
       try {
+        // Fetch strategies from database
+        const { data: strategyData } = await supabase
+          .from('strategy_config')
+          .select('strategy_name, display_name')
+          .eq('is_enabled', true);
+        
+        if (strategyData && strategyData.length > 0) {
+          setStrategies(strategyData.map(s => ({ 
+            value: s.strategy_name, 
+            label: s.display_name 
+          })));
+          setStrategy(strategyData[0].strategy_name);
+        }
+
+        // Fetch latest backtest results
         const { data, error } = await supabase
           .from('backtest_results')
           .select('*')
@@ -101,13 +112,13 @@ export function Backtesting() {
           }
         }
       } catch (err) {
-        console.error('Failed to fetch backtest results:', err);
+        console.error('Failed to fetch data:', err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchResults();
+    fetchData();
   }, []);
 
   const runBacktest = async () => {
@@ -214,12 +225,12 @@ export function Backtesting() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="space-y-2">
             <Label>Strategy</Label>
-            <Select value={strategy} onValueChange={setStrategy}>
+            <Select value={strategy} onValueChange={setStrategy} disabled={strategies.length === 0}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder={strategies.length === 0 ? "No strategies configured" : "Select strategy"} />
               </SelectTrigger>
               <SelectContent>
-                {STRATEGIES.map((s) => (
+                {strategies.map((s) => (
                   <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                 ))}
               </SelectContent>
