@@ -35,6 +35,7 @@ export function useExchangeStatus() {
   // Prevent concurrent fetches and debounce rapid updates
   const fetchingRef = useRef(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSignatureRef = useRef<string>('');
 
   const fetchStatus = useCallback(async () => {
     // Prevent concurrent fetches
@@ -103,19 +104,32 @@ export function useExchangeStatus() {
       const connectedCount = mergedExchanges.filter(e => e.is_connected).length;
       const totalBalance = mergedExchanges.reduce((sum, e) => sum + (e.balance_usdt || 0), 0);
 
-      setStatus({
-        exchanges: mergedExchanges,
-        connectedCount,
-        totalBalance,
-        isLoading: false
-      });
+      // Create signature to prevent unnecessary state updates
+      // Include connected status, balance, and last_error for each exchange
+      const signature = mergedExchanges
+        .map(e => `${e.id}:${e.is_connected}:${e.balance_usdt}:${e.last_ping_ms}:${e.last_error}:${e.balance_updated_at}`)
+        .join('|');
+
+      // Only update state if data actually changed
+      if (signature !== lastSignatureRef.current) {
+        lastSignatureRef.current = signature;
+        setStatus({
+          exchanges: mergedExchanges,
+          connectedCount,
+          totalBalance,
+          isLoading: false
+        });
+      } else if (status.isLoading) {
+        // Clear loading state even if data unchanged
+        setStatus(prev => ({ ...prev, isLoading: false }));
+      }
     } catch (err) {
       console.error('[useExchangeStatus] Error:', err);
       setStatus(prev => ({ ...prev, isLoading: false }));
     } finally {
       fetchingRef.current = false;
     }
-  }, []);
+  }, [status.isLoading]);
 
   // Debounced fetch to prevent rapid re-renders from realtime events
   const debouncedFetch = useCallback(() => {
