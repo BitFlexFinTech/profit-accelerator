@@ -2622,6 +2622,45 @@ export type Database = {
         }
         Relationships: []
       }
+      exchange_connections_public: {
+        Row: {
+          balance_updated_at: string | null
+          balance_usdt: number | null
+          exchange_name: string | null
+          id: string | null
+          is_connected: boolean | null
+          last_error: string | null
+          last_error_at: string | null
+          last_ping_at: string | null
+          last_ping_ms: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          balance_updated_at?: string | null
+          balance_usdt?: number | null
+          exchange_name?: string | null
+          id?: string | null
+          is_connected?: boolean | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_ping_at?: string | null
+          last_ping_ms?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          balance_updated_at?: string | null
+          balance_usdt?: number | null
+          exchange_name?: string | null
+          id?: string | null
+          is_connected?: boolean | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_ping_at?: string | null
+          last_ping_ms?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       increment_live_trade: { Args: { profit?: number }; Returns: boolean }
