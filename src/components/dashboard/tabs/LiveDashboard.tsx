@@ -98,7 +98,7 @@ export function LiveDashboard() {
           
           {/* Infrastructure Panel - Shows latency */}
           {isVisible('infrastructure') && (
-            <div className="h-[120px] flex-shrink-0">
+            <div className="h-[160px] flex-shrink-0">
               <InfrastructurePanel />
             </div>
           )}
