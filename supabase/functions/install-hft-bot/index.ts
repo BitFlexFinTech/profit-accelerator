@@ -415,9 +415,41 @@ const startStrategy = () => {
   });
 };
 
-// Start both processes
+// Start health process (always needed for monitoring)
 startHealth();
-setTimeout(startStrategy, 500); // Slight delay to let health start first
+
+// STRICT RULE: NEVER auto-start strategy - wait for explicit START_SIGNAL
+const START_SIGNAL_FILE = '/app/data/START_SIGNAL';
+const STOP_SIGNAL_FILE = '/app/data/STOP_SIGNAL';
+
+if (fs.existsSync(STOP_SIGNAL_FILE)) {
+  console.log('[SUPERVISOR] ⛔ STOP_SIGNAL found - strategy will NOT start');
+  console.log('[SUPERVISOR] Bot is in SAFE MODE - remove STOP_SIGNAL and create START_SIGNAL to trade');
+} else if (fs.existsSync(START_SIGNAL_FILE)) {
+  console.log('[SUPERVISOR] ✅ START_SIGNAL found - starting strategy...');
+  strategyRestarts = 0;
+  currentRestartDelay = BASE_RESTART_DELAY;
+  setTimeout(startStrategy, 500);
+} else {
+  console.log('[SUPERVISOR] ⏳ STANDBY MODE - No START_SIGNAL found');
+  console.log('[SUPERVISOR] Bot will NOT trade until started from dashboard');
+  console.log('[SUPERVISOR] Watching for START_SIGNAL file...');
+  
+  // Watch for START_SIGNAL file to be created by dashboard
+  const watchInterval = setInterval(() => {
+    if (fs.existsSync(STOP_SIGNAL_FILE)) {
+      // STOP takes priority - do nothing
+      return;
+    }
+    if (fs.existsSync(START_SIGNAL_FILE)) {
+      console.log('[SUPERVISOR] ✅ START_SIGNAL detected! Starting strategy...');
+      clearInterval(watchInterval);
+      strategyRestarts = 0;
+      currentRestartDelay = BASE_RESTART_DELAY;
+      startStrategy();
+    }
+  }, 5000); // Check every 5 seconds
+}
 
 // Graceful shutdown handlers
 const shutdown = (signal) => {
