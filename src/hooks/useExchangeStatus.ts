@@ -124,7 +124,7 @@ export function useExchangeStatus() {
     }
     debounceTimerRef.current = setTimeout(() => {
       fetchStatus();
-    }, 300);
+    }, 500); // Increased from 300ms to 500ms to reduce update frequency
   }, [fetchStatus]);
 
   useEffect(() => {
