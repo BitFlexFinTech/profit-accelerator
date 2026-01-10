@@ -161,6 +161,13 @@ export type Database = {
             foreignKeyName: "ai_provider_performance_provider_name_fkey"
             columns: ["provider_name"]
             isOneToOne: false
+            referencedRelation: "ai_provider_accuracy"
+            referencedColumns: ["provider_name"]
+          },
+          {
+            foreignKeyName: "ai_provider_performance_provider_name_fkey"
+            columns: ["provider_name"]
+            isOneToOne: false
             referencedRelation: "ai_providers"
             referencedColumns: ["provider_name"]
           },
@@ -2614,11 +2621,30 @@ export type Database = {
       ai_provider_accuracy: {
         Row: {
           accuracy_percent: number | null
-          ai_provider: string | null
-          avg_confidence: number | null
-          avg_profit: number | null
-          correct_predictions: number | null
-          total_recommendations: number | null
+          avg_latency_ms: number | null
+          display_name: string | null
+          error_count: number | null
+          provider_name: string | null
+          success_count: number | null
+          total_latency_ms: number | null
+        }
+        Insert: {
+          accuracy_percent?: never
+          avg_latency_ms?: never
+          display_name?: string | null
+          error_count?: number | null
+          provider_name?: string | null
+          success_count?: number | null
+          total_latency_ms?: number | null
+        }
+        Update: {
+          accuracy_percent?: never
+          avg_latency_ms?: never
+          display_name?: string | null
+          error_count?: number | null
+          provider_name?: string | null
+          success_count?: number | null
+          total_latency_ms?: number | null
         }
         Relationships: []
       }
