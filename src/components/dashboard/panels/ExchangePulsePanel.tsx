@@ -219,7 +219,7 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
                 compact ? 'text-[8px]' : 'text-[10px]',
                 getLatencyColor(pulse.latency_ms, pulse.source)
               )}>
-                {Math.round(pulse.latency_ms)}ms
+                {pulse.source === 'vps' ? 'VPS→' : ''}{Math.round(pulse.latency_ms)}ms
               </p>
             </div>
           );
