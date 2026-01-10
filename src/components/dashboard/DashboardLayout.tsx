@@ -31,7 +31,6 @@ import { SystemHealthBar } from './SystemHealthBar';
 import { NotificationDropdown } from './NotificationDropdown';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { WidgetCustomizer } from './WidgetCustomizer';
-import { initializeAppStore } from '@/store/useAppStore';
 import { supabase } from '@/integrations/supabase/client';
 
 const tabs = [
@@ -53,12 +52,6 @@ export function DashboardLayout() {
   const [showKillSwitch, setShowKillSwitch] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-
-  // Initialize SSOT store on mount
-  useEffect(() => {
-    const cleanup = initializeAppStore();
-    return cleanup;
-  }, []);
 
   // Fetch unread notification count
   useEffect(() => {
