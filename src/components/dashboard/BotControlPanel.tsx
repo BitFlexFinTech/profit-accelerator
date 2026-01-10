@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, AlertTriangle, Loader2, RefreshCw, Zap } from 'lucide-react';
+import { Play, Square, AlertTriangle, Loader2, RefreshCw, Zap, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -7,6 +7,7 @@ import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useAppStore } from '@/store/useAppStore';
 import { ActionButton } from '@/components/ui/ActionButton';
 import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
+import { useVPSHealthPolling } from '@/hooks/useVPSHealthPolling';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,8 +18,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
-type BotStatus = 'idle' | 'running' | 'stopped' | 'error';
+type BotStatus = 'idle' | 'running' | 'stopped' | 'error' | 'starting';
 
 interface TradingConfig {
   bot_status: BotStatus;
@@ -35,6 +42,12 @@ export function BotControlPanel() {
   
   const { sync } = useExchangeWebSocket();
   const getTotalEquity = useAppStore(state => state.getTotalEquity);
+  
+  // VPS Health Polling - verifies actual VPS state every 30 seconds
+  const { health: vpsHealth, isPolling: isHealthPolling, refresh: refreshHealth, forceSync } = useVPSHealthPolling({
+    pollIntervalMs: 30000,
+    enabled: true,
+  });
 
   const handleSyncBalances = async () => {
     setIsSyncing(true);
@@ -96,8 +109,7 @@ export function BotControlPanel() {
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
-      // Try to get deployment from hft_deployments first
-      // CRITICAL FIX: Query for both 'active' AND 'running' status
+      // Get deployment from hft_deployments
       const { data: deployment } = await supabase
         .from('hft_deployments')
         .select('id, server_id, ip_address, provider')
@@ -116,35 +128,48 @@ export function BotControlPanel() {
       const deploymentId = deployment?.id || deployment?.server_id || vpsInstance?.deployment_id || vpsInstance?.id;
       const provider = deployment?.provider || vpsInstance?.provider;
 
-      if (deploymentId) {
-        // Use the proper bot-control edge function with Docker support
-        // This will create START_SIGNAL file and inject exchange credentials
-        const { data, error: vpsError } = await supabase.functions.invoke('bot-control', {
-          body: { action: 'start', deploymentId }
-        });
-
-        if (vpsError) {
-          console.error('[BotControl] VPS signal error:', vpsError);
-          toast.error('Failed to start VPS bot: ' + vpsError.message);
-          // Continue anyway to update local state
-        } else {
-          console.log('[BotControl] Bot start result:', data);
-          if (data?.success) {
-            toast.success('VPS bot started successfully on ' + data.ipAddress);
-          }
-        }
-      } else {
-        toast.warning('No VPS deployment found - bot status updated locally only');
+      if (!deploymentId) {
+        toast.error('No VPS deployment found. Please deploy a VPS first.');
+        setIsStarting(false);
+        return;
       }
 
-      // Update trading_config (bot-control also does this, but ensure local sync)
-      await supabase.from('trading_config')
-        .update({ 
-          bot_status: 'running', 
-          trading_enabled: true,
-          updated_at: new Date().toISOString()
-        })
-        .neq('id', '00000000-0000-0000-0000-000000000000');
+      // Set status to 'starting' immediately for UI feedback
+      setBotStatus('starting');
+
+      // Call bot-control edge function
+      const { data, error: vpsError } = await supabase.functions.invoke('bot-control', {
+        body: { action: 'start', deploymentId }
+      });
+
+      if (vpsError) {
+        console.error('[BotControl] VPS signal error:', vpsError);
+        toast.error('Failed to start VPS bot: ' + vpsError.message);
+        setBotStatus('error');
+        return;
+      }
+
+      if (!data?.success) {
+        console.error('[BotControl] Bot start failed:', data?.error);
+        toast.error('Bot start failed: ' + (data?.error || 'Unknown error'));
+        setBotStatus('error');
+        return;
+      }
+
+      // SUCCESS: VPS confirmed bot started
+      console.log('[BotControl] Bot start result:', data);
+      
+      if (data.healthVerified) {
+        setBotStatus('running');
+        toast.success(`Bot started and verified on ${data.ipAddress}`);
+      } else {
+        // Bot container started but health not verified yet
+        setBotStatus('running');
+        toast.success(`Bot started on ${data.ipAddress} (health check pending)`);
+        
+        // Trigger health refresh after a delay
+        setTimeout(() => refreshHealth(), 5000);
+      }
 
       // Update vps_config if we have a provider
       if (provider) {
@@ -153,11 +178,10 @@ export function BotControlPanel() {
           .eq('provider', provider);
       }
 
-      setBotStatus('running');
-      toast.success('Bot started - LIVE TRADING enabled');
     } catch (error) {
       console.error('[BotControl] Start error:', error);
       toast.error('Failed to start bot');
+      setBotStatus('error');
     } finally {
       setIsStarting(false);
     }
@@ -170,8 +194,7 @@ export function BotControlPanel() {
   const handleStopBot = async () => {
     setIsStopping(true);
     try {
-      // Try to get deployment from hft_deployments first
-      // CRITICAL FIX: Query for both 'active' AND 'running' status
+      // Get deployment from hft_deployments
       const { data: deployment } = await supabase
         .from('hft_deployments')
         .select('id, server_id, ip_address, provider')
@@ -190,27 +213,31 @@ export function BotControlPanel() {
       const deploymentId = deployment?.id || deployment?.server_id || vpsInstance?.deployment_id || vpsInstance?.id;
       const provider = deployment?.provider || vpsInstance?.provider;
 
-      if (deploymentId) {
-        // Use the proper bot-control edge function with Docker support
-        const { data, error: vpsError } = await supabase.functions.invoke('bot-control', {
-          body: { action: 'stop', deploymentId }
-        });
-
-        if (vpsError) {
-          console.error('[BotControl] VPS signal error:', vpsError);
-        } else {
-          console.log('[BotControl] Bot stop result:', data);
-        }
+      if (!deploymentId) {
+        toast.error('No VPS deployment found');
+        setIsStopping(false);
+        return;
       }
 
-      // Update trading_config
-      await supabase.from('trading_config')
-        .update({ 
-          bot_status: 'stopped', 
-          trading_enabled: false,
-          updated_at: new Date().toISOString()
-        })
-        .neq('id', '00000000-0000-0000-0000-000000000000');
+      // Call bot-control edge function
+      const { data, error: vpsError } = await supabase.functions.invoke('bot-control', {
+        body: { action: 'stop', deploymentId }
+      });
+
+      if (vpsError) {
+        console.error('[BotControl] VPS signal error:', vpsError);
+        toast.error('Failed to stop VPS bot: ' + vpsError.message);
+        // Still update local state as stop is critical
+      } else if (!data?.success) {
+        console.error('[BotControl] Bot stop failed:', data?.error);
+        toast.error('Bot stop may have failed: ' + (data?.error || 'Unknown error'));
+      } else {
+        console.log('[BotControl] Bot stop result:', data);
+        toast.success('Bot stopped successfully');
+      }
+
+      // Update local state after VPS command (stop is critical, always update)
+      setBotStatus('stopped');
 
       // Update vps_config if we have a provider
       if (provider) {
@@ -219,8 +246,9 @@ export function BotControlPanel() {
           .eq('provider', provider);
       }
 
-      setBotStatus('stopped');
-      toast.success('Bot stopped successfully');
+      // Refresh health to verify
+      setTimeout(() => refreshHealth(), 2000);
+
     } catch (error) {
       console.error('[BotControl] Stop error:', error);
       toast.error('Failed to stop bot');
@@ -248,10 +276,19 @@ export function BotControlPanel() {
       
       setBotStatus('stopped');
       toast.success('Error state cleared - bot ready to start');
+      
+      // Refresh health
+      refreshHealth();
     } catch (error) {
       console.error('[BotControl] Clear error failed:', error);
       toast.error('Failed to clear error state');
     }
+  };
+
+  const handleForceSync = async () => {
+    toast.info('Syncing with VPS...');
+    await forceSync();
+    toast.success('State synchronized with VPS');
   };
 
   const getStatusBadge = () => {
@@ -264,6 +301,13 @@ export function BotControlPanel() {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
             </span>
             RUNNING
+          </Badge>
+        );
+      case 'starting':
+        return (
+          <Badge className="bg-warning/20 text-warning border-warning/40 gap-1.5">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            STARTING
           </Badge>
         );
       case 'stopped':
@@ -288,6 +332,90 @@ export function BotControlPanel() {
     }
   };
 
+  const getVPSHealthIndicator = () => {
+    const lastVerifiedText = vpsHealth.lastVerified 
+      ? `Last verified: ${vpsHealth.lastVerified.toLocaleTimeString()}`
+      : 'Not verified yet';
+    
+    const latencyText = vpsHealth.latencyMs 
+      ? ` (${vpsHealth.latencyMs}ms)`
+      : '';
+
+    switch (vpsHealth.status) {
+      case 'healthy':
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 text-success">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="text-xs">VPS OK</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{lastVerifiedText}{latencyText}</p>
+                {vpsHealth.ipAddress && <p>IP: {vpsHealth.ipAddress}</p>}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      case 'unhealthy':
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 text-warning">
+                  <AlertCircle className="w-4 h-4" />
+                  <span className="text-xs">VPS Idle</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>VPS reachable but bot not running</p>
+                <p>{lastVerifiedText}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      case 'unreachable':
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 text-destructive">
+                  <XCircle className="w-4 h-4" />
+                  <span className="text-xs">VPS Unreachable</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Cannot reach VPS health endpoint</p>
+                <p>{lastVerifiedText}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      default:
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  {isHealthPolling ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4" />
+                  )}
+                  <span className="text-xs">Checking...</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Verifying VPS status...</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+    }
+  };
+
   const totalEquity = getTotalEquity();
 
   if (isLoading) {
@@ -307,6 +435,26 @@ export function BotControlPanel() {
               <span className="text-sm font-medium text-muted-foreground">Bot Status:</span>
               {getStatusBadge()}
             </div>
+            {/* VPS Health Indicator */}
+            <div className="border-l border-border pl-4">
+              {getVPSHealthIndicator()}
+            </div>
+            {/* Desync Warning */}
+            {vpsHealth.desync && (
+              <div className="flex items-center gap-2 px-2 py-1 rounded bg-warning/10 border border-warning/30">
+                <AlertTriangle className="w-4 h-4 text-warning" />
+                <span className="text-xs text-warning">State mismatch detected</span>
+                <ActionButton
+                  tooltip="Force sync with VPS"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleForceSync}
+                  className="h-6 px-2 text-xs"
+                >
+                  Sync
+                </ActionButton>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -342,6 +490,15 @@ export function BotControlPanel() {
                   <Square className="w-4 h-4" />
                 )}
                 STOP BOT
+              </ActionButton>
+            ) : botStatus === 'starting' ? (
+              <ActionButton 
+                tooltip="Bot is starting..."
+                disabled
+                className="gap-2 bg-warning/20 text-warning border-warning/40"
+              >
+                <Loader2 className="w-4 h-4 animate-spin" />
+                STARTING...
               </ActionButton>
             ) : botStatus === 'error' ? (
               <>
@@ -388,7 +545,7 @@ export function BotControlPanel() {
         </div>
 
         {/* Live Mode Warning */}
-        {botStatus !== 'running' && (
+        {botStatus !== 'running' && botStatus !== 'starting' && (
           <div className="mt-3 p-2 rounded-lg bg-destructive/10 border border-destructive/30 flex items-center gap-2 animate-pulse">
             <AlertTriangle className="w-4 h-4 text-destructive" />
             <span className="text-sm text-destructive font-medium">
