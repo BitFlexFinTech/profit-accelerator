@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Bot, Server, Play, Copy, CheckCircle2, Terminal, Zap, AlertTriangle } from 'lucide-react';
+import { Bot, Server, Play, Copy, CheckCircle2, Terminal, Zap, AlertTriangle, Key } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,12 @@ import { IconContainer } from '@/components/ui/IconContainer';
 interface FreqtradeWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+interface ExchangeCredential {
+  exchange_name: string;
+  is_connected: boolean;
+  hasCredentials: boolean;
 }
 
 export function FreqtradeWizard({ open, onOpenChange }: FreqtradeWizardProps) {
@@ -26,9 +32,10 @@ export function FreqtradeWizard({ open, onOpenChange }: FreqtradeWizardProps) {
   const [isDeploying, setIsDeploying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [vpsInstances, setVpsInstances] = useState<{ id: string; name: string; ip: string }[]>([]);
+  const [exchangeCredentials, setExchangeCredentials] = useState<ExchangeCredential[]>([]);
 
   // Fetch VPS instances
-  useState(() => {
+  useEffect(() => {
     const fetchVPS = async () => {
       const { data } = await supabase
         .from('vps_instances')
@@ -38,8 +45,34 @@ export function FreqtradeWizard({ open, onOpenChange }: FreqtradeWizardProps) {
         setVpsInstances(data.map(v => ({ id: v.id, name: v.nickname || 'VPS', ip: v.ip_address || '' })));
       }
     };
-    fetchVPS();
-  });
+    if (open) fetchVPS();
+  }, [open]);
+
+  // Fetch exchange credentials
+  useEffect(() => {
+    const fetchCredentials = async () => {
+      const { data } = await supabase
+        .from('exchange_connections')
+        .select('exchange_name, is_connected, api_key');
+      if (data) {
+        setExchangeCredentials(data.map(e => ({
+          exchange_name: e.exchange_name,
+          is_connected: e.is_connected ?? false,
+          hasCredentials: !!e.api_key
+        })));
+      }
+    };
+    if (open) fetchCredentials();
+  }, [open]);
+
+  const getExchangeCredentialStatus = (exchangeName: string) => {
+    const cred = exchangeCredentials.find(e => 
+      e.exchange_name.toLowerCase() === exchangeName.toLowerCase()
+    );
+    return cred?.hasCredentials ?? false;
+  };
+
+  const selectedExchangeHasCredentials = getExchangeCredentialStatus(exchange);
 
   const dockerCommands = `# Create Freqtrade directory
 mkdir -p ~/freqtrade && cd ~/freqtrade
@@ -62,8 +95,8 @@ docker-compose logs -f`;
   const customConfig = `{
   "exchange": {
     "name": "${exchange}",
-    "key": "YOUR_API_KEY",
-    "secret": "YOUR_API_SECRET"
+    "key": "${selectedExchangeHasCredentials ? '*** CONFIGURED ***' : 'YOUR_API_KEY'}",
+    "secret": "${selectedExchangeHasCredentials ? '*** CONFIGURED ***' : 'YOUR_API_SECRET'}"
   },
   "dry_run": ${dryRun},
   "strategy": "${strategy}",
@@ -82,6 +115,11 @@ docker-compose logs -f`;
   const handleDeploy = async () => {
     if (!vpsId) {
       toast.error('Please select a VPS');
+      return;
+    }
+
+    if (!dryRun && !selectedExchangeHasCredentials) {
+      toast.error(`No credentials configured for ${exchange}. Add them in Settings > Exchanges first.`);
       return;
     }
 
@@ -104,6 +142,14 @@ docker-compose logs -f`;
       setIsDeploying(false);
     }
   };
+
+  const exchanges = [
+    { value: 'binance', label: 'Binance' },
+    { value: 'bybit', label: 'Bybit' },
+    { value: 'okx', label: 'OKX' },
+    { value: 'kucoin', label: 'KuCoin' },
+    { value: 'kraken', label: 'Kraken' },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -203,13 +249,34 @@ docker-compose logs -f`;
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="binance">Binance</SelectItem>
-                    <SelectItem value="bybit">Bybit</SelectItem>
-                    <SelectItem value="okx">OKX</SelectItem>
-                    <SelectItem value="kucoin">KuCoin</SelectItem>
-                    <SelectItem value="kraken">Kraken</SelectItem>
+                    {exchanges.map((ex) => {
+                      const hasCredentials = getExchangeCredentialStatus(ex.value);
+                      return (
+                        <SelectItem key={ex.value} value={ex.value}>
+                          <div className="flex items-center gap-2">
+                            {ex.label}
+                            {hasCredentials ? (
+                              <Key className="w-3 h-3 text-success" />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">(no keys)</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
+                {selectedExchangeHasCredentials ? (
+                  <p className="text-xs text-success flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Credentials configured
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    No credentials found
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -230,7 +297,21 @@ docker-compose logs -f`;
               <Switch checked={dryRun} onCheckedChange={setDryRun} />
             </div>
 
-            {!dryRun && (
+            {!dryRun && !selectedExchangeHasCredentials && (
+              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-destructive mt-0.5" />
+                <div>
+                  <p className="text-sm text-destructive font-medium">
+                    Live trading requires API credentials
+                  </p>
+                  <p className="text-xs text-destructive/80">
+                    Go to Settings → Exchanges to add your {exchange} API keys first.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!dryRun && selectedExchangeHasCredentials && (
               <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5" />
                 <p className="text-sm text-yellow-400">
@@ -238,6 +319,18 @@ docker-compose logs -f`;
                 </p>
               </div>
             )}
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Config Preview</Label>
+                <Badge variant="outline" className="text-xs">
+                  {selectedExchangeHasCredentials ? 'Keys will be injected' : 'Manual setup needed'}
+                </Badge>
+              </div>
+              <pre className="p-3 rounded-lg bg-black/50 text-xs text-green-400 overflow-x-auto font-mono">
+                {customConfig}
+              </pre>
+            </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -250,7 +343,7 @@ docker-compose logs -f`;
                   {copied ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
                 </Button>
               </div>
-              <pre className="p-3 rounded-lg bg-black/50 text-xs text-green-400 overflow-x-auto font-mono">
+              <pre className="p-3 rounded-lg bg-black/50 text-xs text-green-400 overflow-x-auto font-mono max-h-32">
                 {dockerCommands}
               </pre>
             </div>
@@ -264,7 +357,7 @@ docker-compose logs -f`;
                 </Button>
                 <Button 
                   onClick={handleDeploy}
-                  disabled={isDeploying}
+                  disabled={isDeploying || (!dryRun && !selectedExchangeHasCredentials)}
                   className="bg-sky-500 hover:bg-sky-600"
                 >
                   {isDeploying ? (

@@ -470,12 +470,20 @@ export type Database = {
         Row: {
           created_at: string | null
           end_date: string
+          equity_curve: Json | null
+          fees_paid: number | null
+          final_balance: number | null
           id: string
+          initial_balance: number | null
           max_drawdown: number | null
           sharpe_ratio: number | null
+          slippage_cost: number | null
           start_date: string
+          stop_loss_pct: number | null
           strategy_name: string
           symbol: string
+          take_profit_pct: number | null
+          timeframe: string | null
           total_pnl: number | null
           total_trades: number | null
           win_rate: number | null
@@ -483,12 +491,20 @@ export type Database = {
         Insert: {
           created_at?: string | null
           end_date: string
+          equity_curve?: Json | null
+          fees_paid?: number | null
+          final_balance?: number | null
           id?: string
+          initial_balance?: number | null
           max_drawdown?: number | null
           sharpe_ratio?: number | null
+          slippage_cost?: number | null
           start_date: string
+          stop_loss_pct?: number | null
           strategy_name: string
           symbol: string
+          take_profit_pct?: number | null
+          timeframe?: string | null
           total_pnl?: number | null
           total_trades?: number | null
           win_rate?: number | null
@@ -496,12 +512,20 @@ export type Database = {
         Update: {
           created_at?: string | null
           end_date?: string
+          equity_curve?: Json | null
+          fees_paid?: number | null
+          final_balance?: number | null
           id?: string
+          initial_balance?: number | null
           max_drawdown?: number | null
           sharpe_ratio?: number | null
+          slippage_cost?: number | null
           start_date?: string
+          stop_loss_pct?: number | null
           strategy_name?: string
           symbol?: string
+          take_profit_pct?: number | null
+          timeframe?: string | null
           total_pnl?: number | null
           total_trades?: number | null
           win_rate?: number | null

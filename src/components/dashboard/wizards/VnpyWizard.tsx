@@ -1,17 +1,49 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Copy, Check, Terminal, FileCode, Globe, Server, Zap } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Copy, Check, Terminal, FileCode, Globe, Server, Zap, Key, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface VnpyWizardProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+interface ExchangeCredential {
+  exchange_name: string;
+  is_connected: boolean;
+  hasCredentials: boolean;
+}
+
 export function VnpyWizard({ isOpen, onClose }: VnpyWizardProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [exchangeCredentials, setExchangeCredentials] = useState<ExchangeCredential[]>([]);
+
+  // Fetch exchange credentials
+  useEffect(() => {
+    const fetchCredentials = async () => {
+      const { data } = await supabase
+        .from('exchange_connections')
+        .select('exchange_name, is_connected, api_key');
+      if (data) {
+        setExchangeCredentials(data.map(e => ({
+          exchange_name: e.exchange_name,
+          is_connected: e.is_connected ?? false,
+          hasCredentials: !!e.api_key
+        })));
+      }
+    };
+    if (isOpen) fetchCredentials();
+  }, [isOpen]);
+
+  const getCredentialStatus = (exchangeName: string): boolean => {
+    return exchangeCredentials.some(e => 
+      e.exchange_name.toLowerCase().includes(exchangeName.toLowerCase()) && e.hasCredentials
+    );
+  };
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -19,6 +51,10 @@ export function VnpyWizard({ isOpen, onClose }: VnpyWizardProps) {
     toast.success('Copied to clipboard');
     setTimeout(() => setCopiedCode(null), 2000);
   };
+
+  const hasBinance = getCredentialStatus('binance');
+  const hasOkx = getCredentialStatus('okx');
+  const hasBybit = getCredentialStatus('bybit');
 
   const dockerInstall = `# Install vnpy via Docker
 docker pull vnpy/vnpy:latest
@@ -141,21 +177,21 @@ class ScalpingStrategy(CtaTemplate):
   const exchangeConfig = `# Exchange gateway configuration (gateway_setting.json)
 {
     "binance": {
-        "key": "YOUR_API_KEY",
-        "secret": "YOUR_API_SECRET",
+        "key": "${hasBinance ? '*** CONFIGURED ***' : 'YOUR_API_KEY'}",
+        "secret": "${hasBinance ? '*** CONFIGURED ***' : 'YOUR_API_SECRET'}",
         "session_number": 3,
         "proxy_host": "",
         "proxy_port": 0
     },
     "okx": {
-        "key": "YOUR_API_KEY",
-        "secret": "YOUR_API_SECRET",
-        "passphrase": "YOUR_PASSPHRASE",
+        "key": "${hasOkx ? '*** CONFIGURED ***' : 'YOUR_API_KEY'}",
+        "secret": "${hasOkx ? '*** CONFIGURED ***' : 'YOUR_API_SECRET'}",
+        "passphrase": "${hasOkx ? '*** CONFIGURED ***' : 'YOUR_PASSPHRASE'}",
         "server": "REAL"
     },
     "bybit": {
-        "key": "YOUR_API_KEY",
-        "secret": "YOUR_API_SECRET",
+        "key": "${hasBybit ? '*** CONFIGURED ***' : 'YOUR_API_KEY'}",
+        "secret": "${hasBybit ? '*** CONFIGURED ***' : 'YOUR_API_SECRET'}",
         "server": "REAL"
     }
 }
@@ -191,6 +227,39 @@ class ScalpingStrategy(CtaTemplate):
         </DialogHeader>
 
         <div className="space-y-4 mt-4">
+          {/* Credential Status */}
+          <div className="p-3 rounded-lg bg-secondary/30 border border-border">
+            <p className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Key className="w-4 h-4" />
+              Exchange Credentials Status
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { name: 'Binance', has: hasBinance },
+                { name: 'OKX', has: hasOkx },
+                { name: 'Bybit', has: hasBybit },
+              ].map((ex) => (
+                <Badge 
+                  key={ex.name} 
+                  variant="outline" 
+                  className={ex.has ? 'border-success text-success' : 'border-muted-foreground text-muted-foreground'}
+                >
+                  {ex.has ? (
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                  ) : (
+                    <AlertTriangle className="w-3 h-3 mr-1" />
+                  )}
+                  {ex.name}
+                </Badge>
+              ))}
+            </div>
+            {(!hasBinance && !hasOkx && !hasBybit) && (
+              <p className="text-xs text-amber-400 mt-2">
+                Add exchange credentials in Settings → Exchanges for live trading
+              </p>
+            )}
+          </div>
+
           {/* Features */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
@@ -304,17 +373,21 @@ class ScalpingStrategy(CtaTemplate):
 
             <TabsContent value="config" className="space-y-4">
               <div className="relative">
+                <div className="absolute top-2 right-2 flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {(hasBinance || hasOkx || hasBybit) ? 'Keys detected' : 'Manual setup'}
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => copyToClipboard(exchangeConfig, 'config')}
+                  >
+                    {copiedCode === 'config' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
                 <pre className="p-4 rounded-lg bg-secondary/50 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-[400px]">
                   {exchangeConfig}
                 </pre>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="absolute top-2 right-2"
-                  onClick={() => copyToClipboard(exchangeConfig, 'config')}
-                >
-                  {copiedCode === 'config' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                </Button>
               </div>
               
               <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/30">

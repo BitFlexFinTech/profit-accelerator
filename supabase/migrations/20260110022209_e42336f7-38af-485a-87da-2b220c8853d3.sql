@@ -1,0 +1,10 @@
+-- Add new columns to backtest_results for advanced backtesting
+ALTER TABLE public.backtest_results
+ADD COLUMN IF NOT EXISTS fees_paid NUMERIC DEFAULT 0,
+ADD COLUMN IF NOT EXISTS slippage_cost NUMERIC DEFAULT 0,
+ADD COLUMN IF NOT EXISTS timeframe TEXT DEFAULT '1h',
+ADD COLUMN IF NOT EXISTS take_profit_pct NUMERIC DEFAULT 2.0,
+ADD COLUMN IF NOT EXISTS stop_loss_pct NUMERIC DEFAULT 1.0,
+ADD COLUMN IF NOT EXISTS equity_curve JSONB DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS initial_balance NUMERIC DEFAULT 10000,
+ADD COLUMN IF NOT EXISTS final_balance NUMERIC DEFAULT NULL;
