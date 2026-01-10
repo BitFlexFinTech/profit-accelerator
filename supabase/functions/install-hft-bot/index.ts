@@ -1517,7 +1517,9 @@ async function recordTradeToSupabase(trade, status) {
       pnl: trade.netPnL || null,
       status: status,
       execution_latency_ms: trade.latencyMs || 0,
-      ai_reasoning: 'AI Signal: ' + (trade.aiConfidence || 0) + '% confidence | LIVE TRADE'
+      ai_reasoning: 'AI Signal: ' + (trade.aiConfidence || 0) + '% confidence | LIVE TRADE',
+      // CRITICAL FIX: Set closed_at when status is closed
+      closed_at: status === 'closed' ? (trade.exitTime || new Date().toISOString()) : null
     });
     
     const urlParts = new URL(CONFIG.SUPABASE_URL);
@@ -1541,6 +1543,38 @@ async function recordTradeToSupabase(trade, status) {
       console.log('[🐟 PIRANHA] Trade sync error:', e.message);
       resolve(false);
     });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// Update position P&L in Supabase for dashboard visibility (underwater positions)
+async function updatePositionPnL(positionId, pnl, currentPrice) {
+  if (!positionId) return false;
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({
+      unrealized_pnl: pnl,
+      current_price: currentPrice,
+      updated_at: new Date().toISOString()
+    });
+    
+    const urlParts = new URL(CONFIG.SUPABASE_URL);
+    const options = {
+      hostname: urlParts.hostname,
+      path: '/rest/v1/positions?id=eq.' + positionId,
+      method: 'PATCH',
+      headers: {
+        'apikey': CONFIG.SUPABASE_KEY,
+        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      resolve(res.statusCode === 200 || res.statusCode === 204);
+    });
+    req.on('error', () => resolve(false));
     req.write(payload);
     req.end();
   });
@@ -2220,20 +2254,29 @@ async function runPiranha() {
         position.unrealizedPnL = netPnL;
         
         // ═══════════════════════════════════════════════════════════
-        // STRICT RULE: STOP-LOSS CHECK - Close if loss exceeds threshold
+        // STRICT RULE: ONLY CLOSE ON PROFIT TARGET - NEVER ON LOSS
+        // The bot holds positions indefinitely until profit target is reached
         // ═══════════════════════════════════════════════════════════
-        const MAX_LOSS_SPOT = -50;      // Close if losing more than $50 on spot
-        const MAX_LOSS_LEVERAGE = -100; // Close if losing more than $100 on leverage
-        const stopLossThreshold = position.isLeverage ? MAX_LOSS_LEVERAGE : MAX_LOSS_SPOT;
-        const stopLossHit = netPnL <= stopLossThreshold;
         
-        // Check if profit target reached OR stop-loss hit
+        // Log underwater positions for monitoring (NO ACTION - just visibility)
+        if (netPnL < 0) {
+          const holdTime = Date.now() - new Date(position.entryTime).getTime();
+          const holdMinutes = Math.floor(holdTime / 60000);
+          console.log('[🐟 PIRANHA] 📊 UNDERWATER: ' + position.symbol + ' | P&L: $' + netPnL.toFixed(2) + ' | Held: ' + holdMinutes + 'm | HOLDING (waiting for profit target)');
+          
+          // Update position P&L in Supabase for dashboard visibility
+          if (position.supabaseId) {
+            await updatePositionPnL(position.supabaseId, netPnL, currentPrice);
+          }
+        }
+        
+        // STRICT RULE: Only close when profit target is reached - NO STOP-LOSS
         const profitTargetHit = isProfitTargetReached(netPnL, position.isLeverage);
-        const shouldClose = profitTargetHit || stopLossHit;
+        const shouldClose = profitTargetHit; // PROFIT ONLY - NO STOP-LOSS
         
         if (shouldClose) {
-          const exitReason = profitTargetHit ? 'PROFIT TARGET' : 'STOP-LOSS';
-          const emoji = profitTargetHit ? '💰' : '🛑';
+          const exitReason = 'PROFIT TARGET';
+          const emoji = '💰';
           
           console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
           console.log('[🐟 PIRANHA] ' + emoji + ' ' + exitReason + ' HIT - EXECUTING EXIT ORDER');
@@ -2326,24 +2369,15 @@ async function runPiranha() {
           console.log('[🐟 PIRANHA]   Open positions: ' + state.positions.length);
           console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
           
-          // Send Telegram alert
-          const telegramMessage = profitTargetHit 
-            ? '💰 <b>TRADE CLOSED - PROFIT!</b>\\n' +
-              '📊 ' + position.symbol + '\\n' +
-              '🏦 Exchange: ' + position.exchange.toUpperCase() + '\\n' +
-              '📈 Side: ' + position.side.toUpperCase() + '\\n' +
-              '💵 P&L: +$' + netPnL.toFixed(2) + '\\n' +
-              '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
-              '✅ Exit: $' + currentPrice.toFixed(4) + '\\n' +
-              '⚡ Latency: ' + exitResult.latencyMs + 'ms'
-            : '🛑 <b>TRADE CLOSED - STOP-LOSS!</b>\\n' +
-              '📊 ' + position.symbol + '\\n' +
-              '🏦 Exchange: ' + position.exchange.toUpperCase() + '\\n' +
-              '📉 Side: ' + position.side.toUpperCase() + '\\n' +
-              '💸 Loss: $' + netPnL.toFixed(2) + '\\n' +
-              '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
-              '❌ Exit: $' + currentPrice.toFixed(4) + '\\n' +
-              '⚡ Latency: ' + exitResult.latencyMs + 'ms';
+          // Send Telegram alert - ONLY PROFIT (no stop-loss anymore)
+          const telegramMessage = '💰 <b>TRADE CLOSED - PROFIT!</b>\\n' +
+            '📊 ' + position.symbol + '\\n' +
+            '🏦 Exchange: ' + position.exchange.toUpperCase() + '\\n' +
+            '📈 Side: ' + position.side.toUpperCase() + '\\n' +
+            '💵 P&L: +$' + netPnL.toFixed(2) + '\\n' +
+            '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
+            '✅ Exit: $' + currentPrice.toFixed(4) + '\\n' +
+            '⚡ Latency: ' + exitResult.latencyMs + 'ms';
           
           await sendTelegramAlert(telegramMessage);
           

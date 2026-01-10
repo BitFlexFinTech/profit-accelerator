@@ -336,12 +336,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       weekStart.setDate(weekStart.getDate() - 7);
       weekStart.setHours(0, 0, 0, 0);
 
-      // Get today's closed trades PnL
+      // Get today's closed trades PnL - handle null closed_at by using created_at as fallback
       const { data: todayTrades } = await supabase
         .from('trading_journal')
-        .select('pnl')
+        .select('pnl, closed_at, created_at')
         .eq('status', 'closed')
-        .gte('closed_at', todayStart.toISOString());
+        .gte('created_at', todayStart.toISOString());
 
       const dailyPnl = todayTrades?.length 
         ? todayTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) 
@@ -350,9 +350,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Get this week's closed trades PnL
       const { data: weekTrades } = await supabase
         .from('trading_journal')
-        .select('pnl')
+        .select('pnl, closed_at, created_at')
         .eq('status', 'closed')
-        .gte('closed_at', weekStart.toISOString());
+        .gte('created_at', weekStart.toISOString());
 
       const weeklyPnl = weekTrades?.length 
         ? weekTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) 
@@ -404,8 +404,19 @@ const debouncedSync = () => {
   }, REALTIME_DEBOUNCE_MS);
 };
 
+// Idempotency guard to prevent duplicate initialization
+let storeInitialized = false;
+
 // Initialize store and set up realtime subscriptions
 export function initializeAppStore() {
+  // STRICT RULE: Prevent duplicate initialization
+  if (storeInitialized) {
+    console.warn('[useAppStore] Already initialized - skipping duplicate call');
+    return () => {}; // Return no-op cleanup
+  }
+  storeInitialized = true;
+  console.log('[useAppStore] Initializing app store (single instance)');
+  
   const store = useAppStore.getState();
   
   // Initial sync

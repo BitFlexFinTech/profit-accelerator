@@ -103,6 +103,17 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
             return [payload.new as Trade, ...prev];
           });
         })
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'trading_journal'
+        }, (payload) => {
+          console.log('[TradeActivityTerminal] Trade updated:', payload.new);
+          // Update existing trade in list
+          setTrades(prev => prev.map(t => 
+            t.id === (payload.new as Trade).id ? (payload.new as Trade) : t
+          ));
+        })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
             console.log('[TradeActivityTerminal] Realtime connected');

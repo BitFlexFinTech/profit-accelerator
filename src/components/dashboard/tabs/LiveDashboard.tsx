@@ -7,6 +7,7 @@ import { ScrollingPriceTicker } from '../panels/ScrollingPriceTicker';
 import { NewsPanel } from '../panels/NewsPanel';
 import { InfrastructurePanel } from '../panels/InfrastructurePanel';
 import { AIProviderHealthDashboard } from '../panels/AIProviderHealthDashboard';
+import { UnderwaterPositionsPanel } from '../panels/UnderwaterPositionsPanel';
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
@@ -68,9 +69,16 @@ export function LiveDashboard() {
           </div>
         )}
         
-        {/* RIGHT Column - News + Infrastructure + AI Health */}
+        {/* RIGHT Column - News + Underwater + AI Health + Infrastructure */}
         <div className="flex flex-col gap-1 min-h-0 h-full">
-          {/* News Panel - EXPANDED (takes most space) */}
+          {/* Underwater Positions Panel - CRITICAL monitoring */}
+          {isVisible('underwater') && (
+            <div className="h-[180px] flex-shrink-0">
+              <UnderwaterPositionsPanel />
+            </div>
+          )}
+          
+          {/* News Panel */}
           {isVisible('news') && (
             <div className="flex-1 min-h-0">
               <NewsPanel />
@@ -79,14 +87,14 @@ export function LiveDashboard() {
           
           {/* AI Provider Health Dashboard */}
           {isVisible('ai-health') && (
-            <div className="h-[200px] flex-shrink-0">
+            <div className="h-[160px] flex-shrink-0">
               <AIProviderHealthDashboard />
             </div>
           )}
           
           {/* Infrastructure Panel - Shows latency */}
           {isVisible('infrastructure') && (
-            <div className="h-[140px] flex-shrink-0">
+            <div className="h-[120px] flex-shrink-0">
               <InfrastructurePanel />
             </div>
           )}
