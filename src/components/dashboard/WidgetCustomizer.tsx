@@ -20,7 +20,8 @@ const WIDGET_LABELS: Record<string, string> = {
   'ai-analysis': 'AI Market Analysis',
   'trade-terminal': 'Trade Activity Terminal',
   news: 'Crypto News',
-  infrastructure: 'Infrastructure Status',
+  underwater: 'Underwater Positions',
+  'ai-health': 'AI Provider Health',
 };
 
 interface WidgetCustomizerProps {

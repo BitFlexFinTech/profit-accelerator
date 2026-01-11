@@ -972,3 +972,143 @@ html.theme-switching *::after {
 .theme-neon body {
   background: #000000;
 }
+
+/* Dark Flat Theme - Pure black background + flat vibrant colors (NO neon, NO glow) */
+.theme-dark-flat {
+  --background: 0 0% 0%;       /* Pure black #000000 */
+  --foreground: 0 0% 95%;      /* Off-white for readability */
+  
+  --card: 0 0% 5%;             /* Very dark gray */
+  --card-foreground: 0 0% 95%;
+  
+  --popover: 0 0% 6%;
+  --popover-foreground: 0 0% 95%;
+  
+  --primary: 160 84% 45%;      /* Teal - flat, no glow */
+  --primary-foreground: 0 0% 0%;
+  
+  --secondary: 0 0% 10%;
+  --secondary-foreground: 0 0% 95%;
+  
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 55%;
+  
+  --accent: 160 84% 45%;
+  --accent-foreground: 0 0% 0%;
+  
+  --destructive: 0 72% 51%;    /* Red */
+  --destructive-foreground: 0 0% 100%;
+  
+  --success: 142 76% 45%;      /* Green */
+  --success-foreground: 0 0% 0%;
+  
+  --warning: 38 92% 50%;       /* Amber */
+  --warning-foreground: 0 0% 0%;
+  
+  --profit: 142 76% 45%;
+  --loss: 0 72% 51%;
+  
+  --border: 0 0% 15%;
+  --input: 0 0% 10%;
+  --ring: 160 84% 45%;
+  
+  /* Flat vibrant colors - solid, NO transparency */
+  --color-cyan: 174 72% 50%;
+  --color-magenta: 330 81% 60%;
+  --color-yellow: 45 93% 58%;
+  --color-green: 142 76% 45%;
+  --color-orange: 25 95% 53%;
+  --color-purple: 270 60% 55%;
+  --color-pink: 330 81% 60%;
+  --color-blue: 217 91% 60%;
+  --color-red: 0 72% 51%;
+  --color-teal: 160 84% 45%;
+  
+  --glass-bg: 0 0% 5%;
+  --glass-border: 0 0% 18%;
+  --glass-shadow: 0 0% 0%;
+  
+  --sidebar-background: 0 0% 3%;
+  --sidebar-foreground: 0 0% 90%;
+  --sidebar-primary: 160 84% 45%;
+  --sidebar-primary-foreground: 0 0% 0%;
+  --sidebar-accent: 0 0% 10%;
+  --sidebar-accent-foreground: 0 0% 95%;
+  --sidebar-border: 0 0% 15%;
+  --sidebar-ring: 160 84% 45%;
+
+  --chart-1: 160 84% 45%;
+  --chart-2: 270 60% 55%;
+  --chart-3: 0 72% 51%;
+  --chart-4: 45 93% 58%;
+  --chart-5: 142 76% 45%;
+}
+
+.theme-dark-flat body,
+.theme-dark-flat #root {
+  background: #000000 !important;
+}
+
+.theme-dark-flat .glass-card,
+.theme-dark-flat .card-cyan,
+.theme-dark-flat .card-green,
+.theme-dark-flat .card-purple,
+.theme-dark-flat .card-magenta,
+.theme-dark-flat .card-yellow,
+.theme-dark-flat .card-orange,
+.theme-dark-flat .card-pink,
+.theme-dark-flat .card-blue,
+.theme-dark-flat .card-red,
+.theme-dark-flat .card-teal {
+  background: hsl(0 0% 5%) !important;
+  border-color: hsl(0 0% 15%) !important;
+  box-shadow: none !important;
+}
+
+.theme-dark-flat .glass-card:hover {
+  border-color: hsl(0 0% 20%) !important;
+  box-shadow: none !important;
+}
+
+/* Dark Flat: remove ALL glow effects */
+.theme-dark-flat .glow-text,
+.theme-dark-flat .glow-accent,
+.theme-dark-flat .glow-primary,
+.theme-dark-flat .glow-cyan,
+.theme-dark-flat .glow-magenta,
+.theme-dark-flat .glow-yellow,
+.theme-dark-flat .glow-green,
+.theme-dark-flat .glow-orange,
+.theme-dark-flat .glow-purple,
+.theme-dark-flat .glow-pink,
+.theme-dark-flat .glow-blue,
+.theme-dark-flat .glow-red,
+.theme-dark-flat .glow-teal {
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+/* Dark Flat status indicators - flat, no glow */
+.theme-dark-flat .status-online {
+  background: hsl(142 76% 45%);
+  box-shadow: none;
+}
+
+.theme-dark-flat .status-warning {
+  background: hsl(38 92% 50%);
+  box-shadow: none;
+}
+
+.theme-dark-flat .status-offline {
+  background: hsl(0 72% 51%);
+  box-shadow: none;
+}
+
+/* Dark Flat chart colors - flat, solid */
+.theme-dark-flat .recharts-cartesian-grid line {
+  stroke: hsl(0 0% 15%) !important;
+}
+
+.theme-dark-flat .recharts-text {
+  fill: hsl(0 0% 55%) !important;
+}

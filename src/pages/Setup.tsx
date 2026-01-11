@@ -503,7 +503,7 @@ export default function Setup() {
                         ) : isComplete ? (
                           <div className="flex items-center gap-1 text-amber-400">
                             <Check className="w-4 h-4" />
-                            <span className="text-xs">CONFIGURED</span>
+                            <span className="text-xs">SAVED</span>
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">Pending</span>
@@ -686,17 +686,10 @@ export default function Setup() {
                     >
                       <td className="p-3">
                         {cred?.hasSecret ? (
-                          isActive ? (
-                            <div className="flex items-center gap-1 text-green-400">
-                              <Check className="w-4 h-4" />
-                              <span className="text-xs">ACTIVE</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 text-amber-400">
-                              <Check className="w-4 h-4" />
-                              <span className="text-xs">CONFIGURED</span>
-                            </div>
-                          )
+                          <div className="flex items-center gap-1 text-green-400">
+                            <Check className="w-4 h-4" />
+                            <span className="text-xs">CONFIGURED</span>
+                          </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">Not Configured</span>
                         )}
@@ -733,8 +726,8 @@ export default function Setup() {
                       </td>
                       <td className="p-3 text-center">
                         <StatusDot 
-                          color={cred?.hasSecret && isActive ? 'success' : cred?.hasSecret ? 'warning' : 'muted'}
-                          pulse={cred?.hasSecret && isActive}
+                          color={cred?.hasSecret ? 'success' : 'muted'}
+                          pulse={cred?.hasSecret}
                           size="md"
                         />
                       </td>

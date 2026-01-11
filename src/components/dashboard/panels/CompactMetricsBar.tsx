@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, DollarSign, Activity, AlertCircle, Clock, Server, Cloud, Zap } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Activity, AlertCircle, Clock, Server } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppStore } from '@/store/useAppStore';
 import { useTradesRealtime } from '@/hooks/useTradesRealtime';
@@ -151,7 +151,7 @@ export function CompactMetricsBar() {
   return (
     <TooltipProvider delayDuration={200}>
       <div className={cn(
-        "grid grid-cols-2 md:grid-cols-4 gap-2",
+        "grid grid-cols-2 md:grid-cols-5 gap-2",
         isStale && "ring-1 ring-warning/30 rounded-lg"
       )}>
         {/* Today's P&L */}
@@ -274,6 +274,36 @@ export function CompactMetricsBar() {
               <span className="text-[10px] text-muted-foreground">
                 ({openCount} open)
               </span>
+            </div>
+          )}
+        </div>
+
+        {/* Infra Status */}
+        <div className="glass-card p-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Infra</span>
+            <Server className="w-3 h-3 text-cyan-400" />
+          </div>
+          {infraLoading ? (
+            <Skeleton className="h-6 w-16" />
+          ) : infraStatus ? (
+            <div className="flex items-center gap-1">
+              <StatusDot 
+                color={infraStatus.status === 'running' || infraStatus.status === 'active' ? 'success' : 'warning'} 
+                pulse={infraStatus.status === 'running' || infraStatus.status === 'active'}
+                size="xs"
+              />
+              <span className="text-sm font-bold">{getProviderLabel(infraStatus.provider)}</span>
+              {infraStatus.latencyMs && (
+                <span className="text-[10px] text-muted-foreground">
+                  {infraStatus.latencyMs}ms
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <AlertCircle className="w-3 h-3" />
+              <span className="text-xs">No VPS</span>
             </div>
           )}
         </div>

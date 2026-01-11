@@ -36,10 +36,13 @@ export function LatencyHistoryChart() {
   }, [selectedExchange]);
 
   const fetchHistory = async () => {
+    // Normalize exchange name for query (database stores lowercase)
+    const normalizedExchange = selectedExchange.toLowerCase().replace(/[.\s-]/g, '');
+    
     const { data: history } = await supabase
       .from('exchange_latency_history')
       .select('latency_ms, recorded_at')
-      .eq('exchange_name', selectedExchange)
+      .ilike('exchange_name', normalizedExchange)
       .eq('source', 'vps')
       .order('recorded_at', { ascending: true })
       .limit(50);
