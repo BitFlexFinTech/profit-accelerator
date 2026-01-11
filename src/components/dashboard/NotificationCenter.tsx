@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { format, formatDistanceToNow } from 'date-fns';
 import { 
   Bell, AlertTriangle, Info, CheckCircle, Trophy, Server, 
@@ -201,7 +202,7 @@ export function NotificationCenter() {
                             <Sparkles className="w-4 h-4 text-yellow-500" />
                           )}
                           {!notification.read && (
-                            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                            <StatusDot color="cyan" pulse size="sm" />
                           )}
                         </div>
                         {notification.message && (

@@ -1,4 +1,5 @@
 import { Card } from '@/components/ui/card';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 import { Badge } from '@/components/ui/badge';
 import { useCloudInfrastructure, PROVIDER_ICONS } from '@/hooks/useCloudInfrastructure';
 import { Activity, RefreshCw } from 'lucide-react';
@@ -41,12 +42,12 @@ export function MeshHealthScoreWidget() {
     return 'inactive';
   };
 
-  const getStatusDot = (status: string) => {
+  const getStatusDotColor = (status: string): StatusDotColor => {
     switch (status) {
-      case 'healthy': return 'bg-success';
-      case 'deploying': return 'bg-warning animate-pulse';
-      case 'down': return 'bg-destructive';
-      default: return 'bg-muted-foreground/30';
+      case 'healthy': return 'success';
+      case 'deploying': return 'warning';
+      case 'down': return 'destructive';
+      default: return 'muted';
     }
   };
 
@@ -135,7 +136,7 @@ export function MeshHealthScoreWidget() {
               title={`${provider.provider}: ${status}`}
             >
               <span className="text-lg">{PROVIDER_ICONS[provider.provider] || '🖥️'}</span>
-              <div className={cn("w-2 h-2 rounded-full", getStatusDot(status))} />
+              <StatusDot color={getStatusDotColor(status)} pulse={status === 'deploying' || status === 'healthy'} size="sm" />
             </div>
           );
         })}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Button } from '@/components/ui/button';
 import { 
   Terminal as TerminalIcon, 
@@ -263,7 +264,7 @@ export function VPSTerminalPanel({
           <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
             isConnected ? 'bg-green-500/20 text-green-500' : 'bg-muted text-muted-foreground'
           }`}>
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground'}`} />
+            <StatusDot color={isConnected ? "success" : "muted"} pulse={isConnected} />
             {isConnected ? 'SSH Connected' : 'Disconnected'}
           </div>
 

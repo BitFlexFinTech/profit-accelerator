@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { AlertTriangle, TrendingDown } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -58,10 +59,7 @@ export function UnderwaterPositionsCompactBar() {
         : "bg-emerald-500/10 border-emerald-500/30"
     )}>
       <div className="flex items-center gap-2">
-        <span className={cn(
-          "w-2 h-2 rounded-full",
-          hasPositions ? "bg-red-500 animate-pulse" : "bg-emerald-500"
-        )} />
+          <StatusDot color={hasPositions ? "destructive" : "success"} pulse={hasPositions} />
         {hasPositions ? (
           <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
         ) : (

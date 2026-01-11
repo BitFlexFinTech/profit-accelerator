@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Brain, TrendingUp, TrendingDown, Minus, RefreshCw, Server, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
@@ -324,7 +325,7 @@ export function AIMarketUpdatesPanel({ fullHeight = false, compact = false, clas
               <h3 className="font-semibold text-xs text-purple-300">AI Market Analysis</h3>
               <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground">
                 <span className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <StatusDot color="success" pulse size="xs" />
                   LIVE
                 </span>
                 <span className="flex items-center gap-0.5 font-mono text-amber-400">

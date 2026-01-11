@@ -1,4 +1,5 @@
 import { Wifi, WifiOff, RefreshCw, Plus } from 'lucide-react';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 import { useExchangeStatus } from '@/hooks/useExchangeStatus';
 
 export function ExchangePingPanel() {
@@ -14,11 +15,11 @@ export function ExchangePingPanel() {
     return 'text-destructive';
   };
 
-  const getStatusIndicator = (ping: number | null) => {
-    if (ping === null) return 'status-warning';
-    if (ping < 100) return 'status-online';
-    if (ping < 200) return 'status-warning';
-    return 'status-offline';
+  const getStatusDotColor = (ping: number | null): StatusDotColor => {
+    if (ping === null) return 'warning';
+    if (ping < 100) return 'success';
+    if (ping < 200) return 'warning';
+    return 'destructive';
   };
 
   // Only use real ping data from database - no mock data
@@ -63,7 +64,7 @@ export function ExchangePingPanel() {
                   className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <div className={getStatusIndicator(ping)} />
+                    <StatusDot color={getStatusDotColor(ping)} pulse={ping !== null && ping < 200} />
                     <div>
                       <span className="font-medium">{exchange.exchange_name}</span>
                       {exchange.balance_usdt !== null && (

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Lock, Eye, EyeOff, Shield, Loader2, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -306,7 +307,7 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
 
           {/* Region indicator */}
           <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <StatusDot color="success" pulse />
             <span>Tokyo Region (ap-northeast-1)</span>
           </div>
         </div>

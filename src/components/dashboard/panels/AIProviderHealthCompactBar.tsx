@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Brain, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -83,10 +84,7 @@ export function AIProviderHealthCompactBar() {
         : "bg-purple-500/10 border-purple-500/30"
     )}>
       <div className="flex items-center gap-2">
-        <span className={cn(
-          "w-2 h-2 rounded-full animate-pulse",
-          healthStatus === 'warning' ? "bg-amber-500" : "bg-purple-500"
-        )} />
+          <StatusDot color={healthStatus === 'warning' ? "warning" : "purple"} pulse />
         <Brain className={cn(
           "w-3.5 h-3.5",
           healthStatus === 'warning' ? "text-amber-400" : "text-purple-400"
