@@ -81,6 +81,7 @@ interface AICredentials {
     isActive: boolean;
     currentUsage: number;
     isSaving?: boolean;
+    hasSecret?: boolean;
   };
 }
 
@@ -112,10 +113,11 @@ export default function Setup() {
       for (const provider of AI_PROVIDERS) {
         const existing = data?.find(d => d.provider_name === provider.id);
         creds[provider.id] = {
-          apiKey: '',
+          apiKey: existing?.has_secret ? '••••••••SAVED' : '',
           isEnabled: existing?.is_enabled || false,
           isActive: existing?.is_active || false,
           currentUsage: existing?.current_usage || 0,
+          hasSecret: existing?.has_secret || false,
         };
       }
       setAICredentials(creds);
@@ -553,20 +555,27 @@ export default function Setup() {
                         )} />
                       </td>
                       <td className="p-3 text-center">
-                        <Button
-                          size="sm"
-                          variant={isComplete ? "outline" : "default"}
-                          disabled={!cred?.apiKey || (provider.hasSecret && !cred?.secret) || cred?.isSaving}
-                          onClick={() => handleSaveRow(provider.id)}
-                          className="gap-1"
-                        >
-                          {cred?.isSaving ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Save className="h-3 w-3" />
+                        <div className="flex items-center gap-2">
+                          {isComplete && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
+                              SAVED ✓
+                            </span>
                           )}
-                          {isComplete ? 'Saved' : 'Save'}
-                        </Button>
+                          <Button
+                            size="sm"
+                            variant={isComplete ? "outline" : "default"}
+                            disabled={!cred?.apiKey || (provider.hasSecret && !cred?.secret) || cred?.isSaving}
+                            onClick={() => handleSaveRow(provider.id)}
+                            className="gap-1"
+                          >
+                            {cred?.isSaving ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Save className="h-3 w-3" />
+                            )}
+                            {isComplete ? 'Update' : 'Save'}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -702,21 +711,28 @@ export default function Setup() {
                         />
                       </td>
                       <td className="p-3 text-center">
-                        <Button
-                          size="sm"
-                          variant={isEnabled ? "outline" : "default"}
-                          disabled={!cred?.apiKey || cred?.isSaving}
-                          onClick={() => handleSaveAIRow(provider.id)}
-                          className="gap-1"
-                          style={!isEnabled && cred?.apiKey ? { backgroundColor: provider.colorHex } : undefined}
-                        >
-                          {cred?.isSaving ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Save className="h-3 w-3" />
+                        <div className="flex items-center gap-2 justify-center">
+                          {cred?.hasSecret && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
+                              CONFIGURED ✓
+                            </span>
                           )}
-                          {isEnabled ? 'Saved' : 'Save'}
-                        </Button>
+                          <Button
+                            size="sm"
+                            variant={isEnabled ? "outline" : "default"}
+                            disabled={(!cred?.apiKey || cred?.apiKey === '••••••••SAVED') && !cred?.hasSecret || cred?.isSaving}
+                            onClick={() => handleSaveAIRow(provider.id)}
+                            className="gap-1"
+                            style={!isEnabled && cred?.apiKey && cred?.apiKey !== '••••••••SAVED' ? { backgroundColor: provider.colorHex } : undefined}
+                          >
+                            {cred?.isSaving ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Save className="h-3 w-3" />
+                            )}
+                            {isEnabled ? 'Update' : 'Save'}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
