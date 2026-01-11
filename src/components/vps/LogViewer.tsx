@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -214,7 +215,7 @@ export function LogViewer({ provider, ip }: LogViewerProps) {
       {/* Streaming Indicator */}
       {isStreaming && (
         <div className="px-3 py-1 bg-success/10 border-b border-success/20 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+          <StatusDot color="success" pulse />
           <span className="text-xs text-success">Live streaming</span>
         </div>
       )}

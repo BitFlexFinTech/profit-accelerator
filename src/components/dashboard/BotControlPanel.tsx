@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Play, Square, AlertTriangle, Loader2, RefreshCw, Zap, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
@@ -296,10 +297,7 @@ export function BotControlPanel() {
       case 'running':
         return (
           <Badge className="bg-success/20 text-success border-success/40 gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
-            </span>
+                    <StatusDot color="success" pulse />
             RUNNING
           </Badge>
         );
@@ -313,10 +311,7 @@ export function BotControlPanel() {
       case 'standby':
         return (
           <Badge className="bg-warning/20 text-warning border-warning/40 gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-warning opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-warning" />
-            </span>
+                    <StatusDot color="warning" pulse />
             STANDBY
           </Badge>
         );

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Copy, ArrowRight, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
@@ -92,12 +93,12 @@ export function TradeCopierPanel() {
         <div className="flex items-center gap-2">
           {isActive ? (
             <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-success/20">
-              <div className="status-online" />
+              <StatusDot color="success" pulse />
               <span className="text-xs text-success font-medium">Active</span>
             </div>
           ) : (
             <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-muted">
-              <div className="status-offline" />
+              <StatusDot color="muted" />
               <span className="text-xs text-muted-foreground font-medium">Inactive</span>
             </div>
           )}
