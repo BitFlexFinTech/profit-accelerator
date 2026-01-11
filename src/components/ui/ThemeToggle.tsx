@@ -1,4 +1,4 @@
-import { Moon, Sun, Monitor, Zap } from 'lucide-react';
+import { Moon, Sun, Monitor, Palette } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useEffect, useState } from 'react';
 
-type ThemeMode = 'colorful' | 'light' | 'bw' | 'neon' | 'system';
+type ThemeMode = 'colorful' | 'light' | 'bw' | 'flat' | 'system';
 
 export function ThemeToggle() {
   const { theme, setTheme } = useAppStore();
@@ -53,19 +53,14 @@ export function ThemeToggle() {
 
     if (newMode === 'system') {
       setTheme(systemPreference === 'light' ? 'light' : 'colorful');
-      document.documentElement.removeAttribute('data-theme');
     } else if (newMode === 'light') {
       setTheme('light');
-      document.documentElement.removeAttribute('data-theme');
     } else if (newMode === 'bw') {
       setTheme('bw');
-      document.documentElement.removeAttribute('data-theme');
-    } else if (newMode === 'neon') {
-      setTheme('neon');
-      document.documentElement.setAttribute('data-theme', 'neon');
+    } else if (newMode === 'flat') {
+      setTheme('flat');
     } else {
       setTheme('colorful');
-      document.documentElement.removeAttribute('data-theme');
     }
 
     // Remove transition class after animation
@@ -74,9 +69,9 @@ export function ThemeToggle() {
     }, 300);
   };
 
-  const CurrentIcon = mode === 'light' ? Sun : mode === 'system' ? Monitor : mode === 'neon' ? Zap : Moon;
+  const CurrentIcon = mode === 'light' ? Sun : mode === 'system' ? Monitor : mode === 'flat' ? Palette : Moon;
   const iconOpacity = mode === 'bw' ? 'opacity-50' : '';
-  const iconColor = mode === 'neon' ? 'text-[#00FF88]' : '';
+  const iconColor = mode === 'flat' ? 'text-cyan-400' : '';
 
   return (
     <DropdownMenu>
@@ -102,11 +97,11 @@ export function ThemeToggle() {
           Dark (Noir)
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => handleModeChange('neon')}
-          className={mode === 'neon' ? 'bg-primary/20' : ''}
+          onClick={() => handleModeChange('flat')}
+          className={mode === 'flat' ? 'bg-primary/20' : ''}
         >
-          <Zap className="mr-2 h-4 w-4 text-[#00FF88]" />
-          Neon (HFT)
+          <Palette className="mr-2 h-4 w-4 text-cyan-400" />
+          Flat (Vibrant)
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => handleModeChange('light')}

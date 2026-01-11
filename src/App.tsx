@@ -26,17 +26,17 @@ function AppContent() {
   
   useEffect(() => {
     // Remove all theme classes and data-theme attributes first
-    document.documentElement.classList.remove('theme-bw', 'theme-light');
+    document.documentElement.classList.remove('theme-bw', 'theme-light', 'theme-flat');
     document.documentElement.removeAttribute('data-theme');
     
-    // Add the appropriate theme class or data-theme attribute
+    // Add the appropriate theme class
     if (theme === 'bw') {
       document.documentElement.classList.add('theme-bw');
     } else if (theme === 'light') {
       document.documentElement.classList.add('theme-light');
-    } else if (theme === 'neon') {
-      // CRITICAL: Restore neon theme on mount via data-theme attribute
-      document.documentElement.setAttribute('data-theme', 'neon');
+    } else if (theme === 'flat') {
+      // "flat" = black background + vibrant flat colors (no glow effects)
+      document.documentElement.classList.add('theme-flat');
     }
   }, [theme]);
 

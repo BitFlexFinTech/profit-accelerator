@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, DollarSign, Activity, Wifi, AlertCircle, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Activity, AlertCircle, Clock, Server, Cloud, Zap } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppStore } from '@/store/useAppStore';
 import { useTradesRealtime } from '@/hooks/useTradesRealtime';
@@ -6,6 +6,15 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { StatusDot } from '@/components/ui/StatusDot';
+import { getStatusDotColor } from '@/lib/statusColors';
+
+interface InfraStatus {
+  provider: string;
+  status: string;
+  region: string | null;
+  latencyMs: number | null;
+}
 
 export function CompactMetricsBar() {
   // Use SSOT store for equity - single source of truth
@@ -24,6 +33,10 @@ export function CompactMetricsBar() {
   const totalBalance = getTotalEquity();
   const exchangeCount = getConnectedExchangeCount();
   const isLive = lastUpdate > Date.now() - 60000; // Consider live if updated in last minute
+  
+  // Infrastructure status state
+  const [infraStatus, setInfraStatus] = useState<InfraStatus | null>(null);
+  const [infraLoading, setInfraLoading] = useState(true);
   
   // CRITICAL FIX: Cache last known good values to prevent "Not Connected" flash on tab switch
   const cachedValues = useRef({
@@ -45,6 +58,66 @@ export function CompactMetricsBar() {
     }
   }, [totalBalance, dailyPnl, weeklyPnl]);
   
+  // Fetch infrastructure status
+  useEffect(() => {
+    const fetchInfra = async () => {
+      try {
+        // Get active VPS/cloud provider
+        const { data: deployment } = await supabase
+          .from('hft_deployments')
+          .select('provider, status, region, ip_address')
+          .in('status', ['active', 'running'])
+          .limit(1)
+          .single();
+        
+        if (deployment) {
+          // Get average VPS latency
+          const { data: pulseData } = await supabase
+            .from('exchange_pulse')
+            .select('latency_ms')
+            .eq('source', 'vps')
+            .gt('latency_ms', 0);
+          
+          const avgLatency = pulseData?.length 
+            ? Math.round(pulseData.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / pulseData.length)
+            : null;
+          
+          setInfraStatus({
+            provider: deployment.provider,
+            status: deployment.status || 'unknown',
+            region: deployment.region,
+            latencyMs: avgLatency
+          });
+        } else {
+          // Check cloud_config for configured providers
+          const { data: cloudConfig } = await supabase
+            .from('cloud_config')
+            .select('provider, status, region')
+            .eq('is_active', true)
+            .limit(1)
+            .single();
+          
+          if (cloudConfig) {
+            setInfraStatus({
+              provider: cloudConfig.provider,
+              status: cloudConfig.status || 'configured',
+              region: cloudConfig.region,
+              latencyMs: null
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[CompactMetricsBar] Infra fetch error:', err);
+      } finally {
+        setInfraLoading(false);
+      }
+    };
+
+    fetchInfra();
+    const interval = setInterval(fetchInfra, 30000);
+    return () => clearInterval(interval);
+  }, []);
+  
   // Use cached values during loading to prevent "Not Connected" flash
   const displayBalance = totalBalance > 0 ? totalBalance : cachedValues.current.totalBalance;
   const displayDailyPnl = totalBalance > 0 ? dailyPnl : cachedValues.current.dailyPnl;
@@ -58,7 +131,6 @@ export function CompactMetricsBar() {
   }, []);
   const secondsAgo = Math.max(0, Math.floor((now - lastUpdate) / 1000));
   const isStale = secondsAgo > 120; // Stale if > 2 minutes
-  
 
   const dailyPercent = displayBalance > 0 ? (displayDailyPnl / displayBalance) * 100 : 0;
   const weeklyPercent = displayBalance > 0 ? (displayWeeklyPnl / displayBalance) * 100 : 0;
@@ -66,6 +138,15 @@ export function CompactMetricsBar() {
   // CRITICAL FIX: Only show "Not Connected" if we have NO cached data AND not loading
   const hasNoData = displayBalance === 0 && !storeLoading && cachedValues.current.lastUpdated === 0;
   const localLoading = tradesLoading;
+
+  const getProviderLabel = (provider: string) => {
+    const labels: Record<string, string> = {
+      vultr: 'Vultr', contabo: 'Contabo', aws: 'AWS', 
+      digitalocean: 'DO', gcp: 'GCP', oracle: 'Oracle',
+      alibaba: 'Alibaba', azure: 'Azure'
+    };
+    return labels[provider.toLowerCase()] || provider;
+  };
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -138,7 +219,7 @@ export function CompactMetricsBar() {
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Equity</span>
               {isLive && (
-                <Wifi className="w-2.5 h-2.5 text-success" />
+                <StatusDot color="success" pulse size="xs" />
               )}
             </div>
             <Tooltip>
@@ -197,23 +278,52 @@ export function CompactMetricsBar() {
           )}
         </div>
 
-        {/* Connection Status - Replaces AI Insight Strip */}
+        {/* Infrastructure - FAR RIGHT */}
         <div className="glass-card p-3 col-span-2 md:col-span-1">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-1.5">
-              <Wifi className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Status</span>
+              <Cloud className="w-3 h-3 text-orange-400" />
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Infra</span>
             </div>
-            <div className="flex items-center gap-1">
-              <span className={cn(
-                "w-2 h-2 rounded-full",
-                isLive ? "bg-emerald-500" : isStale ? "bg-amber-500" : "bg-slate-400"
-              )} />
-              <span className="text-xs font-medium">
-                {isLive ? 'Live' : isStale ? 'Stale' : 'Offline'}
-              </span>
-            </div>
+            {infraStatus && (
+              <StatusDot 
+                color={getStatusDotColor(infraStatus.status)} 
+                pulse={infraStatus.status === 'running' || infraStatus.status === 'active'} 
+                size="sm" 
+              />
+            )}
           </div>
+          {infraLoading ? (
+            <Skeleton className="h-6 w-full" />
+          ) : infraStatus ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <Server className="w-3 h-3 text-orange-400" />
+                <span className="text-sm font-bold">{getProviderLabel(infraStatus.provider)}</span>
+              </div>
+              {infraStatus.latencyMs !== null && (
+                <div className="flex items-center gap-0.5">
+                  <Zap className={cn(
+                    "w-2.5 h-2.5",
+                    infraStatus.latencyMs < 50 ? 'text-emerald-400' : 
+                    infraStatus.latencyMs < 100 ? 'text-amber-400' : 'text-red-400'
+                  )} />
+                  <span className={cn(
+                    "text-[10px] font-medium",
+                    infraStatus.latencyMs < 50 ? 'text-emerald-400' : 
+                    infraStatus.latencyMs < 100 ? 'text-amber-400' : 'text-red-400'
+                  )}>
+                    {infraStatus.latencyMs}ms
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <AlertCircle className="w-3 h-3" />
+              <span className="text-xs">No VPS Active</span>
+            </div>
+          )}
         </div>
       </div>
     </TooltipProvider>
