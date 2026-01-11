@@ -3,6 +3,7 @@ import { Shield, Copy, Check, ExternalLink, RefreshCw, AlertTriangle, AlertCircl
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { StatusDot } from '@/components/ui/StatusDot';
 
 interface ExchangeWhitelistStatus {
   exchange: string;
@@ -164,11 +165,11 @@ export function IPSyncStatusCard() {
               className="flex items-center justify-between p-2 rounded bg-secondary/20"
             >
               <div className="flex items-center gap-2">
-                {ex.whitelisted_range === vpsIp ? (
-                  <Check className="w-4 h-4 text-success" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 text-warning" />
-                )}
+                <StatusDot 
+                  color={ex.whitelisted_range === vpsIp ? 'success' : 'warning'} 
+                  pulse={ex.whitelisted_range === vpsIp}
+                  size="sm"
+                />
                 <span className="text-sm capitalize">{ex.exchange}</span>
               </div>
               {whitelistUrls[ex.exchange.toLowerCase()] && (

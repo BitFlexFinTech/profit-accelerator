@@ -3,9 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { TrendingUp, Activity, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Activity, AlertTriangle, Zap, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 interface HistoryPoint {
   time: string;
@@ -123,8 +125,30 @@ export function LatencyHistoryChart() {
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <div className="h-[150px] flex items-center justify-center text-sm text-muted-foreground">
-            No history data for {selectedExchange}. Ping from VPS to start tracking.
+          <div className="h-[150px] flex flex-col items-center justify-center gap-3">
+            <Clock className="w-8 h-8 text-cyan-400" />
+            <p className="text-sm text-muted-foreground text-center">
+              No history data for {selectedExchange}
+            </p>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={async () => {
+                toast.info('Pinging exchanges from VPS...');
+                try {
+                  const { error } = await supabase.functions.invoke('ping-exchanges-vps');
+                  if (error) throw error;
+                  toast.success('Ping complete! Refresh to see data.');
+                  fetchHistory();
+                } catch (err) {
+                  toast.error('Failed to ping exchanges');
+                }
+              }}
+              className="gap-1.5 border-cyan-500/30 hover:bg-cyan-500/10"
+            >
+              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+              Ping Exchanges Now
+            </Button>
           </div>
         ) : (
           <>
