@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode, useState, useEffect } from 'react';
-import { AlertTriangle, RefreshCw, WifiOff } from 'lucide-react';
+import { AlertTriangle, RefreshCw, WifiOff, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -10,6 +10,7 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  errorInfo: ErrorInfo | null;
 }
 
 // Network Status Hook
@@ -77,15 +78,26 @@ export function ErrorBoundaryWrapper({ children }: { children: ReactNode }) {
 export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
-    error: null
+    error: null,
+    errorInfo: null
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  public static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    // CRITICAL: Log full error context for debugging
+    console.error('[ErrorBoundary] Error caught:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+      route: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+    
+    this.setState({ errorInfo });
   }
 
   private handleReload = () => {
@@ -93,14 +105,27 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   private handleReset = () => {
-    this.setState({ hasError: false, error: null });
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
+
+  private handleCopyDebug = () => {
+    const debugInfo = {
+      error: this.state.error?.message || 'Unknown error',
+      stack: this.state.error?.stack || 'No stack trace',
+      componentStack: this.state.errorInfo?.componentStack || 'No component stack',
+      route: window.location.pathname,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent
+    };
+    
+    navigator.clipboard.writeText(JSON.stringify(debugInfo, null, 2));
   };
 
   public render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-background flex items-center justify-center p-4">
-          <div className="max-w-md w-full text-center space-y-6">
+          <div className="max-w-lg w-full text-center space-y-6">
             <div className="mx-auto w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
               <AlertTriangle className="w-8 h-8 text-destructive" />
             </div>
@@ -113,9 +138,17 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
 
             {this.state.error && (
-              <div className="p-3 rounded-lg bg-muted text-left">
-                <p className="text-xs font-mono text-muted-foreground break-all">
-                  {this.state.error.message}
+              <div className="p-4 rounded-lg bg-muted text-left space-y-2">
+                <p className="text-sm font-semibold text-destructive">
+                  {this.state.error.name}: {this.state.error.message}
+                </p>
+                {this.state.error.stack && (
+                  <pre className="text-[10px] font-mono text-muted-foreground overflow-auto max-h-32 whitespace-pre-wrap">
+                    {this.state.error.stack.split('\n').slice(0, 5).join('\n')}
+                  </pre>
+                )}
+                <p className="text-[10px] text-muted-foreground">
+                  Route: {window.location.pathname}
                 </p>
               </div>
             )}
@@ -123,6 +156,10 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="flex items-center justify-center gap-3">
               <Button variant="outline" onClick={this.handleReset}>
                 Try Again
+              </Button>
+              <Button variant="outline" onClick={this.handleCopyDebug}>
+                <Copy className="w-4 h-4 mr-2" />
+                Copy Debug Info
               </Button>
               <Button onClick={this.handleReload}>
                 <RefreshCw className="w-4 h-4 mr-2" />
