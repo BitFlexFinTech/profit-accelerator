@@ -166,13 +166,42 @@ serve(async (req) => {
       );
     }
     
-    // Start/Stop/Restart commands - try to call VPS control API
-    if (command.includes('docker compose')) {
-      const isStart = command.includes('up -d');
-      const isStop = command.includes('down');
+    // Start/Stop/Restart commands - call VPS control API with env vars
+    if (command.includes('docker compose') || command.includes('START_SIGNAL')) {
+      const isStart = command.includes('up -d') || (command.includes('START_SIGNAL') && !command.includes('rm '));
+      const isStop = command.includes('down') || command.includes('rm -f');
       const action = isStart ? 'start' : (isStop ? 'stop' : 'restart');
       
       console.log(`[ssh-command] Bot ${action} via HTTP to ${ipAddress}/control`);
+      
+      // Parse environment variables from the command if present
+      let env: Record<string, string> = {};
+      
+      // Extract env vars from echo command: echo -e "KEY=VALUE\n..." > .env.exchanges
+      const envMatch = command.match(/echo\s+-e\s+["']([^"']+)["']\s*>\s*[^\s]+\.env/);
+      if (envMatch) {
+        const envLines = envMatch[1].split(/\\n|\n/);
+        for (const line of envLines) {
+          const trimmed = line.trim();
+          if (trimmed && trimmed.includes('=')) {
+            const eqIndex = trimmed.indexOf('=');
+            const key = trimmed.substring(0, eqIndex).trim();
+            const value = trimmed.substring(eqIndex + 1);
+            if (key) env[key] = value;
+          }
+        }
+        console.log(`[ssh-command] Extracted ${Object.keys(env).length} env vars from command`);
+      }
+      
+      // Also check for inline single-line env content
+      const inlineEnvMatch = command.match(/echo\s+["']([A-Z_]+=.+)["']\s*>\s*.*\.env/);
+      if (inlineEnvMatch && Object.keys(env).length === 0) {
+        const lines = inlineEnvMatch[1].split(/\\n/);
+        for (const line of lines) {
+          const [key, ...valueParts] = line.split('=');
+          if (key) env[key.trim()] = valueParts.join('=');
+        }
+      }
       
       try {
         const controller = new AbortController();
@@ -185,24 +214,49 @@ serve(async (req) => {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          body: JSON.stringify({ action, command })
+          body: JSON.stringify({ action, command, env })
         });
         
         clearTimeout(timeoutId);
         
         if (response.ok) {
-          const data = await response.text();
-          console.log(`[ssh-command] Control API response: ${data.substring(0, 100)}`);
+          const dataText = await response.text();
+          console.log(`[ssh-command] Control API response: ${dataText.substring(0, 200)}`);
+          
+          // Parse the response to check if signal was created
+          let data: { signalCreated?: boolean; success?: boolean; output?: string } = {};
+          try {
+            data = JSON.parse(dataText);
+          } catch {
+            data = { output: dataText };
+          }
+          
+          // CRITICAL: Verify signal was actually created for start action
+          if (action === 'start' || action === 'restart') {
+            if (data.signalCreated === false) {
+              console.error('[ssh-command] ❌ VPS failed to create START_SIGNAL');
+              return new Response(
+                JSON.stringify({
+                  success: false,
+                  exitCode: 1,
+                  output: 'VPS failed to create START_SIGNAL file',
+                  error: 'START_SIGNAL not created - bot will not trade'
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
+            console.log('[ssh-command] ✅ Signal creation confirmed by VPS');
+          }
+          
           return new Response(
             JSON.stringify({
               success: true,
               exitCode: 0,
-              output: data || `Bot ${action} command accepted`
+              output: data.output || dataText || 'SIGNAL_VERIFIED:true'
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         } else {
-          // Control endpoint returned error
           const errorText = await response.text();
           console.log(`[ssh-command] Control API error: ${errorText}`);
           return new Response(
@@ -216,7 +270,6 @@ serve(async (req) => {
           );
         }
       } catch (httpErr) {
-        // Control API not available - return actual failure, not simulated success
         const errMsg = httpErr instanceof Error ? httpErr.message : String(httpErr);
         console.error(`[ssh-command] Control API failed: ${errMsg}`);
         
@@ -230,6 +283,45 @@ serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+    }
+    
+    // Signal file check command - verify via dedicated endpoint
+    if (command.includes('test -f') && command.includes('START_SIGNAL')) {
+      console.log(`[ssh-command] Signal check via HTTP to ${ipAddress}/signal-check`);
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`http://${ipAddress}/signal-check`, {
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const output = data.signalExists ? 'SIGNAL_EXISTS:true' : 'SIGNAL_EXISTS:false';
+          return new Response(
+            JSON.stringify({
+              success: true,
+              exitCode: 0,
+              output
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } catch {
+        // Fallback - signal check endpoint not available
+      }
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          exitCode: 0,
+          output: 'SIGNAL_EXISTS:unknown'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
     
     // For other commands, return error - no simulation
