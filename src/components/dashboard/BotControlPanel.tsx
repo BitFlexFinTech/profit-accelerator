@@ -67,7 +67,7 @@ export function BotControlPanel() {
       const { data, error } = await supabase
         .from('trading_config')
         .select('bot_status, trading_enabled')
-        .single();
+        .maybeSingle();
 
       if (!error && data) {
         const config = data as TradingConfig;

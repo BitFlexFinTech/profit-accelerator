@@ -124,16 +124,17 @@ export function AIProviderRankingPanel() {
   };
 
   const getStatusIcon = (provider: AIProvider) => {
+    // CRITICAL: has_valid_key must be true for ANY active status
     if (!provider.has_valid_key) {
       return <XCircle className="w-4 h-4 text-muted-foreground" />;
     }
     if (provider.at_rate_limit) {
       return <AlertTriangle className="w-4 h-4 text-amber-400 animate-pulse" />;
     }
-    if (provider.is_enabled && provider.is_active) {
+    if (provider.is_enabled) {
       return <CheckCircle className="w-4 h-4 text-emerald-400" />;
     }
-    return <XCircle className="w-4 h-4 text-rose-400" />;
+    return <XCircle className="w-4 h-4 text-muted-foreground" />;
   };
 
   const getSuccessRate = (provider: AIProvider) => {
@@ -250,9 +251,9 @@ export function AIProviderRankingPanel() {
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>
-                          {!provider.has_valid_key && "No valid API key configured"}
+                          {!provider.has_valid_key && "No API key configured"}
                           {provider.has_valid_key && provider.at_rate_limit && "Rate limited"}
-                          {provider.has_valid_key && !provider.at_rate_limit && provider.is_enabled && "Active"}
+                          {provider.has_valid_key && !provider.at_rate_limit && provider.is_enabled && "Active & Ready"}
                           {provider.has_valid_key && !provider.at_rate_limit && !provider.is_enabled && "Disabled"}
                         </p>
                       </TooltipContent>

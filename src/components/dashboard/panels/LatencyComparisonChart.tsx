@@ -27,8 +27,10 @@ export function LatencyComparisonChart() {
       .select('exchange_name')
       .eq('is_connected', true);
 
+    // Normalize connected exchange names (lowercase, remove special chars)
+    const normalizeExchange = (name: string) => name.toLowerCase().replace(/[.\s-]/g, '');
     const connectedSet = new Set(
-      connections?.map(c => c.exchange_name.toLowerCase()) || []
+      connections?.map(c => normalizeExchange(c.exchange_name)) || []
     );
 
     // Fetch VPS latency from exchange_pulse where data exists
@@ -44,19 +46,32 @@ export function LatencyComparisonChart() {
     const edgeLatencyMap = new Map<string, number>();
     
     for (const item of pulseData) {
-      const exchange = item.exchange_name.toLowerCase();
+      const normalizedExchange = normalizeExchange(item.exchange_name);
+      
       // Only include connected exchanges
-      if (!connectedSet.has(exchange)) continue;
+      if (!connectedSet.has(normalizedExchange)) continue;
       
       if (item.source === 'vps' && item.latency_ms > 0) {
-        vpsLatencyMap.set(exchange, Number(item.latency_ms));
+        vpsLatencyMap.set(normalizedExchange, Number(item.latency_ms));
       } else if (item.source === 'edge' && item.latency_ms > 0) {
-        edgeLatencyMap.set(exchange, Number(item.latency_ms));
+        edgeLatencyMap.set(normalizedExchange, Number(item.latency_ms));
       }
     }
 
     // Build comparison data from VPS measurements
     const comparisonData: LatencyData[] = [];
+    
+    // Map to display names
+    const displayNames: Record<string, string> = {
+      'binance': 'Binance',
+      'okx': 'OKX',
+      'bybit': 'Bybit',
+      'bitget': 'Bitget',
+      'gateio': 'Gate.io',
+      'kucoin': 'KuCoin',
+      'hyperliquid': 'Hyperliquid',
+      'mexc': 'MEXC',
+    };
 
     for (const [exchange, vpsLatency] of vpsLatencyMap.entries()) {
       if (vpsLatency > 0) {
@@ -64,7 +79,7 @@ export function LatencyComparisonChart() {
         const edgeLatency = edgeLatencyMap.get(exchange) || Math.round(vpsLatency * 2.5);
         
         comparisonData.push({
-          exchange: exchange.charAt(0).toUpperCase() + exchange.slice(1),
+          exchange: displayNames[exchange] || exchange.charAt(0).toUpperCase() + exchange.slice(1),
           vps: Math.round(vpsLatency),
           edge: edgeLatency,
           savings: Math.max(0, edgeLatency - vpsLatency)

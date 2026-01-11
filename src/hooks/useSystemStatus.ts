@@ -61,7 +61,7 @@ export function useSystemStatus() {
         supabase.from('vps_config').select('status, region, outbound_ip, provider').maybeSingle(),
         supabase.from('hft_deployments').select('status, ip_address, provider, bot_status').limit(1).maybeSingle(),
         supabase.from('vps_instances').select('status, ip_address, provider, bot_status').limit(1).maybeSingle(),
-        supabase.from('trading_config').select('bot_status').single(),
+        supabase.from('trading_config').select('bot_status').maybeSingle(),
       ]);
 
       if (!mountedRef.current) return;

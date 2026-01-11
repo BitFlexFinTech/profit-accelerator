@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useEffect, useState } from 'react';
 
-type ThemeMode = 'colorful' | 'light' | 'bw' | 'flat' | 'system';
+type ThemeMode = 'colorful' | 'light' | 'bw' | 'flat' | 'dark-flat' | 'system';
 
 export function ThemeToggle() {
   const { theme, setTheme } = useAppStore();
@@ -59,6 +59,8 @@ export function ThemeToggle() {
       setTheme('bw');
     } else if (newMode === 'flat') {
       setTheme('flat');
+    } else if (newMode === 'dark-flat') {
+      setTheme('dark-flat');
     } else {
       setTheme('colorful');
     }
@@ -69,9 +71,9 @@ export function ThemeToggle() {
     }, 300);
   };
 
-  const CurrentIcon = mode === 'light' ? Sun : mode === 'system' ? Monitor : mode === 'flat' ? Palette : Moon;
+  const CurrentIcon = mode === 'light' ? Sun : mode === 'system' ? Monitor : (mode === 'flat' || mode === 'dark-flat') ? Palette : Moon;
   const iconOpacity = mode === 'bw' ? 'opacity-50' : '';
-  const iconColor = mode === 'flat' ? 'text-cyan-400' : '';
+  const iconColor = mode === 'flat' ? 'text-cyan-400' : mode === 'dark-flat' ? 'text-emerald-400' : '';
 
   return (
     <DropdownMenu>
@@ -102,6 +104,13 @@ export function ThemeToggle() {
         >
           <Palette className="mr-2 h-4 w-4 text-cyan-400" />
           Flat (Vibrant)
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => handleModeChange('dark-flat')}
+          className={mode === 'dark-flat' ? 'bg-primary/20' : ''}
+        >
+          <Palette className="mr-2 h-4 w-4 text-emerald-400" />
+          Dark Flat
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => handleModeChange('light')}

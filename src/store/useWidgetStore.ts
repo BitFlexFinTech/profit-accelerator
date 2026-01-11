@@ -26,7 +26,7 @@ const DEFAULT_LAYOUTS: Record<string, WidgetConfig[]> = {
     { id: 'ai-analysis', visible: true, order: 4, size: 'medium' },
     { id: 'trade-terminal', visible: true, order: 5, size: 'medium' },
     { id: 'news', visible: true, order: 6, size: 'medium' },
-    { id: 'infrastructure', visible: true, order: 7, size: 'small' },
+    { id: 'underwater', visible: true, order: 7, size: 'small' },
     { id: 'ai-health', visible: true, order: 8, size: 'medium' },
   ],
 };
