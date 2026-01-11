@@ -194,31 +194,146 @@ async function handleLogs(req, res) {
   }
 }
 
-// POST /control - Start/stop bot
+// POST /control - Start/stop bot (FIXED: Creates START_SIGNAL file)
 async function handleControl(req, res) {
+  const fs = require('fs');
+  const path = require('path');
+  
   try {
     const body = await parseBody(req);
-    const { action } = body;
+    const { action, env, command } = body;
     
     if (!['start', 'stop', 'restart'].includes(action)) {
       return sendJSON(res, 400, { success: false, error: 'Invalid action. Use: start, stop, restart' });
     }
     
-    const { stdout, stderr } = await execAsync(`systemctl ${action} hft-bot`);
+    const SIGNAL_FILE = '/opt/hft-bot/app/data/START_SIGNAL';
+    const ENV_FILE = '/opt/hft-bot/.env.exchanges';
+    const DATA_DIR = '/opt/hft-bot/app/data';
+    const BOT_DIR = '/opt/hft-bot';
     
-    // Wait a moment and check status
-    await new Promise(r => setTimeout(r, 1000));
-    const { stdout: status } = await execAsync('systemctl is-active hft-bot 2>/dev/null || echo "inactive"');
+    console.log(`[control] Action: ${action}, env keys: ${env ? Object.keys(env).length : 0}`);
     
-    sendJSON(res, 200, {
-      success: true,
-      action,
-      status: status.trim(),
-      output: stdout || stderr || 'Command executed',
-      timestamp: new Date().toISOString()
-    });
+    if (action === 'start' || action === 'restart') {
+      // 1. Ensure data directory exists
+      try {
+        await execAsync(`mkdir -p ${DATA_DIR}`);
+      } catch (e) {
+        console.log('[control] mkdir error (may already exist):', e.message);
+      }
+      
+      // 2. Write environment variables if provided
+      if (env && typeof env === 'object' && Object.keys(env).length > 0) {
+        const envContent = Object.entries(env)
+          .map(([k, v]) => `${k}=${v}`)
+          .join('\n');
+        try {
+          fs.writeFileSync(ENV_FILE, envContent);
+          console.log(`[control] Wrote ${Object.keys(env).length} env vars to ${ENV_FILE}`);
+        } catch (e) {
+          console.error('[control] Failed to write env file:', e.message);
+        }
+      }
+      
+      // 3. CREATE START_SIGNAL FILE (CRITICAL!)
+      const signalData = JSON.stringify({
+        started_at: new Date().toISOString(),
+        source: 'dashboard',
+        mode: 'live',
+        action: action
+      });
+      
+      try {
+        fs.writeFileSync(SIGNAL_FILE, signalData);
+        console.log(`[control] ✅ Created START_SIGNAL at ${SIGNAL_FILE}`);
+      } catch (e) {
+        console.error('[control] ❌ Failed to create START_SIGNAL:', e.message);
+        return sendJSON(res, 500, { 
+          success: false, 
+          error: `Failed to create START_SIGNAL: ${e.message}`,
+          signalCreated: false
+        });
+      }
+      
+      // 4. Start/restart Docker container
+      try {
+        if (action === 'restart') {
+          await execAsync(`cd ${BOT_DIR} && docker compose down 2>/dev/null || true`);
+        }
+        await execAsync(`cd ${BOT_DIR} && docker compose up -d --remove-orphans`);
+        console.log('[control] Docker compose started');
+      } catch (e) {
+        console.log('[control] Docker start warning:', e.message);
+      }
+      
+      // 5. Verify signal file was created
+      await new Promise(r => setTimeout(r, 500));
+      const signalExists = fs.existsSync(SIGNAL_FILE);
+      
+      if (!signalExists) {
+        console.error('[control] ❌ Signal file does not exist after creation!');
+        return sendJSON(res, 500, { 
+          success: false, 
+          error: 'START_SIGNAL was not created',
+          signalCreated: false
+        });
+      }
+      
+      // 6. Check Docker status
+      let dockerStatus = 'unknown';
+      try {
+        const { stdout } = await execAsync('docker ps --filter name=hft --format "{{.Status}}" 2>/dev/null | head -1');
+        dockerStatus = stdout.trim() || 'starting';
+      } catch (e) {
+        dockerStatus = 'error';
+      }
+      
+      console.log(`[control] ✅ Bot started successfully. Signal: true, Docker: ${dockerStatus}`);
+      
+      return sendJSON(res, 200, {
+        success: true,
+        action,
+        signalCreated: true,
+        signalFile: SIGNAL_FILE,
+        dockerStatus,
+        status: 'active',
+        output: 'SIGNAL_VERIFIED:true',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    if (action === 'stop') {
+      // 1. Remove signal file first
+      try {
+        if (fs.existsSync(SIGNAL_FILE)) {
+          fs.unlinkSync(SIGNAL_FILE);
+          console.log('[control] Removed START_SIGNAL');
+        }
+      } catch (e) {
+        console.log('[control] Signal removal warning:', e.message);
+      }
+      
+      // 2. Stop Docker container
+      try {
+        await execAsync(`cd ${BOT_DIR} && docker compose down 2>/dev/null || docker stop hft-bot 2>/dev/null || true`);
+        console.log('[control] Docker stopped');
+      } catch (e) {
+        console.log('[control] Docker stop warning:', e.message);
+      }
+      
+      return sendJSON(res, 200, {
+        success: true,
+        action: 'stop',
+        signalCreated: false,
+        status: 'stopped',
+        output: 'Bot stopped',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
   } catch (err) {
-    sendJSON(res, 500, { success: false, error: err.message });
+    console.error('[control] Error:', err.message);
+    sendJSON(res, 500, { success: false, error: err.message, signalCreated: false });
   }
 }
 
@@ -463,6 +578,47 @@ async function handlePlaceOrder(req, res) {
   }
 }
 
+// GET /signal-check - Verify START_SIGNAL file exists
+async function handleSignalCheck(req, res) {
+  const fs = require('fs');
+  const SIGNAL_FILE = '/opt/hft-bot/app/data/START_SIGNAL';
+  
+  try {
+    const signalExists = fs.existsSync(SIGNAL_FILE);
+    let signalData = null;
+    let signalAge = null;
+    
+    if (signalExists) {
+      try {
+        const content = fs.readFileSync(SIGNAL_FILE, 'utf8');
+        signalData = JSON.parse(content);
+        if (signalData.started_at) {
+          signalAge = Date.now() - new Date(signalData.started_at).getTime();
+        }
+      } catch (e) {
+        signalData = { raw: 'Unable to parse' };
+      }
+    }
+    
+    // Also check Docker status
+    let dockerRunning = false;
+    try {
+      const { stdout } = await execAsync('docker ps --filter name=hft --format "{{.Status}}" 2>/dev/null | head -1');
+      dockerRunning = stdout.trim().includes('Up');
+    } catch {}
+    
+    sendJSON(res, 200, {
+      signalExists,
+      signalData,
+      signalAgeMs: signalAge,
+      dockerRunning,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    sendJSON(res, 500, { success: false, error: err.message, signalExists: false });
+  }
+}
+
 // ============ SERVER ============
 
 const server = http.createServer(async (req, res) => {
@@ -493,6 +649,8 @@ const server = http.createServer(async (req, res) => {
       await handleLogs(req, res);
     } else if (path === '/control' && req.method === 'POST') {
       await handleControl(req, res);
+    } else if (path === '/signal-check' && req.method === 'GET') {
+      await handleSignalCheck(req, res);
     } else if (path === '/ping-exchanges' && req.method === 'GET') {
       await handlePingExchanges(req, res);
     } else if (path === '/balance' && req.method === 'POST') {
@@ -506,6 +664,7 @@ const server = http.createServer(async (req, res) => {
         'GET /state',
         'GET /logs?lines=50',
         'POST /control',
+        'GET /signal-check',
         'GET /ping-exchanges',
         'POST /balance',
         'POST /place-order'
@@ -524,7 +683,8 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  GET  /status         - Bot and system status');
   console.log('  GET  /state          - Strategy state');
   console.log('  GET  /logs           - Recent logs');
-  console.log('  POST /control        - Start/stop/restart bot');
+  console.log('  POST /control        - Start/stop/restart bot (creates START_SIGNAL)');
+  console.log('  GET  /signal-check   - Verify START_SIGNAL exists');
   console.log('  GET  /ping-exchanges - Test exchange latency');
   console.log('  POST /balance        - Fetch exchange balance');
   console.log('  POST /place-order    - Execute trade');
