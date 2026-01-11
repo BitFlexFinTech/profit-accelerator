@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, forwardRef, ComponentPropsWithoutRef, useMemo } from 'react';
 import { Brain, Activity, Server, Loader2, RefreshCw } from 'lucide-react';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { supabase } from '@/integrations/supabase/client';
@@ -245,15 +246,10 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
                     isFlashing && 'ring-2 ring-primary/50'
                   )}
                 >
-                  <span className="relative flex h-2 w-2">
-                    {(colorState === 'connected' || colorState === 'warning' || indicator.isDeploying) && (
-                      <span className={cn(
-                        'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
-                        pingColor
-                      )} />
-                    )}
-                    <span className={cn('relative inline-flex rounded-full h-2 w-2', dotColor)} />
-                  </span>
+                  <StatusDot 
+                    color={(colorState === 'connected' ? 'success' : colorState === 'warning' ? 'warning' : 'muted') as StatusDotColor} 
+                    pulse={colorState === 'connected' || colorState === 'warning' || indicator.isDeploying} 
+                  />
                   {indicator.isDeploying ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (

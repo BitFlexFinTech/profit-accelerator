@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Activity, Wifi } from 'lucide-react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { supabase } from '@/integrations/supabase/client';
@@ -125,8 +126,8 @@ export function PnLPanel() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Total Equity</span>
                 {isLive && (
-                  <span className="flex items-center gap-1 text-xs text-green-accent bg-green-accent/10 px-1.5 py-0.5 rounded-full animate-pulse">
-                    <Wifi className="w-3 h-3" />
+                  <span className="flex items-center gap-1 text-xs text-green-accent bg-green-accent/10 px-1.5 py-0.5 rounded-full">
+                    <StatusDot color="success" pulse size="xs" />
                     LIVE
                   </span>
                 )}
