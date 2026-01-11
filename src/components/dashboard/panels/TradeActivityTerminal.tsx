@@ -4,6 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowUpRight, ArrowDownRight, Terminal, Activity, Zap, RefreshCw } from 'lucide-react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -186,10 +187,10 @@ export function TradeActivityTerminal({ expanded = false, compact = false, class
             </IconContainer>
             <CardTitle className="text-sm font-medium">Live Trade Activity ({trades.length} trades)</CardTitle>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              <Activity className="h-3 w-3 text-green-400 animate-pulse" />
-              <span className="text-xs text-green-400 font-medium">LIVE</span>
+            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <StatusDot color="success" pulse size="xs" />
+              <span className="text-xs text-success font-medium">LIVE</span>
             </div>
             <Tooltip>
               <TooltipTrigger asChild>

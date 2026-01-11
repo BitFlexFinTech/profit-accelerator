@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Zap, StopCircle, RefreshCw, Bell, Loader2, Play, Square, RotateCcw } from 'lucide-react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -142,11 +143,11 @@ export function QuickActionsPanel() {
                   : 'bg-muted text-muted-foreground'
               }
             >
-              <span className={`w-2 h-2 rounded-full mr-1.5 ${
-                botStatus === 'running' ? 'bg-green-accent animate-blink' : 
-                botStatus === 'standby' ? 'bg-warning animate-pulse' : 
-                'bg-muted-foreground'
-              }`} />
+              <StatusDot 
+                color={botStatus === 'running' ? 'success' : botStatus === 'standby' ? 'warning' : 'muted'} 
+                pulse={botStatus === 'running' || botStatus === 'standby'}
+                className="mr-1.5"
+              />
               {botStatus.toUpperCase()}
             </Badge>
           </div>

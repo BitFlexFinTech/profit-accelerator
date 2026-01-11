@@ -909,7 +909,7 @@ export function SettingsTab() {
 
           <div className="flex items-center justify-between p-4 rounded-lg bg-destructive/10 border border-destructive/30">
             <div className="flex items-center gap-3">
-              <div className="status-offline" />
+              <StatusDot color="destructive" />
               <div>
                 <p className="font-medium">Global Kill-Switch</p>
                 <p className="text-xs text-muted-foreground">Linked to Telegram /kill command</p>
@@ -957,7 +957,7 @@ export function SettingsTab() {
             <div className="flex items-center gap-2">
               {isVpsConnected ? (
                 <>
-                  <div className="status-online" />
+                  <StatusDot color="success" pulse />
                   <span className="text-sm font-mono text-accent">{vps.region || 'unknown'}</span>
                 </>
               ) : (
