@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useCloudConfig } from '@/hooks/useCloudConfig';
 import { useHFTDeployments } from '@/hooks/useHFTDeployments';
 import { supabase } from '@/integrations/supabase/client';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 
 const ALL_PROVIDERS = ['contabo', 'vultr', 'aws', 'digitalocean', 'gcp', 'oracle', 'alibaba', 'azure'];
 
@@ -51,17 +52,25 @@ export function CloudStatusPanel({ compact = false }: CloudStatusPanelProps) {
     return labels[provider] || provider.slice(0, 3).toUpperCase();
   };
 
-  const getStatusDot = (status: string, isActive: boolean) => {
-    if (isActive) return 'bg-emerald-500 animate-pulse';
+  const getStatusDotColor = (status: string, isActive: boolean): StatusDotColor => {
+    if (isActive) return 'success';
     switch (status) {
-      case 'running': return 'bg-emerald-500 animate-pulse';
-      case 'active': return 'bg-emerald-500 animate-pulse';
-      case 'configured': return 'bg-amber-500';
-      case 'stopped': return 'bg-slate-400';
-      case 'deploying': return 'bg-amber-500 animate-pulse';
-      case 'error': return 'bg-red-500';
-      default: return 'bg-slate-400';
+      case 'running': 
+      case 'active': 
+        return 'success';
+      case 'configured': 
+        return 'warning';
+      case 'deploying': 
+        return 'warning';
+      case 'error': 
+        return 'destructive';
+      default: 
+        return 'muted';
     }
+  };
+
+  const shouldPulse = (status: string, isActive: boolean): boolean => {
+    return isActive || status === 'running' || status === 'active' || status === 'deploying';
   };
 
   useEffect(() => {
@@ -84,8 +93,25 @@ export function CloudStatusPanel({ compact = false }: CloudStatusPanelProps) {
   const allProviderStatuses = ALL_PROVIDERS.map(provider => {
     const config = configs.find(c => c.provider === provider);
     const hftDeployment = getHFTDeploymentForProvider(provider);
-    const isActive = vpsConfig?.provider === provider || !!hftDeployment;
-    const status = hftDeployment?.status || (isActive ? 'running' : (config?.status || 'not_configured'));
+    
+    // Check if provider is active from cloud_config table OR has running HFT deployment
+    const isDbActive = config?.is_active === true;
+    const hasRunningDeployment = !!hftDeployment && hftDeployment.status === 'running';
+    const isVpsActive = vpsConfig?.provider === provider;
+    
+    const isActive = isDbActive || hasRunningDeployment || isVpsActive;
+    
+    // Determine status - prioritize actual database status
+    let status = 'not_configured';
+    if (hftDeployment?.status) {
+      status = hftDeployment.status;
+    } else if (isActive) {
+      status = 'running';
+    } else if (config?.status === 'active' || config?.status === 'configured') {
+      status = config.status;
+    } else if (config?.status) {
+      status = config.status;
+    }
     
     return {
       provider,
@@ -125,7 +151,7 @@ export function CloudStatusPanel({ compact = false }: CloudStatusPanelProps) {
             className={`${compact ? 'p-1' : 'p-2'} rounded text-center transition-all ${
               isActive 
                 ? 'bg-emerald-500/20 border border-emerald-500/40' 
-                : status === 'running' 
+                : status === 'running' || status === 'active'
                   ? 'bg-primary/10 border border-primary/20'
                   : 'bg-secondary/40 opacity-60'
             }`}
@@ -134,7 +160,13 @@ export function CloudStatusPanel({ compact = false }: CloudStatusPanelProps) {
             <p className={`font-medium mt-0.5 truncate ${compact ? 'text-[8px]' : 'text-[10px]'}`}>
               {getProviderLabel(provider)}
             </p>
-            <div className={`${compact ? 'w-1.5 h-1.5' : 'w-2 h-2'} rounded-full mx-auto mt-0.5 ${getStatusDot(status, isActive)}`} />
+            <div className="flex justify-center mt-0.5">
+              <StatusDot 
+                color={getStatusDotColor(status, isActive)} 
+                pulse={shouldPulse(status, isActive)} 
+                size={compact ? 'xs' : 'sm'} 
+              />
+            </div>
           </div>
         ))}
       </div>
