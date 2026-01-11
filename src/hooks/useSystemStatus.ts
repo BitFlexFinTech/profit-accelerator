@@ -173,12 +173,15 @@ export function useSystemStatus() {
     let success = false;
     let retries = 0;
     
-    // Retry logic with exponential backoff
+    // Retry logic with exponential backoff - silent failures
     while (retries < MAX_RETRIES && !success && mountedRef.current) {
       try {
         const { error } = await supabase.functions.invoke('check-vps-health');
         if (error) {
-          console.error(`[useSystemStatus] Health check error (attempt ${retries + 1}):`, error);
+          // Silent log - don't spam console
+          if (retries === MAX_RETRIES - 1) {
+            console.warn('[useSystemStatus] Health check failed after max retries');
+          }
           retries++;
           if (retries < MAX_RETRIES) {
             // Exponential backoff: 1s, 2s, 4s
@@ -189,8 +192,8 @@ export function useSystemStatus() {
           retryCountRef.current = 0;
           consecutiveFailuresRef.current = 0;
         }
-      } catch (err) {
-        console.error(`[useSystemStatus] Health check failed (attempt ${retries + 1}):`, err);
+      } catch {
+        // Silent failure - edge function not available
         retries++;
         if (retries < MAX_RETRIES) {
           await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries - 1)));

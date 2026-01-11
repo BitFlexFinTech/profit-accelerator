@@ -83,10 +83,33 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: Error): Partial<State> {
+    // Don't show error boundary for network/fetch errors - these are transient
+    const isTransientError = 
+      error.message?.includes('Failed to fetch') ||
+      error.message?.includes('NetworkError') ||
+      error.message?.includes('FunctionsFetchError') ||
+      error.message?.includes('CHANNEL_ERROR');
+    
+    if (isTransientError) {
+      console.warn('[ErrorBoundary] Transient error ignored:', error.message);
+      return { hasError: false };
+    }
+    
     return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // Skip logging for transient network errors
+    const isTransientError = 
+      error.message?.includes('Failed to fetch') ||
+      error.message?.includes('NetworkError') ||
+      error.message?.includes('FunctionsFetchError') ||
+      error.message?.includes('CHANNEL_ERROR');
+    
+    if (isTransientError) {
+      return;
+    }
+    
     // CRITICAL: Log full error context for debugging
     console.error('[ErrorBoundary] Error caught:', {
       name: error.name,

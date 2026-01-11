@@ -14,6 +14,7 @@ import { StrategyWizard } from '../wizards/StrategyWizard';
 import { ActionButton } from '@/components/ui/ActionButton';
 import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 import { cn } from '@/lib/utils';
+import { StatusDot } from '@/components/ui/StatusDot';
 
 interface Strategy {
   id: string;
@@ -533,15 +534,15 @@ export function StrategyBuilder() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     {strategy.is_active && !strategy.is_paused ? (
                       <>
-                        <div className="status-online" />
+                        <StatusDot color="success" pulse size="sm" />
                         <span className="text-xs text-success">Active</span>
                       </>
                     ) : (
                       <>
-                        <div className="status-warning" />
+                        <StatusDot color="warning" size="sm" />
                         <span className="text-xs text-warning">Paused</span>
                       </>
                     )}
