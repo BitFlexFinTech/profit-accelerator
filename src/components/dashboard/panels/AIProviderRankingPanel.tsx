@@ -35,13 +35,22 @@ export function AIProviderRankingPanel() {
 
   const fetchProviders = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('ai-analyze', {
-        body: { action: 'get-providers' }
-      });
+      // Fetch directly from database to ensure all providers are shown
+      const { data, error } = await supabase
+        .from('ai_providers')
+        .select('*')
+        .order('priority', { ascending: true });
 
       if (error) throw error;
-      if (data?.providers) {
-        setProviders(data.providers);
+      
+      if (data) {
+        // Map database fields to component interface
+        const mapped = data.map(p => ({
+          ...p,
+          has_valid_key: p.has_secret === true,
+          at_rate_limit: (p.current_usage || 0) >= (p.rate_limit_rpm || 30),
+        }));
+        setProviders(mapped);
       }
     } catch (err) {
       console.error('Failed to fetch AI providers:', err);

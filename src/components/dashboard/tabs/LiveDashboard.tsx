@@ -5,10 +5,8 @@ import { TradeActivityTerminal } from '../panels/TradeActivityTerminal';
 import { AIMarketUpdatesPanel } from '../panels/AIMarketUpdatesPanel';
 import { ScrollingPriceTicker } from '../panels/ScrollingPriceTicker';
 import { NewsPanel } from '../panels/NewsPanel';
-import { InfrastructurePanel } from '../panels/InfrastructurePanel';
 import { UnderwaterPositionsCompactBar } from '../panels/UnderwaterPositionsCompactBar';
 import { AIProviderHealthCompactBar } from '../panels/AIProviderHealthCompactBar';
-// AutoStartWarningBanner removed - bot auto-start is disabled by design
 import { useTradeNotifications } from '@/hooks/useTradeNotifications';
 import { useExchangeWebSocket } from '@/hooks/useExchangeWebSocket';
 import { useLiveBalancePolling } from '@/hooks/useLiveBalancePolling';
@@ -19,7 +17,7 @@ import { useWidgetStore } from '@/store/useWidgetStore';
 
 export function LiveDashboard() {
   useTradeNotifications();
-  useRateLimitRecovery(); // Auto-clears expired cooldowns every 5 minutes
+  useRateLimitRecovery();
   const isMobile = useIsMobile();
   const { sync } = useExchangeWebSocket();
   const { startPolling, stopPolling } = useLiveBalancePolling(60);
@@ -32,13 +30,11 @@ export function LiveDashboard() {
     return () => stopPolling();
   }, [sync, startPolling, stopPolling]);
 
-  // Helper to check widget visibility
   const isVisible = (id: string) => {
     const widget = layout.find((w) => w.id === id);
     return widget?.visible ?? true;
   };
 
-  // Mobile-responsive: swipeable panel navigation
   if (isMobile) {
     return <MobileDashboard />;
   }
@@ -70,18 +66,11 @@ export function LiveDashboard() {
           </div>
         )}
         
-        {/* RIGHT Column - Infrastructure at TOP (strict rule), compact bars below */}
+        {/* RIGHT Column - News at top, compact bars below */}
         <div className="flex flex-col gap-1 min-h-0 h-full overflow-hidden">
-          {/* Infrastructure Panel - AT TOP, takes primary space */}
-          {isVisible('infrastructure') && (
-            <div className="flex-1 min-h-[200px] overflow-hidden">
-              <InfrastructurePanel />
-            </div>
-          )}
-          
-          {/* News Panel - Below infrastructure */}
+          {/* News Panel - Takes primary space */}
           {isVisible('news') && (
-            <div className="flex-1 min-h-[180px] overflow-hidden">
+            <div className="flex-1 min-h-[200px] overflow-hidden">
               <NewsPanel />
             </div>
           )}

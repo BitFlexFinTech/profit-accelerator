@@ -51,13 +51,16 @@ export function CloudStatusPanel({ compact = false }: CloudStatusPanelProps) {
     return labels[provider] || provider.slice(0, 3).toUpperCase();
   };
 
-  const getStatusDot = (status: string) => {
+  const getStatusDot = (status: string, isActive: boolean) => {
+    if (isActive) return 'bg-emerald-500 animate-pulse';
     switch (status) {
-      case 'running': return 'bg-emerald-500';
-      case 'stopped': return 'bg-muted-foreground/50';
+      case 'running': return 'bg-emerald-500 animate-pulse';
+      case 'active': return 'bg-emerald-500 animate-pulse';
+      case 'configured': return 'bg-amber-500';
+      case 'stopped': return 'bg-slate-400';
       case 'deploying': return 'bg-amber-500 animate-pulse';
-      case 'error': return 'bg-destructive';
-      default: return 'bg-muted-foreground/30';
+      case 'error': return 'bg-red-500';
+      default: return 'bg-slate-400';
     }
   };
 
@@ -131,7 +134,7 @@ export function CloudStatusPanel({ compact = false }: CloudStatusPanelProps) {
             <p className={`font-medium mt-0.5 truncate ${compact ? 'text-[8px]' : 'text-[10px]'}`}>
               {getProviderLabel(provider)}
             </p>
-            <div className={`${compact ? 'w-1 h-1' : 'w-1.5 h-1.5'} rounded-full mx-auto mt-0.5 ${getStatusDot(status)}`} />
+            <div className={`${compact ? 'w-1.5 h-1.5' : 'w-2 h-2'} rounded-full mx-auto mt-0.5 ${getStatusDot(status, isActive)}`} />
           </div>
         ))}
       </div>
