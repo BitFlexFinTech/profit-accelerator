@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 
 type BotStatus = 'running' | 'stopped' | 'standby' | 'idle' | 'error' | 'starting';
 type StartupStage = 'idle' | 'connecting' | 'verifying' | 'waiting_trade' | 'active' | 'timeout';
@@ -408,16 +409,18 @@ export function UnifiedControlBar() {
           {/* Bot Status Section */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              {/* Status dot - uses explicit Tailwind colors, only the dot pulses */}
-              <span className={cn(
-                "w-2 h-2 rounded-full flex-shrink-0",
-                botStatus === 'running' && 'bg-emerald-500 animate-pulse',
-                botStatus === 'starting' && 'bg-amber-500 animate-pulse',
-                botStatus === 'stopped' && 'bg-red-500',
-                botStatus === 'standby' && 'bg-slate-400',
-                botStatus === 'idle' && 'bg-amber-500',
-                botStatus === 'error' && 'bg-red-500'
-              )} />
+              {/* Status dot - uses StatusDot component for consistency */}
+              <StatusDot 
+                color={
+                  botStatus === 'running' ? 'success' :
+                  botStatus === 'starting' ? 'warning' :
+                  botStatus === 'standby' ? 'muted' :
+                  botStatus === 'idle' ? 'warning' :
+                  'destructive'
+                }
+                pulse={botStatus === 'running' || botStatus === 'starting'}
+                size="sm"
+              />
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Bot
               </span>
@@ -450,7 +453,7 @@ export function UnifiedControlBar() {
                       {vpsHealth.ipAddress || 'No VPS'}
                     </span>
                     {vpsHealth.status === 'healthy' && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <StatusDot color="success" pulse size="xs" />
                     )}
                   </div>
                 </TooltipTrigger>

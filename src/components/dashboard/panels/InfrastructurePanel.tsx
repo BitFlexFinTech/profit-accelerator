@@ -9,6 +9,7 @@ import { useHFTDeployments } from '@/hooks/useHFTDeployments';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconContainer } from '@/components/ui/IconContainer';
 import { checkVpsApiHealth, pingVpsExchanges } from '@/services/vpsApiService';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 import { toast } from 'sonner';
 
 interface ExchangePulse {
@@ -260,13 +261,24 @@ export function InfrastructurePanel() {
   };
 
   // Status dot colors - only the small dot pulses, never containers
-  const getStatusDot = (status: string) => {
+  const getStatusDotColor = (status: string): StatusDotColor => {
     switch (status) {
-      case 'running': return 'bg-emerald-500';
-      case 'deploying': return 'bg-amber-500'; // Removed animate-pulse from status dot in grid
-      case 'error': return 'bg-red-500';
-      default: return 'bg-slate-400/30';
+      case 'running': 
+      case 'active': 
+        return 'success';
+      case 'deploying': 
+      case 'configured':
+      case 'pending':
+        return 'warning';
+      case 'error': 
+        return 'destructive';
+      default: 
+        return 'muted';
     }
+  };
+  
+  const shouldPulse = (status: string): boolean => {
+    return status === 'running' || status === 'active';
   };
 
   const allProviderStatuses = ALL_PROVIDERS.map(provider => {
@@ -450,7 +462,13 @@ export function InfrastructurePanel() {
               )}
             >
               <p className="text-[6px] font-medium truncate">{getProviderLabel(provider)}</p>
-              <div className={cn("w-1 h-1 rounded-full mx-auto", getStatusDot(status))} />
+              <div className="flex justify-center mt-0.5">
+                <StatusDot 
+                  color={getStatusDotColor(status)} 
+                  pulse={shouldPulse(status)} 
+                  size="xs" 
+                />
+              </div>
             </div>
           ))}
         </div>
