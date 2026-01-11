@@ -262,12 +262,20 @@ export default function Setup() {
         credentialsObj[provider.secretField] = cred.secret;
       }
 
+      // Check if this provider already has a running status
+      const { data: existingConfig } = await supabase
+        .from('cloud_config')
+        .select('is_active, status')
+        .eq('provider', provider.id)
+        .single();
+
       const { error } = await supabase.from('cloud_config').upsert({
         provider: provider.id,
         region: provider.region,
         credentials: credentialsObj,
-        is_active: false,
-        status: 'configured',
+        // Preserve is_active if provider was already active, otherwise set false
+        is_active: existingConfig?.is_active ?? false,
+        status: existingConfig?.status === 'active' ? 'active' : 'configured',
         updated_at: new Date().toISOString()
       }, { onConflict: 'provider' });
 
