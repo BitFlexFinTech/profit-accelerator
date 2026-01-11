@@ -7,10 +7,11 @@ import { useVPSMetrics } from '@/hooks/useVPSMetrics';
 import { useVPSInstances } from '@/hooks/useVPSInstances';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip, CartesianGrid } from 'recharts';
 import { RegisterExistingVPS } from '@/components/vps/RegisterExistingVPS';
 import { cn } from '@/lib/utils';
 import { StatusDot } from '@/components/ui/StatusDot';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 interface VPSConfig {
   id: string;
@@ -284,29 +285,26 @@ export function VPSMonitorPanel() {
             <div className="h-32">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={metricsHistory}>
+                  <CartesianGrid {...chartStyles.grid} />
                   <XAxis dataKey="time" hide />
                   <YAxis hide domain={[0, 'auto']} />
                   <RechartsTooltip 
-                    contentStyle={{ 
-                      background: 'hsl(var(--card))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px'
-                    }}
-                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={chartStyles.tooltip.contentStyle}
+                    labelStyle={chartStyles.tooltip.labelStyle}
                   />
                   <Line 
                     type="monotone" 
                     dataKey="netIn" 
-                    stroke="#00FF88" 
-                    strokeWidth={2} 
+                    stroke={CHART_COLORS.success}
+                    strokeWidth={chartStyles.line.strokeWidth}
                     dot={false}
                     name="Download"
                   />
                   <Line 
                     type="monotone" 
                     dataKey="netOut" 
-                    stroke="#00D4FF" 
-                    strokeWidth={2} 
+                    stroke={CHART_COLORS.secondary}
+                    strokeWidth={chartStyles.line.strokeWidth}
                     dot={false}
                     name="Upload"
                   />

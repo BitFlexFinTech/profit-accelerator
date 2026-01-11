@@ -66,9 +66,9 @@ export function PortfolioBreakdownPanel() {
                   </Pie>
                   <Tooltip
                     formatter={(value: number) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Balance']}
-                    contentStyle={chartStyles.tooltipStyle}
-                    labelStyle={chartStyles.tooltipLabelStyle}
-                    itemStyle={chartStyles.tooltipItemStyle}
+                    contentStyle={chartStyles.tooltip.contentStyle}
+                    labelStyle={chartStyles.tooltip.labelStyle}
+                    itemStyle={chartStyles.tooltip.itemStyle}
                   />
                 </PieChart>
               </ResponsiveContainer>

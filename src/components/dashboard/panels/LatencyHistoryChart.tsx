@@ -162,18 +162,18 @@ export function LatencyHistoryChart() {
                   <CartesianGrid {...chartStyles.grid} />
                   <XAxis 
                     dataKey="time" 
-                    tick={chartStyles.axisTick}
+                    tick={chartStyles.tick}
                     axisLine={{ stroke: CHART_COLORS.grid }}
                   />
                   <YAxis 
-                    tick={chartStyles.axisTick}
+                    tick={chartStyles.tick}
                     axisLine={{ stroke: CHART_COLORS.grid }}
                     domain={[0, 'auto']}
                   />
                   <Tooltip
-                    contentStyle={chartStyles.tooltipStyle}
-                    labelStyle={chartStyles.tooltipLabelStyle}
-                    itemStyle={chartStyles.tooltipItemStyle}
+                    contentStyle={chartStyles.tooltip.contentStyle}
+                    labelStyle={chartStyles.tooltip.labelStyle}
+                    itemStyle={chartStyles.tooltip.itemStyle}
                     formatter={(value: number) => [`${value}ms`, 'Latency']}
                   />
                   <ReferenceLine y={80} stroke={CHART_COLORS.danger} strokeDasharray="5 5" opacity={0.5} />

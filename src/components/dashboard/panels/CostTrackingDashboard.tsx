@@ -30,6 +30,7 @@ import {
   Cell
 } from 'recharts';
 import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 interface CostData {
   provider: string;
@@ -311,30 +312,26 @@ export function CostTrackingDashboard() {
                 ) : costTrends.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={costTrends}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <CartesianGrid {...chartStyles.grid} />
                       <XAxis 
                         dataKey="date" 
-                        stroke="hsl(var(--muted-foreground))" 
-                        fontSize={12}
+                        {...chartStyles.xAxis}
+                        tick={chartStyles.tick}
                       />
                       <YAxis 
-                        stroke="hsl(var(--muted-foreground))" 
-                        fontSize={12}
+                        {...chartStyles.yAxis}
+                        tick={chartStyles.tick}
                         tickFormatter={(v) => `$${v}`}
                       />
                       <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '6px'
-                        }}
+                        contentStyle={chartStyles.tooltip.contentStyle}
                         formatter={(value: number) => [`$${value.toFixed(2)}`, 'Cost']}
                       />
                       <Line 
                         type="monotone" 
                         dataKey="cost" 
-                        stroke="hsl(var(--primary))" 
-                        strokeWidth={2}
+                        stroke={CHART_COLORS.primary}
+                        strokeWidth={chartStyles.line.strokeWidth}
                         dot={false}
                       />
                     </LineChart>
@@ -376,11 +373,7 @@ export function CostTrackingDashboard() {
                         </Pie>
                         <Tooltip 
                           formatter={(value: number) => [`$${value.toFixed(2)}`, 'Cost']}
-                          contentStyle={{ 
-                            backgroundColor: 'hsl(var(--card))', 
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '6px'
-                          }}
+                          contentStyle={chartStyles.tooltip.contentStyle}
                         />
                       </PieChart>
                     </ResponsiveContainer>
@@ -415,29 +408,25 @@ export function CostTrackingDashboard() {
                   {costData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={costData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <CartesianGrid {...chartStyles.grid} />
                         <XAxis 
                           dataKey="provider" 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
+                          {...chartStyles.xAxis}
+                          tick={chartStyles.tick}
                           tickFormatter={(v) => v.toUpperCase()}
                         />
                         <YAxis 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
+                          {...chartStyles.yAxis}
+                          tick={chartStyles.tick}
                           tickFormatter={(v) => `$${v}`}
                         />
                         <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: 'hsl(var(--card))', 
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '6px'
-                          }}
+                          contentStyle={chartStyles.tooltip.contentStyle}
                           formatter={(value: number) => [`$${value.toFixed(2)}`]}
                         />
-                        <Bar dataKey="computeCost" name="Compute" fill="hsl(var(--primary))" stackId="a" />
-                        <Bar dataKey="networkCost" name="Network" fill="hsl(var(--accent))" stackId="a" />
-                        <Bar dataKey="storageCost" name="Storage" fill="hsl(var(--secondary))" stackId="a" />
+                        <Bar dataKey="computeCost" name="Compute" fill={CHART_COLORS.series[0]} stackId="a" />
+                        <Bar dataKey="networkCost" name="Network" fill={CHART_COLORS.series[1]} stackId="a" />
+                        <Bar dataKey="storageCost" name="Storage" fill={CHART_COLORS.series[2]} stackId="a" />
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (

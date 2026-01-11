@@ -6,9 +6,10 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from 'recharts';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 interface BacktestResult {
   id: string;
@@ -458,44 +459,34 @@ export function Backtesting() {
                 <p className="text-sm text-muted-foreground mb-2">Equity Curve</p>
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="balanceGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
+                    <CartesianGrid {...chartStyles.grid} />
                     <XAxis 
                       dataKey="date" 
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
+                      {...chartStyles.xAxis}
+                      tick={{ ...chartStyles.tick, fontSize: 10 }}
                     />
                     <YAxis 
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
+                      {...chartStyles.yAxis}
+                      tick={{ ...chartStyles.tick, fontSize: 10 }}
                       tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
                       domain={['auto', 'auto']}
                     />
                     <Tooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'hsl(var(--card))', 
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px'
-                      }}
+                      contentStyle={chartStyles.tooltip.contentStyle}
                       formatter={(value: number) => [`$${value.toLocaleString()}`, 'Balance']}
                     />
                     <ReferenceLine 
                       y={initialBalance} 
-                      stroke="hsl(var(--muted-foreground))" 
+                      stroke={CHART_COLORS.grid} 
                       strokeDasharray="3 3" 
                     />
                     <Area
                       type="monotone"
                       dataKey="balance"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                      fill="url(#balanceGradient)"
+                      stroke={CHART_COLORS.primary}
+                      strokeWidth={chartStyles.area.strokeWidth}
+                      fill={CHART_COLORS.primary}
+                      fillOpacity={0.15}
                     />
                   </AreaChart>
                 </ResponsiveContainer>

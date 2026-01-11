@@ -167,7 +167,7 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
                   dataKey="label" 
                   axisLine={false}
                   tickLine={false}
-                  tick={chartStyles.axisTick}
+                  tick={chartStyles.tick}
                   interval="preserveStartEnd"
                 />
               )}
@@ -176,15 +176,15 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
                   domain={['dataMin - 50', 'dataMax + 50']}
                   axisLine={false}
                   tickLine={false}
-                  tick={chartStyles.axisTick}
+                  tick={chartStyles.tick}
                   tickFormatter={(value) => `$${(value / 1000).toFixed(1)}k`}
                   width={50}
                 />
               )}
               <Tooltip
-                contentStyle={chartStyles.tooltipStyle}
-                labelStyle={chartStyles.tooltipLabelStyle}
-                itemStyle={chartStyles.tooltipItemStyle}
+                contentStyle={chartStyles.tooltip.contentStyle}
+                labelStyle={chartStyles.tooltip.labelStyle}
+                itemStyle={chartStyles.tooltip.itemStyle}
                 formatter={(value: number) => [formatTooltipValue(value), 'Balance']}
                 labelFormatter={(label) => `Time: ${label}`}
               />

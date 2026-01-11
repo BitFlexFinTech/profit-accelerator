@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Activity, Target, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { format } from 'date-fns';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 // Import panels for Analytics tab
 import { VPSMeshPanel } from '../panels/VPSMeshPanel';
@@ -237,38 +238,28 @@ export function PortfolioAnalytics() {
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={equityData}>
-                <defs>
-                  <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
+                <CartesianGrid {...chartStyles.grid} />
                 <XAxis 
                   dataKey="date" 
-                  axisLine={false} 
-                  tickLine={false}
-                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  {...chartStyles.xAxis}
+                  tick={chartStyles.tick}
                 />
                 <YAxis 
-                  axisLine={false} 
-                  tickLine={false}
-                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  {...chartStyles.yAxis}
+                  tick={chartStyles.tick}
                   tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
                 />
                 <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                  }}
+                  contentStyle={chartStyles.tooltip.contentStyle}
                   formatter={(value: number) => [`$${value.toLocaleString()}`, 'Balance']}
                 />
                 <Area 
                   type="monotone" 
                   dataKey="balance" 
-                  stroke="hsl(var(--primary))" 
-                  fill="url(#colorBalance)"
-                  strokeWidth={2}
+                  stroke={CHART_COLORS.primary}
+                  fill={CHART_COLORS.primary}
+                  fillOpacity={0.15}
+                  strokeWidth={chartStyles.area.strokeWidth}
                 />
               </AreaChart>
             </ResponsiveContainer>

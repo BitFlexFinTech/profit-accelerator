@@ -136,18 +136,18 @@ export function LatencyComparisonChart() {
               <CartesianGrid {...chartStyles.grid} />
               <XAxis 
                 dataKey="exchange" 
-                tick={chartStyles.axisTick}
+                tick={chartStyles.tick}
                 axisLine={{ stroke: CHART_COLORS.grid }}
               />
               <YAxis 
-                tick={chartStyles.axisTick}
+                tick={chartStyles.tick}
                 axisLine={{ stroke: CHART_COLORS.grid }}
                 label={{ value: 'ms', angle: -90, position: 'insideLeft', fill: CHART_COLORS.axisLabel }}
               />
               <Tooltip
-                contentStyle={chartStyles.tooltipStyle}
-                labelStyle={chartStyles.tooltipLabelStyle}
-                itemStyle={chartStyles.tooltipItemStyle}
+                contentStyle={chartStyles.tooltip.contentStyle}
+                labelStyle={chartStyles.tooltip.labelStyle}
+                itemStyle={chartStyles.tooltip.itemStyle}
                 formatter={(value: number, name: string) => [
                   `${value}ms`,
                   name === 'vps' ? 'VPS (Tokyo)' : 'Edge (Supabase)'

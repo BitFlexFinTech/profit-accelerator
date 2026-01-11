@@ -23,6 +23,7 @@ import {
   Activity,
   Palette
 } from 'lucide-react';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { useCloudInfrastructure, PROVIDER_PRICING, PROVIDER_ICONS } from '@/hooks/useCloudInfrastructure';
 import { Button } from '@/components/ui/button';
@@ -108,12 +109,12 @@ function VPSStatusSection() {
   // Determine status display
   const getStatusDisplay = () => {
     switch (vps.status) {
-      case 'running': return { text: 'Running', class: 'text-success', dotClass: 'status-online' };
-      case 'standby': return { text: 'Standby', class: 'text-warning', dotClass: 'bg-warning rounded-full w-2 h-2 animate-pulse' };
-      case 'idle': return { text: 'Connected (Idle)', class: 'text-primary', dotClass: 'status-online' };
-      case 'deploying': return { text: 'Deploying...', class: 'text-warning', dotClass: 'bg-warning rounded-full w-2 h-2 animate-pulse' };
-      case 'stopped': return { text: 'Stopped', class: 'text-muted-foreground', dotClass: 'status-offline' };
-      default: return { text: 'Inactive', class: 'text-muted-foreground', dotClass: 'status-offline' };
+      case 'running': return { text: 'Running', class: 'text-success', dotColor: 'success' as const };
+      case 'standby': return { text: 'Standby', class: 'text-warning', dotColor: 'warning' as const };
+      case 'idle': return { text: 'Connected (Idle)', class: 'text-primary', dotColor: 'success' as const };
+      case 'deploying': return { text: 'Deploying...', class: 'text-warning', dotColor: 'warning' as const };
+      case 'stopped': return { text: 'Stopped', class: 'text-muted-foreground', dotColor: 'muted' as const };
+      default: return { text: 'Inactive', class: 'text-muted-foreground', dotColor: 'muted' as const };
     }
   };
   
@@ -145,7 +146,7 @@ function VPSStatusSection() {
         <div className="p-4 rounded-lg bg-secondary/30">
           <p className="text-muted-foreground text-sm">Server Status</p>
           <div className="flex items-center gap-2">
-            <div className={statusDisplay.dotClass} />
+            <StatusDot color={statusDisplay.dotColor} pulse={vps.status === 'running' || vps.status === 'idle'} />
             <span className={`font-medium ${statusDisplay.class}`}>{statusDisplay.text}</span>
           </div>
         </div>
