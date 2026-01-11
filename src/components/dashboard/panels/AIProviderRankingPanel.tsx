@@ -251,13 +251,29 @@ export function AIProviderRankingPanel() {
 
                     {/* Provider Name */}
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span 
                           className="font-medium text-sm"
                           style={{ color: provider.color_hex }}
                         >
                           {provider.display_name}
                         </span>
+                        {/* Free/Paid tier badge */}
+                        {provider.rate_limit_rpm >= 30 && provider.provider_name !== 'openrouter' ? (
+                          <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-medium">
+                            FREE
+                          </span>
+                        ) : (
+                          <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-medium">
+                            PAID
+                          </span>
+                        )}
+                        {/* Cheapest paid indicator */}
+                        {provider.provider_name === 'openrouter' && (
+                          <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-medium">
+                            CHEAPEST
+                          </span>
+                        )}
                         {isBestPerformer && (
                           <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/30 text-amber-300 font-bold">
                             ⭐ BEST

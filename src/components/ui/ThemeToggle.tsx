@@ -1,4 +1,4 @@
-import { Moon, Sun, Monitor } from 'lucide-react';
+import { Moon, Sun, Monitor, Zap } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useEffect, useState } from 'react';
 
-type ThemeMode = 'colorful' | 'light' | 'bw' | 'system';
+type ThemeMode = 'colorful' | 'light' | 'bw' | 'neon' | 'system';
 
 export function ThemeToggle() {
   const { theme, setTheme } = useAppStore();
@@ -53,12 +53,19 @@ export function ThemeToggle() {
 
     if (newMode === 'system') {
       setTheme(systemPreference === 'light' ? 'light' : 'colorful');
+      document.documentElement.removeAttribute('data-theme');
     } else if (newMode === 'light') {
       setTheme('light');
+      document.documentElement.removeAttribute('data-theme');
     } else if (newMode === 'bw') {
       setTheme('bw');
+      document.documentElement.removeAttribute('data-theme');
+    } else if (newMode === 'neon') {
+      setTheme('neon');
+      document.documentElement.setAttribute('data-theme', 'neon');
     } else {
       setTheme('colorful');
+      document.documentElement.removeAttribute('data-theme');
     }
 
     // Remove transition class after animation
@@ -67,14 +74,15 @@ export function ThemeToggle() {
     }, 300);
   };
 
-  const CurrentIcon = mode === 'light' ? Sun : mode === 'system' ? Monitor : Moon;
+  const CurrentIcon = mode === 'light' ? Sun : mode === 'system' ? Monitor : mode === 'neon' ? Zap : Moon;
   const iconOpacity = mode === 'bw' ? 'opacity-50' : '';
+  const iconColor = mode === 'neon' ? 'text-[#00FF88]' : '';
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8">
-          <CurrentIcon className={`h-4 w-4 ${iconOpacity}`} />
+          <CurrentIcon className={`h-4 w-4 ${iconOpacity} ${iconColor}`} />
           <span className="sr-only">Toggle theme</span>
         </Button>
       </DropdownMenuTrigger>
@@ -92,6 +100,13 @@ export function ThemeToggle() {
         >
           <Moon className="mr-2 h-4 w-4 opacity-50" />
           Dark (Noir)
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => handleModeChange('neon')}
+          className={mode === 'neon' ? 'bg-primary/20' : ''}
+        >
+          <Zap className="mr-2 h-4 w-4 text-[#00FF88]" />
+          Neon (HFT)
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => handleModeChange('light')}

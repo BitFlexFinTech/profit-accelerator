@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { 
-  Play, Square, RefreshCw, Bell, Activity, RotateCcw, FileText, Server, Zap, AlertTriangle, XCircle, Wifi
+  Play, Square, RefreshCw, Send, Activity, RotateCcw, FileText, Server, Zap, AlertTriangle, XCircle, Wifi
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { checkVpsApiHealth, pingVpsExchanges } from '@/services/vpsApiService';
@@ -644,16 +644,22 @@ export function UnifiedControlBar() {
               Sync
             </Button>
 
-            <Button 
-              size="sm" 
-              variant="outline" 
-              onClick={handleTestTelegram}
-              disabled={isLoading}
-              className="h-7 text-xs px-2"
-            >
-              <Bell className="w-3 h-3 mr-1" />
-              Test
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={handleTestTelegram}
+                  disabled={isLoading}
+                  className="h-7 w-7 px-0"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Send test message to Telegram</p>
+              </TooltipContent>
+            </Tooltip>
 
             <Activity className={`w-4 h-4 ml-2 ${botStatus === 'running' ? 'text-success' : 'text-muted-foreground'}`} />
           </div>

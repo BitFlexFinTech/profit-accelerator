@@ -61,8 +61,8 @@ interface AppState {
   activeVPS: ActiveVPS | null;
   
   // Theme state
-  theme: 'colorful' | 'bw' | 'light';
-  setTheme: (theme: 'colorful' | 'bw' | 'light') => void;
+  theme: 'colorful' | 'bw' | 'light' | 'neon';
+  setTheme: (theme: 'colorful' | 'bw' | 'light' | 'neon') => void;
   
   // COMPUTED SELECTORS (single source of truth calculations)
   getTotalEquity: () => number;
@@ -105,18 +105,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeVPS: null,
   
   // Theme state
-  theme: (typeof window !== 'undefined' && localStorage.getItem('app-theme') as 'colorful' | 'bw' | 'light') || 'colorful',
+  theme: (typeof window !== 'undefined' && localStorage.getItem('app-theme') as 'colorful' | 'bw' | 'light' | 'neon') || 'colorful',
   
   setTheme: (theme) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('app-theme', theme);
-      // Remove all theme classes first
+      // Remove all theme classes and attributes first
       document.documentElement.classList.remove('theme-bw', 'theme-light');
-      // Add the appropriate theme class
+      document.documentElement.removeAttribute('data-theme');
+      // Add the appropriate theme class/attribute
       if (theme === 'bw') {
         document.documentElement.classList.add('theme-bw');
       } else if (theme === 'light') {
         document.documentElement.classList.add('theme-light');
+      } else if (theme === 'neon') {
+        document.documentElement.setAttribute('data-theme', 'neon');
       }
     }
     set({ theme });
