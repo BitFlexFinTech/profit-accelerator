@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, DollarSign, Activity, Brain, Wifi, AlertCircle, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Activity, Wifi, AlertCircle, Clock } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppStore } from '@/store/useAppStore';
 import { useTradesRealtime } from '@/hooks/useTradesRealtime';
@@ -59,56 +59,13 @@ export function CompactMetricsBar() {
   const secondsAgo = Math.max(0, Math.floor((now - lastUpdate) / 1000));
   const isStale = secondsAgo > 120; // Stale if > 2 minutes
   
-  const [latestAI, setLatestAI] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchAI = async () => {
-      try {
-        // Fetch latest AI insight
-        const { data: aiUpdate } = await supabase
-          .from('ai_market_updates')
-          .select('symbol, sentiment, confidence')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (aiUpdate) {
-          setLatestAI(`${aiUpdate.symbol} ${aiUpdate.sentiment} ${aiUpdate.confidence}%`);
-        }
-      } catch (err) {
-        console.error('[CompactMetricsBar] AI fetch error:', err);
-      } finally {
-        setAiLoading(false);
-      }
-    };
-
-    fetchAI();
-
-    // Subscribe to AI updates only
-    const channel = supabase
-      .channel('compact-metrics-ai')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'ai_market_updates'
-      }, (payload) => {
-        const newUpdate = payload.new as { symbol: string; sentiment: string; confidence: number };
-        setLatestAI(`${newUpdate.symbol} ${newUpdate.sentiment} ${newUpdate.confidence}%`);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
 
   const dailyPercent = displayBalance > 0 ? (displayDailyPnl / displayBalance) * 100 : 0;
   const weeklyPercent = displayBalance > 0 ? (displayWeeklyPnl / displayBalance) * 100 : 0;
   
   // CRITICAL FIX: Only show "Not Connected" if we have NO cached data AND not loading
   const hasNoData = displayBalance === 0 && !storeLoading && cachedValues.current.lastUpdated === 0;
-  const localLoading = tradesLoading || aiLoading;
+  const localLoading = tradesLoading;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -240,21 +197,22 @@ export function CompactMetricsBar() {
           )}
         </div>
 
-        {/* AI Insight Strip */}
+        {/* Connection Status - Replaces AI Insight Strip */}
         <div className="glass-card p-3 col-span-2 md:col-span-1">
-          <div className="flex items-center gap-1.5">
-            <Brain className="w-4 h-4 text-purple-400 flex-shrink-0" />
-            {localLoading ? (
-              <Skeleton className="h-5 w-full" />
-            ) : latestAI ? (
-              <span className="text-xs truncate">
-                🔮 {latestAI}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Wifi className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Status</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className={cn(
+                "w-2 h-2 rounded-full",
+                isLive ? "bg-emerald-500" : isStale ? "bg-amber-500" : "bg-slate-400"
+              )} />
+              <span className="text-xs font-medium">
+                {isLive ? 'Live' : isStale ? 'Stale' : 'Offline'}
               </span>
-            ) : (
-              <span className="text-xs text-muted-foreground truncate">
-                AI analyzing...
-              </span>
-            )}
+            </div>
           </div>
         </div>
       </div>

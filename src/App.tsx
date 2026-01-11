@@ -25,13 +25,18 @@ function AppContent() {
   const theme = useAppStore((s) => s.theme);
   
   useEffect(() => {
-    // Remove all theme classes first
+    // Remove all theme classes and data-theme attributes first
     document.documentElement.classList.remove('theme-bw', 'theme-light');
-    // Add the appropriate theme class
+    document.documentElement.removeAttribute('data-theme');
+    
+    // Add the appropriate theme class or data-theme attribute
     if (theme === 'bw') {
       document.documentElement.classList.add('theme-bw');
     } else if (theme === 'light') {
       document.documentElement.classList.add('theme-light');
+    } else if (theme === 'neon') {
+      // CRITICAL: Restore neon theme on mount via data-theme attribute
+      document.documentElement.setAttribute('data-theme', 'neon');
     }
   }, [theme]);
 
