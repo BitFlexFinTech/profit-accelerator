@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { supabase } from '@/integrations/supabase/client';
 import { Server, Cloud, TrendingDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 interface LatencyData {
   exchange: string;
@@ -132,24 +133,21 @@ export function LatencyComparisonChart() {
         <div className="h-[200px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+              <CartesianGrid {...chartStyles.grid} />
               <XAxis 
                 dataKey="exchange" 
-                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-                axisLine={{ stroke: 'hsl(var(--border))' }}
+                tick={chartStyles.axisTick}
+                axisLine={{ stroke: CHART_COLORS.grid }}
               />
               <YAxis 
-                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-                axisLine={{ stroke: 'hsl(var(--border))' }}
-                label={{ value: 'ms', angle: -90, position: 'insideLeft', fill: 'hsl(var(--muted-foreground))' }}
+                tick={chartStyles.axisTick}
+                axisLine={{ stroke: CHART_COLORS.grid }}
+                label={{ value: 'ms', angle: -90, position: 'insideLeft', fill: CHART_COLORS.axisLabel }}
               />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px',
-                }}
-                labelStyle={{ color: 'hsl(var(--foreground))' }}
+                contentStyle={chartStyles.tooltipStyle}
+                labelStyle={chartStyles.tooltipLabelStyle}
+                itemStyle={chartStyles.tooltipItemStyle}
                 formatter={(value: number, name: string) => [
                   `${value}ms`,
                   name === 'vps' ? 'VPS (Tokyo)' : 'Edge (Supabase)'
@@ -160,14 +158,14 @@ export function LatencyComparisonChart() {
               />
               <Bar 
                 dataKey="vps" 
-                fill="#22c55e"
-                radius={[4, 4, 0, 0]}
+                fill={CHART_COLORS.success}
+                radius={chartStyles.bar.radius}
                 name="vps"
               />
               <Bar 
                 dataKey="edge" 
-                fill="#3b82f6"
-                radius={[4, 4, 0, 0]}
+                fill={CHART_COLORS.series[5]}
+                radius={chartStyles.bar.radius}
                 name="edge"
               />
             </BarChart>

@@ -55,7 +55,9 @@ export function useSystemStatus() {
 
     try {
       // Fetch from all relevant tables for unified status
-      const [aiResult, exchangeResult, vpsConfigResult, hftResult, vpsInstanceResult, tradingConfigResult] = await Promise.all([
+      // ITEMS 9 & 12: Check ai_providers for has_secret=true (any provider with key = AI configured)
+      const [aiProvidersResult, aiConfigResult, exchangeResult, vpsConfigResult, hftResult, vpsInstanceResult, tradingConfigResult] = await Promise.all([
+        supabase.from('ai_providers').select('provider_name, has_secret, is_enabled, model_name').eq('has_secret', true),
         supabase.from('ai_config').select('is_active, model').eq('provider', 'groq').maybeSingle(),
         supabase.from('exchange_connections').select('is_connected, balance_usdt'),
         supabase.from('vps_config').select('status, region, outbound_ip, provider').maybeSingle(),
@@ -63,6 +65,12 @@ export function useSystemStatus() {
         supabase.from('vps_instances').select('status, ip_address, provider, bot_status').limit(1).maybeSingle(),
         supabase.from('trading_config').select('bot_status').maybeSingle(),
       ]);
+      
+      // ITEMS 9 & 12: AI is configured if ANY provider has has_secret=true
+      const aiProvidersWithKeys = aiProvidersResult.data || [];
+      const hasAnyAiKey = aiProvidersWithKeys.length > 0;
+      const activeAiProvider = aiProvidersWithKeys.find(p => p.is_enabled) || aiProvidersWithKeys[0];
+      const aiModel = activeAiProvider?.model_name || aiConfigResult.data?.model || null;
 
       if (!mountedRef.current) return;
 
@@ -103,8 +111,9 @@ export function useSystemStatus() {
 
       const newStatus: SystemStatus = {
         ai: {
-          isActive: aiResult.data?.is_active ?? false,
-          model: aiResult.data?.model ?? null,
+          // ITEMS 9 & 12: AI is active if ANY provider has a saved key
+          isActive: hasAnyAiKey,
+          model: aiModel,
         },
         exchanges: {
           connected: connectedExchanges.length,
@@ -120,7 +129,7 @@ export function useSystemStatus() {
           healthStatus,
         },
         isFullyOperational: 
-          (aiResult.data?.is_active ?? false) && 
+          hasAnyAiKey && 
           connectedExchanges.length > 0 && 
           isRunning,
         isLoading: false,

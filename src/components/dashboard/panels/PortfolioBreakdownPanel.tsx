@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { PieChart as PieChartIcon } from 'lucide-react';
 import { IconContainer } from '@/components/ui/IconContainer';
 import { cn } from '@/lib/utils';
+import { chartStyles } from '@/lib/chartTheme';
 
 export function PortfolioBreakdownPanel() {
   const { getPortfolioBreakdown, getTotalEquity } = useAppStore();
@@ -65,12 +66,9 @@ export function PortfolioBreakdownPanel() {
                   </Pie>
                   <Tooltip
                     formatter={(value: number) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Balance']}
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(174, 100%, 42%, 0.3)',
-                      borderRadius: '6px',
-                      fontSize: '12px'
-                    }}
+                    contentStyle={chartStyles.tooltipStyle}
+                    labelStyle={chartStyles.tooltipLabelStyle}
+                    itemStyle={chartStyles.tooltipItemStyle}
                   />
                 </PieChart>
               </ResponsiveContainer>

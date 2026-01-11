@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 interface HistoryPoint {
   time: string;
@@ -158,35 +159,32 @@ export function LatencyHistoryChart() {
             <div className="h-[150px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                  <CartesianGrid {...chartStyles.grid} />
                   <XAxis 
                     dataKey="time" 
-                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-                    axisLine={{ stroke: 'hsl(var(--border))' }}
+                    tick={chartStyles.axisTick}
+                    axisLine={{ stroke: CHART_COLORS.grid }}
                   />
                   <YAxis 
-                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-                    axisLine={{ stroke: 'hsl(var(--border))' }}
+                    tick={chartStyles.axisTick}
+                    axisLine={{ stroke: CHART_COLORS.grid }}
                     domain={[0, 'auto']}
                   />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                    }}
-                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={chartStyles.tooltipStyle}
+                    labelStyle={chartStyles.tooltipLabelStyle}
+                    itemStyle={chartStyles.tooltipItemStyle}
                     formatter={(value: number) => [`${value}ms`, 'Latency']}
                   />
-                  <ReferenceLine y={80} stroke="hsl(var(--destructive))" strokeDasharray="5 5" opacity={0.5} />
-                  <ReferenceLine y={30} stroke="hsl(142, 76%, 36%)" strokeDasharray="5 5" opacity={0.5} />
+                  <ReferenceLine y={80} stroke={CHART_COLORS.danger} strokeDasharray="5 5" opacity={0.5} />
+                  <ReferenceLine y={30} stroke={CHART_COLORS.success} strokeDasharray="5 5" opacity={0.5} />
                   <Line 
                     type="monotone" 
                     dataKey="latency" 
-                    stroke="#06b6d4"
-                    strokeWidth={2}
-                    dot={{ r: 2, fill: '#06b6d4' }}
-                    activeDot={{ r: 4, fill: '#06b6d4' }}
+                    stroke={CHART_COLORS.primary}
+                    strokeWidth={chartStyles.line.strokeWidth}
+                    dot={chartStyles.line.dot}
+                    activeDot={chartStyles.line.activeDot}
                   />
                 </LineChart>
               </ResponsiveContainer>
