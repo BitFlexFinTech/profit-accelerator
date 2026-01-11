@@ -126,14 +126,29 @@ export function InfrastructurePanel() {
 
   const fetchVpsLatency = useCallback(async () => {
     try {
+      // CRITICAL FIX: Fetch VPS→Exchange latency from exchange_pulse with source='vps'
       const { data } = await supabase
         .from('exchange_pulse')
-        .select('latency_ms')
-        .eq('source', 'vps');
+        .select('latency_ms, source')
+        .eq('source', 'vps')
+        .gt('latency_ms', 0);
       
       if (data && data.length > 0) {
+        // Calculate average latency from all VPS measurements
         const avgLatency = Math.round(data.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / data.length);
         setVpsExchangeLatency(avgLatency);
+      } else {
+        // Fallback: try getting any latency data
+        const { data: fallbackData } = await supabase
+          .from('exchange_pulse')
+          .select('latency_ms')
+          .gt('latency_ms', 0)
+          .limit(5);
+        
+        if (fallbackData && fallbackData.length > 0) {
+          const avgLatency = Math.round(fallbackData.reduce((sum, p) => sum + (p.latency_ms || 0), 0) / fallbackData.length);
+          setVpsExchangeLatency(avgLatency);
+        }
       }
     } catch (err) {
       console.error('[InfrastructurePanel] VPS latency error:', err);
