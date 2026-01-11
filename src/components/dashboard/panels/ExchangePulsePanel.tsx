@@ -44,32 +44,41 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
     return () => clearInterval(interval);
   }, []);
 
+  // Normalize exchange name for matching (handles case, spaces, dots)
+  const normalizeExchangeName = (name: string) => name.toLowerCase().replace(/[\s.\-]/g, '');
+
   const fetchPulses = useCallback(async () => {
     try {
-      // First get connected exchanges to prioritize them
+      // ITEM 2: Get ONLY connected exchanges - filter out disconnected
       const { data: connections } = await supabase
         .from('exchange_connections')
         .select('exchange_name')
         .eq('is_connected', true);
       
-      const connectedNames = connections?.map(c => c.exchange_name.toLowerCase()) || [];
+      if (!connections || connections.length === 0) {
+        setPulses([]);
+        return;
+      }
+      
+      // Build set of normalized connected exchange names
+      const connectedNamesSet = new Set(connections.map(c => normalizeExchangeName(c.exchange_name)));
       
       const { data, error } = await supabase
         .from('exchange_pulse')
         .select('id, exchange_name, status, latency_ms, source, last_check')
-        .order('exchange_name')
-        .limit(6);
+        .order('exchange_name');
 
       if (error) throw error;
       
-      // Sort: connected exchanges (Binance, OKX) first
-      const sorted = [...(data || [])].sort((a, b) => {
-        const aConnected = connectedNames.includes(a.exchange_name.toLowerCase());
-        const bConnected = connectedNames.includes(b.exchange_name.toLowerCase());
-        if (aConnected && !bConnected) return -1;
-        if (!aConnected && bConnected) return 1;
-        return a.exchange_name.localeCompare(b.exchange_name);
-      });
+      // ITEM 2: FILTER to only show connected exchanges (removes Bybit etc.)
+      const connectedPulses = (data || []).filter(pulse => 
+        connectedNamesSet.has(normalizeExchangeName(pulse.exchange_name))
+      );
+      
+      // Sort alphabetically and limit
+      const sorted = connectedPulses
+        .sort((a, b) => a.exchange_name.localeCompare(b.exchange_name))
+        .slice(0, 6);
       
       setPulses(sorted as ExchangePulse[]);
       
@@ -117,10 +126,12 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
     return 'text-rose-400';
   };
 
-  const getStatusDotColor = (status: string): StatusDotColor => {
-    if (status === 'healthy') return 'success';
-    if (status === 'jitter') return 'warning';
-    return 'destructive';
+  // ITEMS 3 & 4: Connected exchanges ALWAYS get green dot (success)
+  // Since we now only show connected exchanges (filtered in fetchPulses),
+  // all displayed exchanges are connected and should show green
+  const getStatusDotColor = (): StatusDotColor => {
+    // All displayed pulses are connected (filtered above), so always green
+    return 'success';
   };
 
   const getStatusBg = (status: string) => {
@@ -213,8 +224,8 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
             >
               <div className="flex items-center justify-center gap-0.5 mb-0.5">
                 <StatusDot 
-                  color={getStatusDotColor(pulse.status)} 
-                  pulse={pulse.status === 'healthy'} 
+                  color={getStatusDotColor()} 
+                  pulse={true} 
                   size={compact ? 'xs' : 'sm'} 
                 />
               </div>

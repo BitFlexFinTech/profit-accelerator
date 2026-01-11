@@ -75,12 +75,13 @@ export function CloudStatusPanel({ compact = false }: CloudStatusPanelProps) {
 
   useEffect(() => {
     const fetchVpsConfig = async () => {
+      // ITEM 6: Use maybeSingle to prevent error when table is empty
       const { data } = await supabase
         .from('vps_config')
         .select('provider, outbound_ip, status')
         .order('updated_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       if (data) setVpsConfig(data);
     };
     fetchVpsConfig();
@@ -90,15 +91,20 @@ export function CloudStatusPanel({ compact = false }: CloudStatusPanelProps) {
     return deployments.find(d => d.provider.toLowerCase() === provider.toLowerCase());
   };
 
+  // ITEM 6: Normalize provider names for comparison
+  const normalizeProvider = (p: string) => p?.toLowerCase().trim() || '';
+
   const allProviderStatuses = ALL_PROVIDERS.map(provider => {
-    const config = configs.find(c => c.provider === provider);
+    const normalizedProvider = normalizeProvider(provider);
+    const config = configs.find(c => normalizeProvider(c.provider) === normalizedProvider);
     const hftDeployment = getHFTDeploymentForProvider(provider);
     
     // Check if provider is active from cloud_config table OR has running HFT deployment
     const isDbActive = config?.is_active === true;
-    const hasRunningDeployment = !!hftDeployment && hftDeployment.status === 'running';
-    const isVpsActive = vpsConfig?.provider === provider;
+    const hasRunningDeployment = !!hftDeployment && (hftDeployment.status === 'running' || hftDeployment.status === 'active');
+    const isVpsActive = normalizeProvider(vpsConfig?.provider || '') === normalizedProvider;
     
+    // ITEM 6: Vultr should be green if any of these are true
     const isActive = isDbActive || hasRunningDeployment || isVpsActive;
     
     // Determine status - prioritize actual database status

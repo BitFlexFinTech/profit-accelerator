@@ -4,11 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, TrendingDown, RefreshCw, LineChart, Clock } from 'lucide-react';
 import { useBalanceHistory } from '@/hooks/useBalanceHistory';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Tooltip as UITooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconContainer } from '@/components/ui/IconContainer';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 type TimeRange = '1H' | '24H' | '7D' | '30D';
 
@@ -159,11 +160,14 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
           <ResponsiveContainer width="100%" height={chartHeight}>
             <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               {!compact && (
+                <CartesianGrid {...chartStyles.grid} />
+              )}
+              {!compact && (
                 <XAxis 
                   dataKey="label" 
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                  tick={chartStyles.axisTick}
                   interval="preserveStartEnd"
                 />
               )}
@@ -172,26 +176,23 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
                   domain={['dataMin - 50', 'dataMax + 50']}
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                  tick={chartStyles.axisTick}
                   tickFormatter={(value) => `$${(value / 1000).toFixed(1)}k`}
                   width={50}
                 />
               )}
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(48, 96%, 53%, 0.3)',
-                  borderRadius: '8px',
-                  fontSize: '12px'
-                }}
+                contentStyle={chartStyles.tooltipStyle}
+                labelStyle={chartStyles.tooltipLabelStyle}
+                itemStyle={chartStyles.tooltipItemStyle}
                 formatter={(value: number) => [formatTooltipValue(value), 'Balance']}
                 labelFormatter={(label) => `Time: ${label}`}
               />
               <Area
                 type="monotone"
                 dataKey="balance"
-                stroke={isPositive ? '#22c55e' : '#ef4444'}
-                strokeWidth={2}
+                stroke={isPositive ? CHART_COLORS.success : CHART_COLORS.danger}
+                strokeWidth={chartStyles.area.strokeWidth}
                 fill={isPositive ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'}
               />
             </AreaChart>
