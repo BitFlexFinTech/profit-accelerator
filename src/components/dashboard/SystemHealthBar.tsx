@@ -220,16 +220,17 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
             ? 'bg-warning/20 border-warning/40 text-warning'
             : 'bg-muted/50 border-border text-muted-foreground';
 
+          // EXPLICIT TAILWIND COLORS - No theme variables for pulse dots
           const dotColor = colorState === 'connected'
-            ? 'bg-success'
+            ? 'bg-emerald-500'      // Explicit green
             : colorState === 'warning' || indicator.isDeploying
-            ? 'bg-warning'
-            : 'bg-muted-foreground/50';
+            ? 'bg-amber-500'        // Explicit yellow
+            : 'bg-slate-400';       // Explicit gray
 
           const pingColor = colorState === 'connected'
-            ? 'bg-success'
+            ? 'bg-emerald-400'      // Explicit green ping
             : colorState === 'warning' || indicator.isDeploying
-            ? 'bg-warning'
+            ? 'bg-amber-400'        // Explicit yellow ping
             : '';
           
           return (
