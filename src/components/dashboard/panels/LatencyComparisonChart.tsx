@@ -21,7 +21,17 @@ export function LatencyComparisonChart() {
   }, []);
 
   const fetchLatencyData = async () => {
-    // CRITICAL FIX: Fetch VPS latency from exchange_pulse where data exists
+    // Fetch connected exchanges first to filter
+    const { data: connections } = await supabase
+      .from('exchange_connections')
+      .select('exchange_name')
+      .eq('is_connected', true);
+
+    const connectedSet = new Set(
+      connections?.map(c => c.exchange_name.toLowerCase()) || []
+    );
+
+    // Fetch VPS latency from exchange_pulse where data exists
     const { data: pulseData } = await supabase
       .from('exchange_pulse')
       .select('exchange_name, latency_ms, source')
@@ -35,6 +45,9 @@ export function LatencyComparisonChart() {
     
     for (const item of pulseData) {
       const exchange = item.exchange_name.toLowerCase();
+      // Only include connected exchanges
+      if (!connectedSet.has(exchange)) continue;
+      
       if (item.source === 'vps' && item.latency_ms > 0) {
         vpsLatencyMap.set(exchange, Number(item.latency_ms));
       } else if (item.source === 'edge' && item.latency_ms > 0) {

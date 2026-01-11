@@ -56,17 +56,19 @@ export function LatencyHistoryChart() {
 
     setData(points);
 
-    // Calculate stats
+    // Calculate stats with defensive guards for divide-by-zero
     const latencies = points.map(p => p.latency);
-    const avg = latencies.reduce((a, b) => a + b, 0) / latencies.length;
-    const min = Math.min(...latencies);
-    const max = Math.max(...latencies);
+    const avg = latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0;
+    const min = latencies.length > 0 ? Math.min(...latencies) : 0;
+    const max = latencies.length > 0 ? Math.max(...latencies) : 0;
 
-    // Calculate trend (compare first half to second half)
-    const halfIndex = Math.floor(latencies.length / 2);
-    const firstHalfAvg = latencies.slice(0, halfIndex).reduce((a, b) => a + b, 0) / halfIndex;
-    const secondHalfAvg = latencies.slice(halfIndex).reduce((a, b) => a + b, 0) / (latencies.length - halfIndex);
-    const trend = secondHalfAvg > firstHalfAvg * 1.1 ? 'up' : secondHalfAvg < firstHalfAvg * 0.9 ? 'down' : 'stable';
+    // Calculate trend with defensive guards
+    const halfIndex = Math.max(1, Math.floor(latencies.length / 2));
+    const firstHalf = latencies.slice(0, halfIndex);
+    const secondHalf = latencies.slice(halfIndex);
+    const firstHalfAvg = firstHalf.length > 0 ? firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length : 0;
+    const secondHalfAvg = secondHalf.length > 0 ? secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length : 0;
+    const trend = firstHalfAvg === 0 ? 'stable' : secondHalfAvg > firstHalfAvg * 1.1 ? 'up' : secondHalfAvg < firstHalfAvg * 0.9 ? 'down' : 'stable';
 
     setStats({ avg: Math.round(avg), min: Math.round(min), max: Math.round(max), trend });
   };

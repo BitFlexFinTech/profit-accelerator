@@ -2,153 +2,154 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tokyo HFT Command Center - Colorful Dashboard Design System */
+/* Flat Black HFT Dashboard - Clean, Vibrant, No Glow */
 
 @layer base {
   :root {
-    /* Deep Navy Command Center Background */
-    --background: 222 47% 5%;
-    --foreground: 210 20% 95%;
+    /* Pure Black Background - Flat, no gradients */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 95%;
 
-    --card: 220 40% 8%;
-    --card-foreground: 210 20% 95%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 95%;
 
-    --popover: 220 40% 10%;
-    --popover-foreground: 210 20% 95%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 95%;
 
-    --primary: 270 70% 55%;
+    --primary: 160 84% 45%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 35% 12%;
-    --secondary-foreground: 210 20% 95%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 95%;
 
-    --muted: 220 30% 11%;
-    --muted-foreground: 210 15% 55%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 55%;
 
-    --accent: 185 100% 55%;
-    --accent-foreground: 222 47% 5%;
+    --accent: 160 84% 45%;
+    --accent-foreground: 0 0% 5%;
 
-    --destructive: 0 85% 55%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 155 90% 42%;
-    --success-foreground: 222 47% 5%;
+    --success: 142 76% 45%;
+    --success-foreground: 0 0% 5%;
 
-    --warning: 45 100% 55%;
-    --warning-foreground: 222 47% 5%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 5%;
 
-    --profit: 155 90% 42%;
-    --loss: 0 85% 55%;
+    --profit: 142 76% 45%;
+    --loss: 0 72% 51%;
 
-    --border: 220 30% 18%;
-    --input: 220 35% 15%;
-    --ring: 270 70% 55%;
+    --border: 0 0% 15%;
+    --input: 0 0% 12%;
+    --ring: 160 84% 45%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    /* Vibrant HFT Dashboard Palette */
-    --color-cyan: 185 100% 55%;
-    --color-magenta: 310 100% 65%;
-    --color-yellow: 45 100% 60%;
-    --color-green: 155 90% 48%;
-    --color-orange: 25 100% 58%;
-    --color-purple: 270 80% 62%;
-    --color-pink: 335 90% 68%;
-    --color-blue: 210 100% 62%;
-    --color-red: 0 85% 58%;
-    --color-teal: 175 85% 48%;
+    /* Flat Vibrant Colors - No glow, solid fills */
+    --color-cyan: 174 72% 50%;
+    --color-magenta: 330 81% 60%;
+    --color-yellow: 45 93% 58%;
+    --color-green: 142 76% 45%;
+    --color-orange: 25 95% 53%;
+    --color-purple: 270 60% 55%;
+    --color-pink: 330 81% 60%;
+    --color-blue: 217 91% 60%;
+    --color-red: 0 72% 51%;
+    --color-teal: 160 84% 45%;
 
-    --glass-bg: 220 40% 8% / 0.85;
-    --glass-border: 220 30% 22% / 0.5;
-    --glass-shadow: 222 50% 3% / 0.6;
+    /* Glass effect - subtle, flat */
+    --glass-bg: 0 0% 7% / 0.95;
+    --glass-border: 0 0% 20% / 0.5;
+    --glass-shadow: 0 0% 0% / 0.3;
 
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 210 20% 90%;
-    --sidebar-primary: 270 70% 55%;
+    --sidebar-background: 0 0% 5%;
+    --sidebar-foreground: 0 0% 90%;
+    --sidebar-primary: 160 84% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 35% 12%;
-    --sidebar-accent-foreground: 210 20% 95%;
-    --sidebar-border: 220 30% 18%;
-    --sidebar-ring: 270 70% 55%;
+    --sidebar-accent: 0 0% 12%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 0 0% 15%;
+    --sidebar-ring: 160 84% 45%;
 
-    /* Vibrant Chart Colors */
-    --chart-1: 185 100% 55%;
-    --chart-2: 270 80% 60%;
-    --chart-3: 0 85% 58%;
-    --chart-4: 45 100% 60%;
-    --chart-5: 155 90% 48%;
+    /* Chart Colors - Flat, vibrant */
+    --chart-1: 160 84% 45%;
+    --chart-2: 270 60% 55%;
+    --chart-3: 0 72% 51%;
+    --chart-4: 45 93% 58%;
+    --chart-5: 142 76% 45%;
   }
 
   .dark {
-    /* Deep Navy Command Center Background */
-    --background: 222 47% 5%;
-    --foreground: 210 20% 95%;
+    /* Pure Black Background - Flat */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 95%;
 
-    --card: 220 40% 8%;
-    --card-foreground: 210 20% 95%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 95%;
 
-    --popover: 220 40% 10%;
-    --popover-foreground: 210 20% 95%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 95%;
 
-    --primary: 270 70% 55%;
+    --primary: 160 84% 45%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 35% 12%;
-    --secondary-foreground: 210 20% 95%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 95%;
 
-    --muted: 220 30% 11%;
-    --muted-foreground: 210 15% 55%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 55%;
 
-    --accent: 185 100% 55%;
-    --accent-foreground: 222 47% 5%;
+    --accent: 160 84% 45%;
+    --accent-foreground: 0 0% 5%;
 
-    --destructive: 0 85% 55%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 155 90% 42%;
-    --success-foreground: 222 47% 5%;
+    --success: 142 76% 45%;
+    --success-foreground: 0 0% 5%;
 
-    --warning: 45 100% 55%;
-    --warning-foreground: 222 47% 5%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 5%;
 
-    --profit: 155 90% 42%;
-    --loss: 0 85% 55%;
+    --profit: 142 76% 45%;
+    --loss: 0 72% 51%;
 
-    --border: 220 30% 18%;
-    --input: 220 35% 15%;
-    --ring: 270 70% 55%;
+    --border: 0 0% 15%;
+    --input: 0 0% 12%;
+    --ring: 160 84% 45%;
 
-    /* Vibrant HFT Dashboard Palette */
-    --color-cyan: 185 100% 55%;
-    --color-magenta: 310 100% 65%;
-    --color-yellow: 45 100% 60%;
-    --color-green: 155 90% 48%;
-    --color-orange: 25 100% 58%;
-    --color-purple: 270 80% 62%;
-    --color-pink: 335 90% 68%;
-    --color-blue: 210 100% 62%;
-    --color-red: 0 85% 58%;
-    --color-teal: 175 85% 48%;
+    /* Flat Vibrant Colors */
+    --color-cyan: 174 72% 50%;
+    --color-magenta: 330 81% 60%;
+    --color-yellow: 45 93% 58%;
+    --color-green: 142 76% 45%;
+    --color-orange: 25 95% 53%;
+    --color-purple: 270 60% 55%;
+    --color-pink: 330 81% 60%;
+    --color-blue: 217 91% 60%;
+    --color-red: 0 72% 51%;
+    --color-teal: 160 84% 45%;
 
-    --glass-bg: 220 40% 8% / 0.85;
-    --glass-border: 220 30% 22% / 0.5;
-    --glass-shadow: 222 50% 3% / 0.6;
+    --glass-bg: 0 0% 7% / 0.95;
+    --glass-border: 0 0% 20% / 0.5;
+    --glass-shadow: 0 0% 0% / 0.3;
 
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 210 20% 90%;
-    --sidebar-primary: 270 70% 55%;
+    --sidebar-background: 0 0% 5%;
+    --sidebar-foreground: 0 0% 90%;
+    --sidebar-primary: 160 84% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 35% 12%;
-    --sidebar-accent-foreground: 210 20% 95%;
-    --sidebar-border: 220 30% 18%;
-    --sidebar-ring: 270 70% 55%;
+    --sidebar-accent: 0 0% 12%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 0 0% 15%;
+    --sidebar-ring: 160 84% 45%;
 
-    /* Vibrant Chart Colors */
-    --chart-1: 185 100% 55%;
-    --chart-2: 270 80% 60%;
-    --chart-3: 0 85% 58%;
-    --chart-4: 45 100% 60%;
-    --chart-5: 155 90% 48%;
+    /* Chart Colors - Flat */
+    --chart-1: 160 84% 45%;
+    --chart-2: 270 60% 55%;
+    --chart-3: 0 72% 51%;
+    --chart-4: 45 93% 58%;
+    --chart-5: 142 76% 45%;
   }
 
   /* Light Theme */
@@ -213,7 +214,7 @@ html.theme-switching *::after {
 
   body {
     @apply bg-background text-foreground antialiased;
-    background: linear-gradient(145deg, hsl(222 47% 5%) 0%, hsl(220 40% 8%) 50%, hsl(225 45% 6%) 100%);
+    background: hsl(0 0% 4%);
   }
 }
 
@@ -238,153 +239,112 @@ html.theme-switching *::after {
 }
 
 @layer components {
-  /* Colorful Glass Card Base */
+  /* Flat Glass Card Base - No glow effects */
   .glass-card {
-    @apply rounded-xl border backdrop-blur-xl relative overflow-hidden;
-    background: hsl(var(--glass-bg));
-    border-color: hsl(var(--glass-border));
-    box-shadow: 0 8px 32px hsl(var(--glass-shadow));
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    @apply rounded-lg border relative overflow-hidden;
+    background: hsl(var(--card));
+    border-color: hsl(var(--border));
+    transition: all 0.2s ease;
   }
 
   .glass-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 40px hsl(var(--glass-shadow));
+    border-color: hsl(var(--border) / 0.8);
   }
 
-  /* Colorful Card Variants with Gradient Borders */
+  /* Flat Card Variants - Solid borders, no glow */
   .card-cyan {
-    --card-color: var(--color-cyan);
-    border-color: hsl(var(--color-cyan) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-cyan) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-cyan) / 0.3);
+    border-left: 3px solid hsl(var(--color-cyan));
+    background: hsl(var(--card));
   }
   .card-cyan:hover {
-    border-color: hsl(var(--color-cyan) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-cyan) / 0.15);
+    border-color: hsl(var(--color-cyan) / 0.5);
   }
 
   .card-magenta {
-    --card-color: var(--color-magenta);
-    border-color: hsl(var(--color-magenta) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-magenta) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-magenta) / 0.3);
+    border-left: 3px solid hsl(var(--color-magenta));
+    background: hsl(var(--card));
   }
-  .card-magenta:hover {
-    border-color: hsl(var(--color-magenta) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-magenta) / 0.15);
-  }
+  .card-magenta:hover { border-color: hsl(var(--color-magenta) / 0.5); }
 
   .card-yellow {
-    --card-color: var(--color-yellow);
-    border-color: hsl(var(--color-yellow) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-yellow) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-yellow) / 0.3);
+    border-left: 3px solid hsl(var(--color-yellow));
+    background: hsl(var(--card));
   }
-  .card-yellow:hover {
-    border-color: hsl(var(--color-yellow) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-yellow) / 0.15);
-  }
+  .card-yellow:hover { border-color: hsl(var(--color-yellow) / 0.5); }
 
   .card-green {
-    --card-color: var(--color-green);
-    border-color: hsl(var(--color-green) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-green) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-green) / 0.3);
+    border-left: 3px solid hsl(var(--color-green));
+    background: hsl(var(--card));
   }
-  .card-green:hover {
-    border-color: hsl(var(--color-green) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-green) / 0.15);
-  }
+  .card-green:hover { border-color: hsl(var(--color-green) / 0.5); }
 
   .card-orange {
-    --card-color: var(--color-orange);
-    border-color: hsl(var(--color-orange) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-orange) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-orange) / 0.3);
+    border-left: 3px solid hsl(var(--color-orange));
+    background: hsl(var(--card));
   }
-  .card-orange:hover {
-    border-color: hsl(var(--color-orange) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-orange) / 0.15);
-  }
+  .card-orange:hover { border-color: hsl(var(--color-orange) / 0.5); }
 
   .card-purple {
-    --card-color: var(--color-purple);
-    border-color: hsl(var(--color-purple) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-purple) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-purple) / 0.3);
+    border-left: 3px solid hsl(var(--color-purple));
+    background: hsl(var(--card));
   }
-  .card-purple:hover {
-    border-color: hsl(var(--color-purple) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-purple) / 0.15);
-  }
+  .card-purple:hover { border-color: hsl(var(--color-purple) / 0.5); }
 
   .card-pink {
-    --card-color: var(--color-pink);
-    border-color: hsl(var(--color-pink) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-pink) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-pink) / 0.3);
+    border-left: 3px solid hsl(var(--color-pink));
+    background: hsl(var(--card));
   }
-  .card-pink:hover {
-    border-color: hsl(var(--color-pink) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-pink) / 0.15);
-  }
+  .card-pink:hover { border-color: hsl(var(--color-pink) / 0.5); }
 
   .card-blue {
-    --card-color: var(--color-blue);
-    border-color: hsl(var(--color-blue) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-blue) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-blue) / 0.3);
+    border-left: 3px solid hsl(var(--color-blue));
+    background: hsl(var(--card));
   }
-  .card-blue:hover {
-    border-color: hsl(var(--color-blue) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-blue) / 0.15);
-  }
+  .card-blue:hover { border-color: hsl(var(--color-blue) / 0.5); }
 
   .card-red {
-    --card-color: var(--color-red);
-    border-color: hsl(var(--color-red) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-red) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-red) / 0.3);
+    border-left: 3px solid hsl(var(--color-red));
+    background: hsl(var(--card));
   }
-  .card-red:hover {
-    border-color: hsl(var(--color-red) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-red) / 0.15);
-  }
+  .card-red:hover { border-color: hsl(var(--color-red) / 0.5); }
 
   .card-teal {
-    --card-color: var(--color-teal);
-    border-color: hsl(var(--color-teal) / 0.4);
-    background: linear-gradient(135deg, hsl(var(--color-teal) / 0.05), hsl(var(--card)));
+    border-color: hsl(var(--color-teal) / 0.3);
+    border-left: 3px solid hsl(var(--color-teal));
+    background: hsl(var(--card));
   }
-  .card-teal:hover {
-    border-color: hsl(var(--color-teal) / 0.7);
-    box-shadow: 0 0 30px hsl(var(--color-teal) / 0.15);
-  }
+  .card-teal:hover { border-color: hsl(var(--color-teal) / 0.5); }
 
   .glass-card-hover {
-    @apply glass-card transition-all duration-300;
+    @apply glass-card transition-all duration-200;
   }
-
   .glass-card-hover:hover {
-    border-color: hsl(var(--primary) / 0.5);
-    box-shadow: 0 8px 32px hsl(var(--primary) / 0.2);
+    border-color: hsl(var(--primary) / 0.4);
   }
 
-  .glow-text {
-    text-shadow: 0 0 20px hsl(var(--accent) / 0.5);
-  }
-
-  .glow-accent {
-    box-shadow: 0 0 20px hsl(var(--accent) / 0.3);
-  }
-
-  .glow-primary {
-    box-shadow: 0 0 20px hsl(var(--primary) / 0.3);
-  }
-
-  /* Colorful Glow Effects */
-  .glow-cyan { box-shadow: 0 0 20px hsl(var(--color-cyan) / 0.4); }
-  .glow-magenta { box-shadow: 0 0 20px hsl(var(--color-magenta) / 0.4); }
-  .glow-yellow { box-shadow: 0 0 20px hsl(var(--color-yellow) / 0.4); }
-  .glow-green { box-shadow: 0 0 20px hsl(var(--color-green) / 0.4); }
-  .glow-orange { box-shadow: 0 0 20px hsl(var(--color-orange) / 0.4); }
-  .glow-purple { box-shadow: 0 0 20px hsl(var(--color-purple) / 0.4); }
-  .glow-pink { box-shadow: 0 0 20px hsl(var(--color-pink) / 0.4); }
-  .glow-blue { box-shadow: 0 0 20px hsl(var(--color-blue) / 0.4); }
-  .glow-red { box-shadow: 0 0 20px hsl(var(--color-red) / 0.4); }
-  .glow-teal { box-shadow: 0 0 20px hsl(var(--color-teal) / 0.4); }
+  /* Removed all glow effects - flat design */
+  .glow-text { text-shadow: none; }
+  .glow-accent { box-shadow: none; }
+  .glow-primary { box-shadow: none; }
+  .glow-cyan { box-shadow: none; }
+  .glow-magenta { box-shadow: none; }
+  .glow-yellow { box-shadow: none; }
+  .glow-green { box-shadow: none; }
+  .glow-orange { box-shadow: none; }
+  .glow-purple { box-shadow: none; }
+  .glow-pink { box-shadow: none; }
+  .glow-blue { box-shadow: none; }
+  .glow-red { box-shadow: none; }
+  .glow-teal { box-shadow: none; }
 
   .pulse-success {
     animation: pulse-green 2s infinite;

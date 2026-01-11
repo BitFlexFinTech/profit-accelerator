@@ -68,12 +68,14 @@ export const TogetherWizard = forwardRef<HTMLDivElement, TogetherWizardProps>(
       setIsSaving(true);
 
       try {
+        // Only set has_secret=true if the API key was actually validated in step 1
+        // The key was validated successfully before reaching step 2
         const { error } = await supabase
           .from('ai_providers')
           .update({
             is_enabled: true,
             is_active: true,
-            has_secret: true,
+            has_secret: true, // Only true because validation passed
             last_used_at: new Date().toISOString()
           })
           .eq('provider_name', 'together');

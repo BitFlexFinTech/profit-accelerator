@@ -139,12 +139,16 @@ export default function Setup() {
     }));
 
     try {
+      // Only mark has_secret as true if user entered a NEW key (not placeholder)
+      const enteredKey = cred?.apiKey || '';
+      const isNewKey = enteredKey && !enteredKey.startsWith('••••');
+      
       const { error } = await supabase
         .from('ai_providers')
         .update({
-          is_enabled: true,
-          is_active: true,
-          has_secret: true,
+          is_enabled: isNewKey,
+          is_active: isNewKey,
+          has_secret: isNewKey,
         })
         .eq('provider_name', providerId);
 
@@ -155,7 +159,7 @@ export default function Setup() {
 
       setAICredentials(prev => ({
         ...prev,
-        [providerId]: { ...prev[providerId], isSaving: false, isEnabled: true, isActive: true }
+        [providerId]: { ...prev[providerId], isSaving: false, isEnabled: isNewKey, isActive: isNewKey, hasSecret: isNewKey }
       }));
     } catch (err: any) {
       toast.error(`Failed to save: ${err.message}`);
@@ -482,10 +486,15 @@ export default function Setup() {
                       }`}
                     >
                       <td className="p-3">
-                        {isComplete ? (
+                        {isActive ? (
                           <div className="flex items-center gap-1 text-green-400">
                             <Check className="w-4 h-4" />
-                            <span className="text-xs">COMPLETE</span>
+                            <span className="text-xs">ACTIVE</span>
+                          </div>
+                        ) : isComplete ? (
+                          <div className="flex items-center gap-1 text-amber-400">
+                            <Check className="w-4 h-4" />
+                            <span className="text-xs">CONFIGURED</span>
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">Pending</span>
