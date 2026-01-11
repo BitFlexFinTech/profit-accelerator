@@ -28,9 +28,11 @@ interface Strategy {
   leverage: number;
   position_size: number;
   profit_target: number;
+  profit_target_leverage?: number;
   daily_goal: number;
   daily_progress: number;
   source_framework: string | null;
+  allowed_exchanges?: string[];
 }
 
 interface TradingConfig {
@@ -62,6 +64,16 @@ export function StrategyBuilder() {
         .select('*')
         .order('created_at', { ascending: true });
 
+      // Fetch connected exchanges to filter allowed_exchanges
+      const { data: connectedExchanges } = await supabase
+        .from('exchange_connections')
+        .select('exchange_name')
+        .eq('is_connected', true);
+
+      const connectedSet = new Set(
+        connectedExchanges?.map(e => e.exchange_name.toLowerCase()) || []
+      );
+
       // Combine both sources, mapping strategy_config format to Strategy format
       const combinedStrategies: Strategy[] = [];
       
@@ -77,6 +89,7 @@ export function StrategyBuilder() {
           pnl_today: s.pnl_today || 0,
           leverage: s.leverage || 1,
           source_framework: s.source_framework || null,
+          allowed_exchanges: [],
         })) as Strategy[]);
       }
 
@@ -88,6 +101,11 @@ export function StrategyBuilder() {
             s.name?.toLowerCase() === cs.strategy_name?.toLowerCase()
           );
           if (!exists) {
+            // Filter allowed_exchanges to only connected ones
+            const filteredExchanges = (cs.allowed_exchanges || []).filter((ex: string) => 
+              connectedSet.has(ex.toLowerCase())
+            );
+            
             combinedStrategies.push({
               id: cs.id,
               name: cs.display_name || cs.strategy_name,
@@ -96,7 +114,8 @@ export function StrategyBuilder() {
               is_paused: false,
               trading_mode: cs.use_leverage ? 'futures' : 'spot',
               position_size: cs.min_position_size || 100,
-              profit_target: cs.profit_target_spot || 10,
+              profit_target: cs.profit_target_spot || 1,
+              profit_target_leverage: cs.profit_target_leverage || 3,
               daily_goal: 50,
               daily_progress: 0,
               win_rate: 0,
@@ -104,6 +123,7 @@ export function StrategyBuilder() {
               pnl_today: 0,
               leverage: cs.leverage_multiplier || 1,
               source_framework: null,
+              allowed_exchanges: filteredExchanges,
             });
           }
         }
@@ -493,6 +513,25 @@ export function StrategyBuilder() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-1">{strategy.description}</p>
+                    
+                    {/* Profit Piranha Strategy Logic Display */}
+                    {(strategy.name?.toLowerCase().includes('piranha') || 
+                      strategy.name?.toLowerCase().includes('profit')) && (
+                      <div className="mt-2 space-y-1 text-xs bg-emerald-500/10 rounded-md p-2 border border-emerald-500/20">
+                        <p className="text-emerald-400 font-medium flex items-center gap-1">
+                          <Target className="w-3 h-3" />
+                          Min Profit: SPOT ${strategy.profit_target || 1} / LEV ${strategy.profit_target_leverage || 3}
+                        </p>
+                        <p className="text-muted-foreground italic text-[10px]">
+                          No closing until profit target reached
+                        </p>
+                        {strategy.allowed_exchanges && strategy.allowed_exchanges.length > 0 && (
+                          <p className="text-[10px] text-muted-foreground">
+                            Exchanges: {strategy.allowed_exchanges.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     {strategy.is_active && !strategy.is_paused ? (
