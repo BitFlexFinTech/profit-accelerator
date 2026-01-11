@@ -205,9 +205,9 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
     fetchHealthData();
   }, [lastUpdate]);
 
-  // Auto-refresh every 10 seconds (STRICT RULE)
+  // Auto-refresh every 5 seconds for real-time monitoring (strict rule)
   useEffect(() => {
-    const interval = setInterval(fetchHealthData, 10000);
+    const interval = setInterval(fetchHealthData, 5000);
     return () => clearInterval(interval);
   }, []);
 

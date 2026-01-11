@@ -70,33 +70,33 @@ export function LiveDashboard() {
           </div>
         )}
         
-        {/* RIGHT Column - Compact panels + News takes remaining space */}
+        {/* RIGHT Column - News at TOP (strict rule), compact panels BELOW */}
         <div className="flex flex-col gap-1 min-h-0 h-full overflow-hidden">
-          {/* Underwater Positions Panel - Very Compact */}
+          {/* News Panel - PRIMARY: At TOP, takes most space */}
+          {isVisible('news') && (
+            <div className="flex-1 min-h-[280px] overflow-hidden">
+              <NewsPanel />
+            </div>
+          )}
+          
+          {/* Underwater Positions Panel - Compact below news */}
           {isVisible('underwater') && (
-            <div className="h-[70px] flex-shrink-0">
+            <div className="h-[48px] flex-shrink-0">
               <UnderwaterPositionsPanel />
             </div>
           )}
           
-          {/* AI Provider Health Dashboard - Very Compact */}
+          {/* AI Provider Health Dashboard - Compact */}
           {isVisible('ai-health') && (
-            <div className="h-[60px] flex-shrink-0">
+            <div className="h-[40px] flex-shrink-0">
               <AIProviderHealthDashboard />
             </div>
           )}
           
-          {/* Infrastructure Panel - Very Compact */}
+          {/* Infrastructure Panel - Compact */}
           {isVisible('infrastructure') && (
-            <div className="h-[65px] flex-shrink-0">
+            <div className="h-[48px] flex-shrink-0">
               <InfrastructurePanel />
-            </div>
-          )}
-          
-          {/* News Panel - PRIMARY: Takes ALL remaining space */}
-          {isVisible('news') && (
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <NewsPanel />
             </div>
           )}
         </div>

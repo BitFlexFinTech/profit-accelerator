@@ -397,7 +397,12 @@ export function Backtesting() {
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
-        ) : results?.total_pnl !== null ? (
+        ) : !results ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <p>No backtest results yet.</p>
+            <p className="text-sm mt-2">Configure parameters above and click "Run Backtest"</p>
+          </div>
+        ) : results.total_pnl !== null ? (
           <>
             {/* Metrics Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

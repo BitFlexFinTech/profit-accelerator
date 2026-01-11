@@ -2,7 +2,7 @@ import { TrendingUp, TrendingDown, DollarSign, Activity, Brain, Wifi, AlertCircl
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppStore } from '@/store/useAppStore';
 import { useTradesRealtime } from '@/hooks/useTradesRealtime';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -24,6 +24,31 @@ export function CompactMetricsBar() {
   const totalBalance = getTotalEquity();
   const exchangeCount = getConnectedExchangeCount();
   const isLive = lastUpdate > Date.now() - 60000; // Consider live if updated in last minute
+  
+  // CRITICAL FIX: Cache last known good values to prevent "Not Connected" flash on tab switch
+  const cachedValues = useRef({
+    totalBalance: 0,
+    dailyPnl: 0,
+    weeklyPnl: 0,
+    lastUpdated: 0
+  });
+  
+  // Update cache when real data arrives
+  useEffect(() => {
+    if (totalBalance > 0 || dailyPnl !== 0 || weeklyPnl !== 0) {
+      cachedValues.current = {
+        totalBalance,
+        dailyPnl,
+        weeklyPnl,
+        lastUpdated: Date.now()
+      };
+    }
+  }, [totalBalance, dailyPnl, weeklyPnl]);
+  
+  // Use cached values during loading to prevent "Not Connected" flash
+  const displayBalance = totalBalance > 0 ? totalBalance : cachedValues.current.totalBalance;
+  const displayDailyPnl = totalBalance > 0 ? dailyPnl : cachedValues.current.dailyPnl;
+  const displayWeeklyPnl = totalBalance > 0 ? weeklyPnl : cachedValues.current.weeklyPnl;
   
   // Calculate data freshness
   const [now, setNow] = useState(Date.now());
@@ -78,9 +103,11 @@ export function CompactMetricsBar() {
     };
   }, []);
 
-  const dailyPercent = totalBalance > 0 ? (dailyPnl / totalBalance) * 100 : 0;
-  const weeklyPercent = totalBalance > 0 ? (weeklyPnl / totalBalance) * 100 : 0;
-  const hasNoData = totalBalance === 0 && !storeLoading;
+  const dailyPercent = displayBalance > 0 ? (displayDailyPnl / displayBalance) * 100 : 0;
+  const weeklyPercent = displayBalance > 0 ? (displayWeeklyPnl / displayBalance) * 100 : 0;
+  
+  // CRITICAL FIX: Only show "Not Connected" if we have NO cached data AND not loading
+  const hasNoData = displayBalance === 0 && !storeLoading && cachedValues.current.lastUpdated === 0;
   const localLoading = tradesLoading || aiLoading;
 
   return (
@@ -102,17 +129,17 @@ export function CompactMetricsBar() {
               <AlertCircle className="w-3 h-3" />
               <span className="text-xs">Not Connected</span>
             </div>
-          ) : dailyPnl === 0 && openCount === 0 ? (
+          ) : displayDailyPnl === 0 && openCount === 0 ? (
             <div className="flex items-center gap-1">
               <span className="text-lg font-bold text-muted-foreground">$0</span>
               <span className="text-[10px] text-muted-foreground">No trades</span>
             </div>
           ) : (
             <div className="flex items-center gap-1">
-              <span className={`text-lg font-bold ${dailyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
-                {dailyPnl >= 0 ? '+' : ''}${Math.abs(dailyPnl).toFixed(0)}
+              <span className={`text-lg font-bold ${displayDailyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {displayDailyPnl >= 0 ? '+' : ''}${Math.abs(displayDailyPnl).toFixed(0)}
               </span>
-              <span className={`text-[10px] ${dailyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
+              <span className={`text-[10px] ${displayDailyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
                 ({dailyPercent >= 0 ? '+' : ''}{dailyPercent.toFixed(1)}%)
               </span>
             </div>
@@ -123,7 +150,7 @@ export function CompactMetricsBar() {
         <div className="glass-card p-3">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Week</span>
-            {weeklyPnl >= 0 ? (
+            {displayWeeklyPnl >= 0 ? (
               <TrendingUp className="w-3 h-3 text-success" />
             ) : (
               <TrendingDown className="w-3 h-3 text-destructive" />
@@ -138,10 +165,10 @@ export function CompactMetricsBar() {
             </div>
           ) : (
             <div className="flex items-center gap-1">
-              <span className={`text-lg font-bold ${weeklyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
-                {weeklyPnl >= 0 ? '+' : ''}${Math.abs(weeklyPnl).toFixed(0)}
+              <span className={`text-lg font-bold ${displayWeeklyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {displayWeeklyPnl >= 0 ? '+' : ''}${Math.abs(displayWeeklyPnl).toFixed(0)}
               </span>
-              <span className={`text-[10px] ${weeklyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
+              <span className={`text-[10px] ${displayWeeklyPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
                 ({weeklyPercent >= 0 ? '+' : ''}{weeklyPercent.toFixed(1)}%)
               </span>
             </div>
@@ -186,7 +213,7 @@ export function CompactMetricsBar() {
           ) : (
             <div className="flex items-center gap-1">
               <span className="text-lg font-bold">
-                ${totalBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                ${displayBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </span>
               <span className="text-[10px] text-muted-foreground">
                 ({exchangeCount}ex)

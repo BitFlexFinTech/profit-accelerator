@@ -241,7 +241,7 @@ export function SystemHealthBar({ onNavigateToSettings }: SystemHealthBarProps) 
                     'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all',
                     'border hover:scale-105 active:scale-95',
                     bgClass,
-                    isFlashing && 'animate-pulse ring-2 ring-primary/50'
+                    isFlashing && 'ring-2 ring-primary/50'
                   )}
                 >
                   <span className="relative flex h-2 w-2">

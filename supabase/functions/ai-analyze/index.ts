@@ -192,12 +192,18 @@ async function getNextAvailableProvider(supabase: any): Promise<{
     return null;
   }
 
-  // Sort by remaining daily capacity (descending) - prioritize providers with more quota left
+  // CRITICAL FIX: Round-robin rotation - prefer least recently used provider
+  // This ensures ALL enabled providers are used, not just the one with highest capacity
   const sortedProviders = [...providers].sort((a, b) => {
+    // First: prefer providers not used recently (round-robin)
+    const aLastUsed = a.last_used_at ? new Date(a.last_used_at).getTime() : 0;
+    const bLastUsed = b.last_used_at ? new Date(b.last_used_at).getTime() : 0;
+    if (aLastUsed !== bLastUsed) return aLastUsed - bLastUsed; // Oldest first
+    
+    // Fallback: remaining capacity
     const aRemaining = (a.rate_limit_rpd || 1000) - (a.daily_usage || 0);
     const bRemaining = (b.rate_limit_rpd || 1000) - (b.daily_usage || 0);
-    if (aRemaining !== bRemaining) return bRemaining - aRemaining;
-    return (a.priority || 999) - (b.priority || 999);
+    return bRemaining - aRemaining;
   });
 
   // Find first provider under BOTH rate limits with valid API key
