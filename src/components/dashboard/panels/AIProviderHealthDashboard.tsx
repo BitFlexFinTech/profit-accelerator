@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 
 interface AIProvider {
   id: string;
@@ -159,15 +160,16 @@ export function AIProviderHealthDashboard() {
     };
   };
 
-  const getHealthStatus = (provider: AIProvider) => {
+  const getHealthStatus = (provider: AIProvider): { status: string; color: string; icon: any; dotColor: StatusDotColor } => {
     const dailyPct = (provider.daily_usage / (provider.rate_limit_rpd || 1000)) * 100;
     const isInCooldown = cooldownTimers[provider.provider_name] > 0;
     
-    if (isInCooldown) return { status: 'cooldown', color: 'text-rose-400', icon: Clock };
-    if (dailyPct >= 95) return { status: 'exhausted', color: 'text-rose-400', icon: XCircle };
-    if (dailyPct >= 75) return { status: 'warning', color: 'text-amber-400', icon: AlertTriangle };
-    if (!provider.is_enabled) return { status: 'disabled', color: 'text-muted-foreground', icon: XCircle };
-    return { status: 'healthy', color: 'text-emerald-400', icon: CheckCircle };
+    if (isInCooldown) return { status: 'cooldown', color: 'text-rose-400', icon: Clock, dotColor: 'destructive' };
+    if (dailyPct >= 95) return { status: 'exhausted', color: 'text-rose-400', icon: XCircle, dotColor: 'destructive' };
+    if (dailyPct >= 75) return { status: 'warning', color: 'text-amber-400', icon: AlertTriangle, dotColor: 'warning' };
+    if (!provider.is_enabled) return { status: 'disabled', color: 'text-muted-foreground', icon: XCircle, dotColor: 'muted' };
+    if (!provider.has_secret) return { status: 'no_key', color: 'text-muted-foreground', icon: XCircle, dotColor: 'muted' };
+    return { status: 'healthy', color: 'text-emerald-400', icon: CheckCircle, dotColor: 'success' };
   };
 
   // Aggregate stats
@@ -269,7 +271,7 @@ export function AIProviderHealthDashboard() {
                 {/* Top Row: Name + Toggle */}
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <HealthIcon className={cn("w-3.5 h-3.5", health.color)} />
+                    <StatusDot color={health.dotColor} pulse={health.status === 'healthy'} size="sm" />
                     <span className={cn("font-medium text-sm", style.text)}>
                       {provider.display_name}
                     </span>

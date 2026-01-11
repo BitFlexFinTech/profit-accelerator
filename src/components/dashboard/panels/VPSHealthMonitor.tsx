@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { checkVpsApiHealth, pingVpsExchanges, type VpsHealthResponse, type VpsPingResponse } from '@/services/vpsApiService';
 import { toast } from 'sonner';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { StatusDot } from '@/components/ui/StatusDot';
 
 interface VpsHealthData {
   provider: string;
@@ -214,15 +215,15 @@ export const VPSHealthMonitor = forwardRef<HTMLDivElement>((_, ref) => {
   const getStatusIcon = (status: VpsHealthData['status']) => {
     switch (status) {
       case 'healthy':
-        return <div className="w-3 h-3 rounded-full bg-emerald-400 animate-blink" />;
+        return <StatusDot color="success" pulse size="md" />;
       case 'warning':
-        return <div className="w-3 h-3 rounded-full bg-amber-400 animate-blink" />;
+        return <StatusDot color="warning" pulse size="md" />;
       case 'error':
-        return <AlertCircle className="w-4 h-4 text-rose-400 animate-blink" />;
+        return <StatusDot color="destructive" pulse size="md" />;
       case 'offline':
-        return <div className="w-3 h-3 rounded-full bg-muted" />;
+        return <StatusDot color="muted" size="md" />;
       default:
-        return <div className="w-3 h-3 rounded-full bg-muted/50" />;
+        return <StatusDot color="muted" size="md" />;
     }
   };
 

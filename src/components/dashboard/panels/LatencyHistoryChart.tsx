@@ -156,10 +156,10 @@ export function LatencyHistoryChart() {
                   <Line 
                     type="monotone" 
                     dataKey="latency" 
-                    stroke="hsl(var(--primary))" 
+                    stroke="#06b6d4"
                     strokeWidth={2}
-                    dot={{ r: 2, fill: 'hsl(var(--primary))' }}
-                    activeDot={{ r: 4, fill: 'hsl(var(--primary))' }}
+                    dot={{ r: 2, fill: '#06b6d4' }}
+                    activeDot={{ r: 4, fill: '#06b6d4' }}
                   />
                 </LineChart>
               </ResponsiveContainer>

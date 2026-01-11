@@ -7,6 +7,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { differenceInSeconds } from 'date-fns';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 
 interface ExchangePulse {
   id: string;
@@ -116,10 +117,10 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
     return 'text-rose-400';
   };
 
-  const getStatusIcon = (status: string) => {
-    if (status === 'healthy') return <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400 animate-blink" />;
-    if (status === 'jitter') return <AlertTriangle className="w-2.5 h-2.5 text-amber-400 animate-blink" />;
-    return <XCircle className="w-2.5 h-2.5 text-rose-400 animate-blink" />;
+  const getStatusDotColor = (status: string): StatusDotColor => {
+    if (status === 'healthy') return 'success';
+    if (status === 'jitter') return 'warning';
+    return 'destructive';
   };
 
   const getStatusBg = (status: string) => {
@@ -211,7 +212,11 @@ export const ExchangePulsePanel = forwardRef<HTMLDivElement, ExchangePulsePanelP
               style={{ animationDelay: `${index * 50}ms` }}
             >
               <div className="flex items-center justify-center gap-0.5 mb-0.5">
-                {getStatusIcon(pulse.status)}
+                <StatusDot 
+                  color={getStatusDotColor(pulse.status)} 
+                  pulse={pulse.status === 'healthy'} 
+                  size={compact ? 'xs' : 'sm'} 
+                />
               </div>
               <p className={cn("font-medium", compact ? 'text-[9px]' : 'text-xs')}>{display.name}</p>
               <p className={cn(

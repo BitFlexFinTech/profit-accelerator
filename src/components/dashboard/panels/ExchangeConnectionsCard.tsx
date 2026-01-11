@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ExchangeWizard } from '../wizards/ExchangeWizard';
 import { pingVpsExchanges, type ExchangePing } from '@/services/vpsApiService';
+import { StatusDot } from '@/components/ui/StatusDot';
 
 interface TestResult {
   exchange: string;
@@ -70,12 +71,11 @@ const ExchangeRow = memo(function ExchangeRow({
     >
       <div className="flex items-center gap-3">
         {/* Status dot with pulse for fresh data */}
-        <div className="relative">
-          <div className={`w-2.5 h-2.5 rounded-full ${statusColor}`} />
-          {exchange.is_connected && isFresh && (
-            <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-success animate-ping opacity-75" />
-          )}
-        </div>
+        <StatusDot 
+          color={exchange.is_connected ? 'success' : 'muted'} 
+          pulse={exchange.is_connected && isFresh} 
+          size="sm" 
+        />
         
         {/* Exchange icon and name */}
         <div

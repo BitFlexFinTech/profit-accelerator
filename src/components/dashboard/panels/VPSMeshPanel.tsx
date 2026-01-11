@@ -19,6 +19,7 @@ import {
 import { useRealtimeMesh } from '@/hooks/useRealtimeMesh';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 
 const PROVIDER_ICONS: Record<string, string> = {
   contabo: '🌏',
@@ -77,12 +78,12 @@ export function VPSMeshPanel() {
     return 'text-muted-foreground';
   };
 
-  const getStatusIcon = (status: string | null, consecutiveFailures?: number) => {
-    if (consecutiveFailures && consecutiveFailures >= 3) return <WifiOff className="h-4 w-4 text-destructive" />;
-    if (status === 'running') return <CheckCircle2 className="h-4 w-4 text-success" />;
-    if (status === 'idle') return <Wifi className="h-4 w-4 text-primary" />;
-    if (status === 'deploying') return <Activity className="h-4 w-4 text-warning animate-pulse" />;
-    return <Server className="h-4 w-4 text-muted-foreground" />;
+  const getStatusDotColor = (status: string | null, consecutiveFailures?: number): StatusDotColor => {
+    if (consecutiveFailures && consecutiveFailures >= 3) return 'destructive';
+    if (status === 'running') return 'success';
+    if (status === 'idle') return 'cyan';
+    if (status === 'deploying') return 'warning';
+    return 'muted';
   };
 
   const formatLatency = (ms?: number) => {
@@ -190,9 +191,13 @@ export function VPSMeshPanel() {
                   <p className="text-xs text-muted-foreground truncate">
                     {PROVIDER_REGIONS[node.provider] || node.region}
                   </p>
+                  </div>
+                  <StatusDot 
+                    color={getStatusDotColor(node.status, node.consecutive_failures)} 
+                    pulse={node.status === 'running' || node.status === 'deploying'} 
+                    size="md" 
+                  />
                 </div>
-                {getStatusIcon(node.status, node.consecutive_failures)}
-              </div>
 
               {/* IP Address */}
               {node.outbound_ip && (
