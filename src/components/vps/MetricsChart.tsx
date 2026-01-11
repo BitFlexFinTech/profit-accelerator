@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Cpu, HardDrive, Network, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 interface MetricsChartProps {
   provider: string;
@@ -165,35 +166,28 @@ export function MetricsChart({ provider, className }: MetricsChartProps) {
       <div className="h-[200px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+            <CartesianGrid {...chartStyles.grid} />
             <XAxis
               dataKey="time"
-              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-              tickLine={false}
-              axisLine={false}
+              {...chartStyles.xAxis}
+              tick={{ ...chartStyles.tick, fontSize: 10 }}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-              tickLine={false}
-              axisLine={false}
+              {...chartStyles.yAxis}
+              tick={{ ...chartStyles.tick, fontSize: 10 }}
               domain={[0, 100]}
               unit="%"
             />
             <Tooltip
-              contentStyle={{
-                backgroundColor: 'hsl(var(--card))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: '8px',
-                fontSize: '12px',
-              }}
-              labelStyle={{ color: 'hsl(var(--foreground))' }}
+              contentStyle={chartStyles.tooltip.contentStyle}
+              labelStyle={chartStyles.tooltip.labelStyle}
             />
             {activeMetrics.cpu && (
               <Line
                 type="monotone"
                 dataKey="cpu"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
+                stroke={CHART_COLORS.primary}
+                strokeWidth={chartStyles.line.strokeWidth}
                 dot={false}
                 name="CPU %"
               />
@@ -202,8 +196,8 @@ export function MetricsChart({ provider, className }: MetricsChartProps) {
               <Line
                 type="monotone"
                 dataKey="ram"
-                stroke="hsl(var(--success))"
-                strokeWidth={2}
+                stroke={CHART_COLORS.success}
+                strokeWidth={chartStyles.line.strokeWidth}
                 dot={false}
                 name="RAM %"
               />
@@ -212,8 +206,8 @@ export function MetricsChart({ provider, className }: MetricsChartProps) {
               <Line
                 type="monotone"
                 dataKey="disk"
-                stroke="hsl(var(--warning))"
-                strokeWidth={2}
+                stroke={CHART_COLORS.warning}
+                strokeWidth={chartStyles.line.strokeWidth}
                 dot={false}
                 name="Disk %"
               />
@@ -223,16 +217,16 @@ export function MetricsChart({ provider, className }: MetricsChartProps) {
                 <Line
                   type="monotone"
                   dataKey="network_in"
-                  stroke="hsl(var(--accent))"
-                  strokeWidth={2}
+                  stroke={CHART_COLORS.series[4]}
+                  strokeWidth={chartStyles.line.strokeWidth}
                   dot={false}
                   name="Net In Mbps"
                 />
                 <Line
                   type="monotone"
                   dataKey="network_out"
-                  stroke="hsl(var(--destructive))"
-                  strokeWidth={2}
+                  stroke={CHART_COLORS.danger}
+                  strokeWidth={chartStyles.line.strokeWidth}
                   dot={false}
                   name="Net Out Mbps"
                 />

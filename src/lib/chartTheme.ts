@@ -42,34 +42,44 @@ export const chartStyles = {
     opacity: 0.5,
   },
   
-  // XAxis/YAxis props
-  axis: {
+  // XAxis props
+  xAxis: {
     stroke: CHART_COLORS.axis,
     strokeWidth: 1,
+    axisLine: false,
+    tickLine: false,
+  },
+  
+  // YAxis props
+  yAxis: {
+    stroke: CHART_COLORS.axis,
+    strokeWidth: 1,
+    axisLine: false,
+    tickLine: false,
   },
   
   // Axis tick props
-  axisTick: {
+  tick: {
     fill: CHART_COLORS.axisLabel,
-    fontSize: 10,
+    fontSize: 12,
   },
   
-  // Tooltip content style
-  tooltipStyle: {
-    backgroundColor: CHART_COLORS.tooltipBg,
-    border: `1px solid ${CHART_COLORS.tooltipBorder}`,
-    borderRadius: '8px',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-  },
-  
-  tooltipLabelStyle: {
-    color: CHART_COLORS.tooltipText,
-    fontWeight: 600,
-    marginBottom: 4,
-  },
-  
-  tooltipItemStyle: {
-    color: CHART_COLORS.tooltipText,
+  // Tooltip props
+  tooltip: {
+    contentStyle: {
+      backgroundColor: CHART_COLORS.tooltipBg,
+      border: `1px solid ${CHART_COLORS.tooltipBorder}`,
+      borderRadius: '8px',
+      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+    },
+    labelStyle: {
+      color: CHART_COLORS.tooltipText,
+      fontWeight: 600,
+      marginBottom: 4,
+    },
+    itemStyle: {
+      color: CHART_COLORS.tooltipText,
+    },
   },
   
   // Line chart specific
@@ -87,7 +97,7 @@ export const chartStyles = {
   // Area chart specific
   area: {
     strokeWidth: 2,
-    fillOpacity: 0.3,
+    fillOpacity: 0.15,
   },
 };
 

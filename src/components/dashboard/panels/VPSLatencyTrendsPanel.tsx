@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCloudInfrastructure, PROVIDER_ICONS } from '@/hooks/useCloudInfrastructure';
 import { Activity, RefreshCw } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend, CartesianGrid } from 'recharts';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
 
 const PROVIDER_COLORS: Record<string, string> = {
   contabo: '#22c55e',
@@ -139,28 +140,22 @@ export function VPSLatencyTrendsPanel() {
         {chartData.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid {...chartStyles.grid} />
               <XAxis
                 dataKey="timestamp"
                 tickFormatter={(ts) => format(new Date(ts), 'HH:mm')}
-                stroke="hsl(var(--muted-foreground))"
-                fontSize={11}
-                tickLine={false}
+                {...chartStyles.xAxis}
+                tick={{ ...chartStyles.tick, fontSize: 11 }}
               />
               <YAxis
                 domain={[0, 300]}
                 tickFormatter={(v) => `${v}ms`}
-                stroke="hsl(var(--muted-foreground))"
-                fontSize={11}
-                tickLine={false}
+                {...chartStyles.yAxis}
+                tick={{ ...chartStyles.tick, fontSize: 11 }}
                 width={50}
               />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                }}
+                contentStyle={chartStyles.tooltip.contentStyle}
                 labelFormatter={(ts) => format(new Date(ts as number), 'MMM d, HH:mm')}
                 formatter={(value: number, name: string) => [
                   `${value}ms`,
