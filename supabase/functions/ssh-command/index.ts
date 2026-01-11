@@ -75,9 +75,83 @@ serve(async (req) => {
     // Strategy: Use HTTP endpoints instead of SSH for VPS control
     // The VPS should have a control API running on port 8080
     
-    // Health check commands - make HTTP request to VPS
-    if (command.includes('curl') && command.includes('health')) {
-      console.log(`[ssh-command] Health check via HTTP to ${ipAddress}`);
+    // STATUS COMMAND - Composite status check (DOCKER:|SIGNAL:|STATUS:)
+    // This must come BEFORE health check to prevent false match
+    if (command.includes('DOCKER_UP=') || command.includes('DOCKER:') || 
+        command.includes('SIGNAL_EXISTS=') || command.includes('STATUS:')) {
+      console.log(`[ssh-command] Status check via HTTP to ${ipAddress}/status and /signal-check`);
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        
+        // Fetch both status and signal in parallel
+        const [statusRes, signalRes] = await Promise.all([
+          fetch(`http://${ipAddress}/status`, { signal: controller.signal }).catch(() => null),
+          fetch(`http://${ipAddress}/signal-check`, { signal: controller.signal }).catch(() => null)
+        ]);
+        
+        clearTimeout(timeoutId);
+        
+        let dockerRunning = false;
+        let botRunning = false;
+        
+        if (statusRes?.ok) {
+          try {
+            const statusData = await statusRes.json();
+            dockerRunning = statusData?.docker?.containers?.some((c: string) => c.includes('Up')) || 
+                           statusData?.bot?.running === true;
+            botRunning = statusData?.bot?.status === 'running' || statusData?.bot?.running === true;
+          } catch {
+            const text = await statusRes.text();
+            dockerRunning = text.includes('Up') || text.includes('running');
+          }
+        }
+        
+        let signalExists = false;
+        if (signalRes?.ok) {
+          try {
+            const signalData = await signalRes.json();
+            signalExists = signalData?.signalExists === true;
+          } catch {}
+        }
+        
+        let status = 'stopped';
+        if (signalExists && (dockerRunning || botRunning)) {
+          status = 'running';
+        } else if (dockerRunning || botRunning) {
+          status = 'standby';
+        }
+        
+        const output = `DOCKER:${dockerRunning ? 'Up' : 'Down'}|SIGNAL:${signalExists}|HEALTH:true\nSTATUS:${status}`;
+        console.log(`[ssh-command] Status result: ${output}`);
+        
+        return new Response(
+          JSON.stringify({ success: true, exitCode: 0, output }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.log(`[ssh-command] Status check failed: ${errMsg}`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            exitCode: 0,
+            output: 'DOCKER:Down|SIGNAL:false|HEALTH:false\nSTATUS:stopped'
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+    
+    // SIMPLE HEALTH CHECK - Only for dedicated health-only commands
+    // Must NOT match composite status commands (already handled above)
+    const isSimpleHealthCheck = command.includes('curl') && 
+                                 command.includes('health') && 
+                                 !command.includes('DOCKER') &&
+                                 !command.includes('SIGNAL') &&
+                                 !command.includes('STATUS');
+    if (isSimpleHealthCheck) {
+      console.log(`[ssh-command] Simple health check via HTTP to ${ipAddress}`);
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
