@@ -44,6 +44,36 @@ export type Database = {
         }
         Relationships: []
       }
+      active_sessions: {
+        Row: {
+          created_at: string | null
+          expires_at: string
+          id: string
+          ip_address: string | null
+          last_activity: string | null
+          token: string
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at: string
+          id?: string
+          ip_address?: string | null
+          last_activity?: string | null
+          token: string
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          ip_address?: string | null
+          last_activity?: string | null
+          token?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       ai_config: {
         Row: {
           api_key: string | null
@@ -1471,6 +1501,27 @@ export type Database = {
         }
         Relationships: []
       }
+      password_attempts: {
+        Row: {
+          attempted_at: string | null
+          id: string
+          ip_address: string | null
+          success: boolean | null
+        }
+        Insert: {
+          attempted_at?: string | null
+          id?: string
+          ip_address?: string | null
+          success?: boolean | null
+        }
+        Update: {
+          attempted_at?: string | null
+          id?: string
+          ip_address?: string | null
+          success?: boolean | null
+        }
+        Relationships: []
+      }
       portfolio_snapshots: {
         Row: {
           created_at: string | null
@@ -2686,6 +2737,7 @@ export type Database = {
       }
     }
     Functions: {
+      cleanup_expired_sessions: { Args: never; Returns: undefined }
       increment_live_trade: { Args: { profit?: number }; Returns: boolean }
       is_service_role: { Args: never; Returns: boolean }
       reset_ai_provider_daily_usage: { Args: never; Returns: undefined }
