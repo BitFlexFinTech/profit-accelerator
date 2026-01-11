@@ -145,13 +145,13 @@ export function LatencyComparisonChart() {
               />
               <Bar 
                 dataKey="vps" 
-                fill="hsl(142, 76%, 36%)" 
+                fill="#22c55e"
                 radius={[4, 4, 0, 0]}
                 name="vps"
               />
               <Bar 
                 dataKey="edge" 
-                fill="hsl(217, 91%, 60%)" 
+                fill="#3b82f6"
                 radius={[4, 4, 0, 0]}
                 name="edge"
               />

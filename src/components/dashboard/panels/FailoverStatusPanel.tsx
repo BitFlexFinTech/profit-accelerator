@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { VPSHealthDisplay } from './VPSHealthDisplay';
+import { StatusDot, StatusDotColor } from '@/components/ui/StatusDot';
 
 interface FailoverConfig {
   id: string;
@@ -244,12 +245,12 @@ export function FailoverStatusPanel() {
   const primaryServer = configs.find(c => c.is_primary) || { provider: 'vultr', is_primary: true };
   const backupServers = configs.filter(c => !c.is_primary && c.is_enabled);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusDotColor = (status: string): StatusDotColor => {
     switch (status) {
-      case 'healthy': return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-      case 'warning': return <Activity className="w-4 h-4 text-yellow-500" />;
-      case 'down': return <XCircle className="w-4 h-4 text-red-500" />;
-      default: return <RefreshCw className="w-4 h-4 animate-spin" />;
+      case 'healthy': return 'success';
+      case 'warning': return 'warning';
+      case 'down': return 'destructive';
+      default: return 'muted';
     }
   };
 
@@ -297,12 +298,18 @@ export function FailoverStatusPanel() {
             <Server className="w-4 h-4 text-primary" />
             <span className="font-medium">PRIMARY</span>
           </div>
-          <Badge variant="outline" className={getStatusColor(
-            healthStatuses.get(primaryServer.provider)?.status || 'healthy'
-          )}>
-            {getStatusIcon(healthStatuses.get(primaryServer.provider)?.status || 'healthy')}
-            <span className="ml-1">{(healthStatuses.get(primaryServer.provider)?.status || 'healthy').toUpperCase()}</span>
-          </Badge>
+          <div className="flex items-center gap-2">
+            <StatusDot 
+              color={getStatusDotColor(healthStatuses.get(primaryServer.provider)?.status || 'healthy')} 
+              pulse={healthStatuses.get(primaryServer.provider)?.status === 'healthy'} 
+              size="sm" 
+            />
+            <Badge variant="outline" className={getStatusColor(
+              healthStatuses.get(primaryServer.provider)?.status || 'healthy'
+            )}>
+              <span>{(healthStatuses.get(primaryServer.provider)?.status || 'healthy').toUpperCase()}</span>
+            </Badge>
+          </div>
         </div>
         
         <div className="flex items-center justify-between">
@@ -365,12 +372,18 @@ export function FailoverStatusPanel() {
             </div>
             
             <div className="flex items-center gap-3">
-              <Badge variant="outline" className={getStatusColor(
-                healthStatuses.get(server.provider)?.status || 'healthy'
-              )}>
-                {getStatusIcon(healthStatuses.get(server.provider)?.status || 'healthy')}
-                <span className="ml-1">{healthStatuses.get(server.provider)?.latency || 22}ms</span>
-              </Badge>
+              <div className="flex items-center gap-2">
+                <StatusDot 
+                  color={getStatusDotColor(healthStatuses.get(server.provider)?.status || 'healthy')} 
+                  pulse={healthStatuses.get(server.provider)?.status === 'healthy'} 
+                  size="xs" 
+                />
+                <Badge variant="outline" className={getStatusColor(
+                  healthStatuses.get(server.provider)?.status || 'healthy'
+                )}>
+                  <span>{healthStatuses.get(server.provider)?.latency || 22}ms</span>
+                </Badge>
+              </div>
               
               <Button 
                 size="sm" 

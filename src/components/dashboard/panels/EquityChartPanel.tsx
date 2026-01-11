@@ -158,12 +158,6 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
         ) : (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="equityGradientYellow" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={isPositive ? '#facc15' : '#ef4444'} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={isPositive ? '#facc15' : '#ef4444'} stopOpacity={0} />
-                </linearGradient>
-              </defs>
               {!compact && (
                 <XAxis 
                   dataKey="label" 
@@ -196,9 +190,9 @@ export function EquityChartPanel({ compact = false }: EquityChartPanelProps) {
               <Area
                 type="monotone"
                 dataKey="balance"
-                stroke={isPositive ? '#facc15' : '#ef4444'}
+                stroke={isPositive ? '#22c55e' : '#ef4444'}
                 strokeWidth={2}
-                fill="url(#equityGradientYellow)"
+                fill={isPositive ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'}
               />
             </AreaChart>
           </ResponsiveContainer>
