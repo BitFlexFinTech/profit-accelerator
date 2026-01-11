@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useTradesRealtime } from '@/hooks/useTradesRealtime';
+import { StatusDot } from '@/components/ui/StatusDot';
 
 export function TradeLogPanel() {
   // Use unified trades hook - single source of truth
@@ -56,7 +57,7 @@ export function TradeLogPanel() {
           <div>
             <h3 className="font-semibold">Trade Log ({trades.length} trades)</h3>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <StatusDot color="success" pulse size="xs" />
               Real-time feed • Updated {timeSinceUpdate()}
             </p>
           </div>

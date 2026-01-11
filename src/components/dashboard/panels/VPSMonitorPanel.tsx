@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { RegisterExistingVPS } from '@/components/vps/RegisterExistingVPS';
 import { cn } from '@/lib/utils';
+import { StatusDot } from '@/components/ui/StatusDot';
 
 interface VPSConfig {
   id: string;
@@ -171,17 +172,18 @@ export function VPSMonitorPanel() {
                    vpsConfig?.provider === 'gcp' ? '🔵' : 
                    vpsConfig?.provider === 'oracle' ? '🔴' : '🖥️'} {vpsConfig?.provider?.toUpperCase() || 'VPS'}
                 </h3>
-                {/* Status badge - NO animate-glow-pulse on container, only small dot pulses */}
+                {/* Status badge with StatusDot component */}
                 <span className={cn(
                   "text-xs px-2 py-0.5 rounded-full flex items-center gap-1.5",
                   vpsConfig?.status === 'running' 
                     ? 'bg-emerald-500/20 text-emerald-400' 
                     : 'bg-muted text-muted-foreground'
                 )}>
-                  <span className={cn(
-                    "w-1.5 h-1.5 rounded-full",
-                    vpsConfig?.status === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
-                  )} />
+                  <StatusDot 
+                    color={vpsConfig?.status === 'running' ? 'success' : 'muted'} 
+                    pulse={vpsConfig?.status === 'running'} 
+                    size="xs" 
+                  />
                   {vpsConfig?.status === 'running' ? 'Online' : 'Offline'}
                 </span>
               </div>

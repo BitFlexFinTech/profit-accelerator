@@ -358,31 +358,20 @@ html.theme-switching *::after {
     animation: pulse-red 2s infinite;
   }
 
+  /* Flat opacity-based pulse animations - no box-shadow glow */
   @keyframes pulse-green {
-    0%, 100% {
-      box-shadow: 0 0 0 0 hsl(155 85% 45% / 0.5);
-    }
-    50% {
-      box-shadow: 0 0 0 10px hsl(155 85% 45% / 0);
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   @keyframes pulse-yellow {
-    0%, 100% {
-      box-shadow: 0 0 0 0 hsl(42 100% 55% / 0.5);
-    }
-    50% {
-      box-shadow: 0 0 0 10px hsl(42 100% 55% / 0);
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   @keyframes pulse-red {
-    0%, 100% {
-      box-shadow: 0 0 0 0 hsl(350 90% 55% / 0.5);
-    }
-    50% {
-      box-shadow: 0 0 0 10px hsl(350 90% 55% / 0);
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   /* Shimmer Animation */
@@ -412,16 +401,10 @@ html.theme-switching *::after {
     animation: float 3s ease-in-out infinite;
   }
 
-  /* Glow Pulse Animation */
+  /* Flat Pulse Animation - opacity only, no glow */
   @keyframes glow-pulse {
-    0%, 100% { 
-      box-shadow: 0 0 10px currentColor;
-      opacity: 0.8;
-    }
-    50% { 
-      box-shadow: 0 0 25px currentColor, 0 0 40px currentColor;
-      opacity: 1;
-    }
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
   }
 
   .animate-glow-pulse {
@@ -500,22 +483,20 @@ html.theme-switching *::after {
     animation: shimmer 3s linear infinite;
   }
 
+  /* Flat status dots - no glow effects */
   .status-online {
     @apply w-2 h-2 rounded-full;
     background: hsl(var(--success));
-    box-shadow: 0 0 8px hsl(var(--success) / 0.6);
   }
 
   .status-offline {
     @apply w-2 h-2 rounded-full;
     background: hsl(var(--destructive));
-    box-shadow: 0 0 8px hsl(var(--destructive) / 0.6);
   }
 
   .status-warning {
     @apply w-2 h-2 rounded-full;
     background: hsl(var(--warning));
-    box-shadow: 0 0 8px hsl(var(--warning) / 0.6);
   }
 
   /* Icon Containers */
@@ -658,10 +639,10 @@ html.theme-switching *::after {
   .bg-red-accent { background-color: hsl(var(--color-red)); }
   .bg-teal { background-color: hsl(var(--color-teal)); }
 
-  /* Hover color transitions */
+  /* Hover transitions - flat, no glow */
   .hover-glow:hover {
-    box-shadow: 0 0 20px currentColor;
     transform: translateY(-1px);
+    opacity: 0.9;
   }
 }
 

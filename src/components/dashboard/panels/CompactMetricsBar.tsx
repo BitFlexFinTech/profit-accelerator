@@ -151,7 +151,7 @@ export function CompactMetricsBar() {
   return (
     <TooltipProvider delayDuration={200}>
       <div className={cn(
-        "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2",
+        "grid grid-cols-2 md:grid-cols-4 gap-2",
         isStale && "ring-1 ring-warning/30 rounded-lg"
       )}>
         {/* Today's P&L */}
@@ -274,54 +274,6 @@ export function CompactMetricsBar() {
               <span className="text-[10px] text-muted-foreground">
                 ({openCount} open)
               </span>
-            </div>
-          )}
-        </div>
-
-        {/* Infrastructure - FAR RIGHT */}
-        <div className="glass-card p-3 col-span-2 md:col-span-1">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-1.5">
-              <Cloud className="w-3 h-3 text-orange-400" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Infra</span>
-            </div>
-            {infraStatus && (
-              <StatusDot 
-                color={getStatusDotColor(infraStatus.status)} 
-                pulse={infraStatus.status === 'running' || infraStatus.status === 'active'} 
-                size="sm" 
-              />
-            )}
-          </div>
-          {infraLoading ? (
-            <Skeleton className="h-6 w-full" />
-          ) : infraStatus ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1">
-                <Server className="w-3 h-3 text-orange-400" />
-                <span className="text-sm font-bold">{getProviderLabel(infraStatus.provider)}</span>
-              </div>
-              {infraStatus.latencyMs !== null && (
-                <div className="flex items-center gap-0.5">
-                  <Zap className={cn(
-                    "w-2.5 h-2.5",
-                    infraStatus.latencyMs < 50 ? 'text-emerald-400' : 
-                    infraStatus.latencyMs < 100 ? 'text-amber-400' : 'text-red-400'
-                  )} />
-                  <span className={cn(
-                    "text-[10px] font-medium",
-                    infraStatus.latencyMs < 50 ? 'text-emerald-400' : 
-                    infraStatus.latencyMs < 100 ? 'text-amber-400' : 'text-red-400'
-                  )}>
-                    {infraStatus.latencyMs}ms
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 text-muted-foreground">
-              <AlertCircle className="w-3 h-3" />
-              <span className="text-xs">No VPS Active</span>
             </div>
           )}
         </div>
