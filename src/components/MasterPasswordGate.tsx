@@ -8,6 +8,9 @@ interface MasterPasswordGateProps {
   onUnlock: () => void;
 }
 
+const SESSION_TOKEN_KEY = 'hft-session-token';
+const MIN_PASSWORD_LENGTH = 12;
+
 export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -19,17 +22,39 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
   const [statusMessage, setStatusMessage] = useState('Connecting to Tokyo database...');
 
   useEffect(() => {
-    // Check session on mount
-    if (sessionStorage.getItem('hft-unlocked') === 'true') {
-      onUnlock();
-      return;
-    }
-    
-    checkPasswordExists();
+    validateExistingSession();
   }, []);
 
+  const validateExistingSession = async () => {
+    const existingToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
+    
+    if (existingToken) {
+      setStatusMessage('Validating session...');
+      
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke('verify-password', {
+          body: { action: 'validate-session', sessionToken: existingToken },
+        });
+
+        if (!fnError && data?.valid) {
+          // Session is valid on server
+          onUnlock();
+          return;
+        }
+        
+        // Session invalid - clear it
+        sessionStorage.removeItem(SESSION_TOKEN_KEY);
+      } catch (err) {
+        console.error('Session validation error:', err);
+        sessionStorage.removeItem(SESSION_TOKEN_KEY);
+      }
+    }
+    
+    // No valid session, check if password exists
+    checkPasswordExists();
+  };
+
   const checkPasswordExists = async () => {
-    // Timeout fallback to prevent indefinite loading
     const timeoutId = setTimeout(() => {
       console.warn('Password check timeout - proceeding with setup');
       setStatusMessage('Connection timeout. Proceeding with setup.');
@@ -40,7 +65,6 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
     try {
       setStatusMessage('Checking database connection...');
       
-      // Check if password already exists via edge function
       const { data, error: fnError } = await supabase.functions.invoke('verify-password', {
         body: { action: 'check' },
       });
@@ -88,8 +112,8 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
           setIsLoading(false);
           return;
         }
-        if (password.length < 8) {
-          setError('Password must be at least 8 characters');
+        if (password.length < MIN_PASSWORD_LENGTH) {
+          setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
           setIsLoading(false);
           return;
         }
@@ -99,8 +123,16 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
         });
 
         if (fnError) throw fnError;
-        if (data?.success) {
-          sessionStorage.setItem('hft-unlocked', 'true');
+        
+        if (data?.rateLimited) {
+          setError(data.error || 'Too many attempts. Please try again later.');
+          setIsLoading(false);
+          return;
+        }
+        
+        if (data?.success && data?.sessionToken) {
+          // Store server-issued session token
+          sessionStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
           onUnlock();
         } else if (data?.error) {
           setError(data.error);
@@ -113,11 +145,18 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
 
         if (fnError) throw fnError;
 
+        if (data?.rateLimited) {
+          setError(data.error || 'Too many attempts. Please try again later.');
+          setIsLoading(false);
+          return;
+        }
+
         if (data?.needsSetup) {
           setNeedsSetup(true);
           setError('');
-        } else if (data?.success) {
-          sessionStorage.setItem('hft-unlocked', 'true');
+        } else if (data?.success && data?.sessionToken) {
+          // Store server-issued session token
+          sessionStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
           onUnlock();
         } else {
           setError('Invalid password');
@@ -157,7 +196,7 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
           {/* Logo/Icon */}
           <div className="flex justify-center mb-6">
             <div className="relative">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center glow-primary">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
                 <Shield className="w-10 h-10 text-primary-foreground" />
               </div>
               <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-accent flex items-center justify-center">
@@ -179,7 +218,7 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
               {isChecking && statusMessage}
               {!isChecking && (
                 needsSetup
-                  ? 'Create your master password to secure the command center'
+                  ? `Create your master password (min ${MIN_PASSWORD_LENGTH} chars)`
                   : 'Enter your master password to unlock'
               )}
             </p>
@@ -260,8 +299,13 @@ export function MasterPasswordGate({ onUnlock }: MasterPasswordGateProps) {
             </form>
           )}
 
+          {/* Security info */}
+          <div className="mt-6 text-center text-xs text-muted-foreground">
+            <p>Password hashed with bcrypt • Session expires in 30 min</p>
+          </div>
+
           {/* Region indicator */}
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span>Tokyo Region (ap-northeast-1)</span>
           </div>
