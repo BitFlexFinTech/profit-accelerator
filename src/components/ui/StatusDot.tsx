@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 export type StatusDotColor = 'success' | 'warning' | 'destructive' | 'muted' | 'cyan' | 'orange' | 'purple';
@@ -37,17 +38,25 @@ const sizeClasses: Record<'xs' | 'sm' | 'md', string> = {
  * 
  * Colors use explicit Tailwind classes (emerald-500, amber-500, red-500) to ensure
  * consistent appearance regardless of theme.
+ * 
+ * Uses forwardRef to support Radix UI components (e.g., TooltipTrigger asChild).
  */
-export function StatusDot({ color, pulse = false, size = 'sm', className }: StatusDotProps) {
-  return (
-    <span
-      className={cn(
-        'inline-block rounded-full flex-shrink-0',
-        sizeClasses[size],
-        colorClasses[color],
-        pulse && 'animate-pulse',
-        className
-      )}
-    />
-  );
-}
+export const StatusDot = React.forwardRef<HTMLSpanElement, StatusDotProps>(
+  ({ color, pulse = false, size = 'sm', className, ...props }, ref) => {
+    return (
+      <span
+        ref={ref}
+        className={cn(
+          'inline-block rounded-full flex-shrink-0',
+          sizeClasses[size],
+          colorClasses[color],
+          pulse && 'animate-pulse',
+          className
+        )}
+        {...props}
+      />
+    );
+  }
+);
+
+StatusDot.displayName = 'StatusDot';
