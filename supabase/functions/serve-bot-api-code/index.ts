@@ -215,6 +215,7 @@ async function handleControl(req, res) {
     
     const SIGNAL_FILE = '/opt/hft-bot/app/data/START_SIGNAL';
     const ENV_FILE = '/opt/hft-bot/.env.exchanges';
+    const RUNTIME_ENV_FILE = '/opt/hft-bot/app/data/.env.runtime';  // CRITICAL: Strategy reads from here!
     const DATA_DIR = '/opt/hft-bot/app/data';
     const BOT_DIR = '/opt/hft-bot';
     
@@ -228,16 +229,19 @@ async function handleControl(req, res) {
         console.log('[control] mkdir error (may already exist):', e.message);
       }
       
-      // 2. Write environment variables if provided
+      // 2. Write environment variables to BOTH locations (CRITICAL FIX!)
       if (env && typeof env === 'object' && Object.keys(env).length > 0) {
         const envContent = Object.entries(env)
           .map(([k, v]) => ` + "`" + `` + "${" + `k` + "}" + `=` + "${" + `v` + "}" + "`" + `)
           .join('\\n');
         try {
+          // Write to docker-compose env_file location
           fs.writeFileSync(ENV_FILE, envContent);
-          console.log(` + "`" + `[control] Wrote ` + "${" + `Object.keys(env).length` + "}" + ` env vars to ` + "${" + `ENV_FILE` + "}" + "`" + `);
+          // CRITICAL: Also write to runtime location where strategy reads from!
+          fs.writeFileSync(RUNTIME_ENV_FILE, envContent);
+          console.log(` + "`" + `[control] ✅ Wrote ` + "${" + `Object.keys(env).length` + "}" + ` env vars to BOTH ` + "${" + `ENV_FILE` + "}" + ` AND ` + "${" + `RUNTIME_ENV_FILE` + "}" + "`" + `);
         } catch (e) {
-          console.error('[control] Failed to write env file:', e.message);
+          console.error('[control] Failed to write env files:', e.message);
         }
       }
       
