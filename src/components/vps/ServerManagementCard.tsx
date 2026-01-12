@@ -136,9 +136,23 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
     setIsStarting(true);
     try {
       const { supabase } = await import('@/integrations/supabase/client');
-      await supabase.functions.invoke('bot-control', {
-        body: { action: 'start', deploymentId: instance.id },
-      });
+      const { toast } = await import('sonner');
+      
+      // Use start-live-now for immediate trade execution
+      const { data, error } = await supabase.functions.invoke('start-live-now', {});
+      
+      if (error) {
+        toast.error('Failed to start: ' + error.message);
+      } else if (data?.success) {
+        const successOrders = data.orders?.filter((o: any) => o.status === 'filled') || [];
+        if (successOrders.length > 0) {
+          toast.success(`Trade executed on ${successOrders.length} exchange(s)`);
+        } else {
+          toast.success('Bot started');
+        }
+      } else if (data?.blockingReason) {
+        toast.error('Cannot start', { description: data.blockingReason });
+      }
     } catch (err) {
       console.error('Failed to start bot:', err);
     }

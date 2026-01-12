@@ -194,65 +194,112 @@ export function UnifiedControlBar() {
     return channel;
   }, [syncFromDatabase]);
 
-  // Handle startup progress with deterministic stages
+  // Handle startup with immediate trade via start-live-now
   const startBotWithProgress = async () => {
     setStartupStage('connecting');
     setStartupProgress(10);
     startTimeRef.current = Date.now();
     
     try {
-      // Stage 1: Connecting - invoke bot-control
-      console.log('[UnifiedControlBar] Starting bot in LIVE mode, deploymentId:', deploymentId);
-      const { data, error } = await supabase.functions.invoke('bot-control', {
-        body: { action: 'start', deploymentId }
-      });
+      // Stage 1: Call start-live-now for immediate trade execution
+      console.log('[UnifiedControlBar] Calling start-live-now for immediate trade...');
+      setBotStatus('starting');
       
-      if (error || !data?.success) {
-        const errMsg = error?.message || data?.error || 'Unknown error';
-        console.error('[UnifiedControlBar] Bot start failed:', errMsg);
-        toast.error(`Failed to start bot: ${errMsg}`);
+      const { data, error } = await supabase.functions.invoke('start-live-now', {});
+      
+      if (error) {
+        console.error('[UnifiedControlBar] start-live-now error:', error);
+        toast.error('Failed to start: ' + error.message);
         setStartupStage('idle');
         setStartupProgress(0);
         setBotStatus('error');
         return;
       }
       
-      console.log('[UnifiedControlBar] Bot control response:', data);
-      setStartupProgress(40);
+      console.log('[UnifiedControlBar] start-live-now result:', data);
+      setStartupProgress(60);
       setStartupStage('verifying');
       
-      // Stage 2: Verifying - bot-control already verified health
-      if (data.healthVerified) {
-        console.log('[UnifiedControlBar] Health verified by bot-control');
-        setStartupProgress(60);
-      } else {
-        console.log('[UnifiedControlBar] Health not verified, container may still be starting');
-        setStartupProgress(50);
+      // Handle blocking reason
+      if (!data?.success && data?.blockingReason) {
+        console.log('[UnifiedControlBar] Blocked:', data.blockingReason);
+        toast.error('Cannot start trading', {
+          description: data.blockingReason,
+          duration: 8000,
+        });
+        setStartupStage('idle');
+        setStartupProgress(0);
+        setBotStatus('stopped');
+        return;
       }
       
-      setStartupStage('waiting_trade');
-      setBotStatus('running');
-      
-      // Subscribe to first trade
-      const channel = subscribeToFirstTrade();
-      
-      // VPS bot now handles all trading
-      setStartupProgress(80);
-      console.log('[UnifiedControlBar] VPS bot is now active in LIVE mode');
-      
-      // Timeout after 60 seconds - transition to active regardless
-      setTimeout(() => {
-        if (startupStageRef.current === 'waiting_trade' || startupStageRef.current === 'verifying') {
-          console.log('[UnifiedControlBar] Timeout reached, transitioning to active');
+      // Handle order results
+      if (data?.orderAttempted && data?.orders?.length > 0) {
+        const successOrders = data.orders.filter((o: any) => o.status === 'filled');
+        const failedOrders = data.orders.filter((o: any) => o.status === 'failed');
+        
+        if (successOrders.length > 0) {
           setStartupProgress(100);
           setStartupStage('active');
           setBotStatus('running');
-          toast.info('Bot is running in LIVE mode. Waiting for trade signals...');
-          supabase.removeChannel(channel);
+          
+          const orderSummary = successOrders.map((o: any) => 
+            `${o.exchange.toUpperCase()}: ${o.symbol} ${o.side} ${o.quantity.toFixed(6)} @ $${o.price.toFixed(2)}`
+          ).join('\n');
+          
+          toast.success(`✅ LIVE Trade executed on ${successOrders.length} exchange(s)`, {
+            description: orderSummary,
+            duration: 10000,
+          });
         }
-      }, 60000);
+        
+        if (failedOrders.length > 0 && successOrders.length === 0) {
+          setStartupStage('idle');
+          setStartupProgress(0);
+          setBotStatus('error');
+          
+          const errorSummary = failedOrders.map((o: any) => 
+            `${o.exchange}: ${o.error}`
+          ).join('\n');
+          
+          toast.error('All orders failed', {
+            description: errorSummary,
+            duration: 8000,
+          });
+        } else if (failedOrders.length > 0) {
+          // Some succeeded, some failed
+          toast.warning(`${failedOrders.length} order(s) failed`, {
+            description: failedOrders.map((o: any) => `${o.exchange}: ${o.error}`).join(', '),
+          });
+        }
+      } else if (data?.botStarted) {
+        // Bot started but no immediate order (shouldn't happen normally)
+        setStartupProgress(80);
+        setStartupStage('waiting_trade');
+        setBotStatus('running');
+        toast.info('Bot started, waiting for trade signal...');
+        
+        // Subscribe to first trade
+        const channel = subscribeToFirstTrade();
+        
+        // Timeout after 60 seconds
+        setTimeout(() => {
+          if (startupStageRef.current === 'waiting_trade') {
+            setStartupProgress(100);
+            setStartupStage('active');
+            toast.info('Bot is running in LIVE mode.');
+            supabase.removeChannel(channel);
+          }
+        }, 60000);
+      }
       
-      toast.success('Bot started in LIVE mode - waiting for first trade...');
+      // Show signal used
+      if (data?.signalUsed) {
+        console.log('[UnifiedControlBar] Signal used:', data.signalUsed.symbol, data.signalUsed.confidence + '%');
+      }
+      
+      syncFromDatabase();
+      refreshVpsHealth();
       
     } catch (err) {
       console.error('[UnifiedControlBar] Failed to start bot:', err);
