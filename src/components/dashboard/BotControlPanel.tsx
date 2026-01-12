@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { StatusDot } from '@/components/ui/StatusDot';
-import { Play, Square, AlertTriangle, Loader2, RefreshCw, Zap, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { Play, Square, AlertTriangle, Loader2, RefreshCw, Zap, CheckCircle2, XCircle, AlertCircle, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { ActionButton } from '@/components/ui/ActionButton';
 import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 import { useVPSHealthPolling } from '@/hooks/useVPSHealthPolling';
+import { DeployVPSApiButton } from '@/components/vps/DeployVPSApiButton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -458,6 +459,12 @@ export function BotControlPanel() {
                 >
                   Sync
                 </ActionButton>
+              </div>
+            )}
+            {/* Deploy API Button for VPS issues */}
+            {vpsHealth.status === 'unreachable' && (
+              <div className="border-l border-border pl-3">
+                <DeployVPSApiButton />
               </div>
             )}
           </div>

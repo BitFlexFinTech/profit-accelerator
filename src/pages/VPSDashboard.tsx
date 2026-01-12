@@ -22,6 +22,7 @@ import { SSHTerminalModal } from '@/components/vps/SSHTerminalModal';
 import { VPSSwitcher } from '@/components/vps/VPSSwitcher';
 import { CostTrackingDashboard } from '@/components/dashboard/panels/CostTrackingDashboard';
 import { VPSAlertConfig } from '@/components/dashboard/panels/VPSAlertConfig';
+import { DeployVPSApiButton } from '@/components/vps/DeployVPSApiButton';
 import { VPSInstance } from '@/types/cloudCredentials';
 import { cn } from '@/lib/utils';
 
@@ -93,6 +94,7 @@ export default function VPSDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <DeployVPSApiButton />
               <Button
                 variant="outline"
                 size="sm"
