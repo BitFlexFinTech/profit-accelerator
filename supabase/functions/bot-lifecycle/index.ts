@@ -170,35 +170,43 @@ serve(async (req) => {
         }
       }
 
-      // Update database status
+      // CRITICAL FIX: Update database status - Update BOTH status AND bot_status
       const newStatus = action === 'start' || action === 'restart' ? 'running' : action === 'stop' ? 'stopped' : deployment.status;
       const now = new Date().toISOString();
       
-      // Update hft_deployments with correct column name
+      // Update hft_deployments with BOTH status AND bot_status
       const { error: updateError } = await supabase
         .from('hft_deployments')
         .update({ 
           status: newStatus,
+          bot_status: newStatus,  // CRITICAL: This was missing - causes "DB: stopped while VPS: running"
           updated_at: now
         })
         .eq('id', deployment.id);
 
       if (updateError) {
-        console.error('[bot-lifecycle] Database update error:', updateError);
+        console.error('[bot-lifecycle] hft_deployments update error:', updateError);
+        result.message += ` | DB update warning: ${updateError.message}`;
+      } else {
+        console.log(`[bot-lifecycle] Updated hft_deployments: status=${newStatus}, bot_status=${newStatus}`);
       }
 
-      // Also update trading_config for dashboard state
+      // Update trading_config with correct state
       const { error: configError } = await supabase
         .from('trading_config')
         .update({ 
           bot_status: newStatus,
           trading_enabled: action === 'start' || action === 'restart',
+          global_kill_switch_enabled: action === 'stop',  // Enable kill switch on stop
           updated_at: now
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
       if (configError) {
-        console.error('[bot-lifecycle] Trading config update error:', configError);
+        console.error('[bot-lifecycle] trading_config update error:', configError);
+        result.message += ` | Config update warning: ${configError.message}`;
+      } else {
+        console.log(`[bot-lifecycle] Updated trading_config: bot_status=${newStatus}, trading_enabled=${action === 'start' || action === 'restart'}`);
       }
 
       result.success = controlData.success || controlData.signalCreated || false;
