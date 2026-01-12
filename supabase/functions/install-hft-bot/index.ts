@@ -1169,1620 +1169,384 @@ HEALTH_EOF
 log_piranha "Creating Profit Piranha strategy runner..."
 cat > app/strategy.js << 'STRATEGY_EOF'
 /**
- * 🐟 PROFIT PIRANHA - Strategy Runner
+ * 🐟 PROFIT PIRANHA - Dual-Exchange HFT Strategy
  * 
- * A relentless micro-scalping strategy that:
- * - Opens both LONG and SHORT positions
- * - Holds until profit target is reached ($1 spot, $3 leverage)
- * - Never closes at a loss - only at profit
- * - Trades 24/7 continuously
- * - Respects exchange rate limits
- * - Position size: $350-$500
+ * Trades on BOTH Binance AND OKX simultaneously for each signal.
+ * - Queries AI signals from Supabase ai_market_updates table
+ * - Executes trades in parallel on both exchanges
+ * - Logs all trades to trading_journal table
  */
 
-const https = require('https');
+const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
-const crypto = require('crypto');
+const path = require('path');
+require('dotenv').config({ path: '/app/data/.env.runtime' });
 
-// Load runtime environment file if it exists (written by /control endpoint)
-const RUNTIME_ENV_FILE = '/app/data/.env.runtime';
-if (fs.existsSync(RUNTIME_ENV_FILE)) {
+// Initialize Supabase
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Initialize Exchange APIs
+let binanceClient = null;
+let okxClient = null;
+
+if (process.env.BINANCE_API_KEY && process.env.BINANCE_API_SECRET) {
   try {
-    const envContent = fs.readFileSync(RUNTIME_ENV_FILE, 'utf8');
-    // Split on actual newlines (LF or CRLF) using replace + split for bash heredoc compat
-    envContent.replace(/\x0D/g, '').split(String.fromCharCode(10)).forEach(line => {
-      const idx = line.indexOf('=');
-      if (idx > 0) {
-        const key = line.substring(0, idx);
-        const value = line.substring(idx + 1);
-        process.env[key] = value;
-      }
+    const Binance = require('binance-api-node').default;
+    binanceClient = Binance({
+      apiKey: process.env.BINANCE_API_KEY,
+      apiSecret: process.env.BINANCE_API_SECRET,
+      useServerTime: true
     });
-    console.log('[🐟 PIRANHA] Loaded runtime environment from ' + RUNTIME_ENV_FILE);
-  } catch (err) {
-    console.log('[🐟 PIRANHA] Could not load runtime env:', err.message);
+    console.log('[🐟 PIRANHA] ✅ Binance client initialized');
+  } catch (error) {
+    console.error('[🐟 PIRANHA] ❌ Binance client init failed:', error.message);
   }
 }
 
-// ============== CONFIGURATION ==============
-const CONFIG = {
-  // Position sizing
-  MIN_POSITION_SIZE: parseFloat(process.env.MIN_POSITION_SIZE) || 350,
-  MAX_POSITION_SIZE: parseFloat(process.env.MAX_POSITION_SIZE) || 500,
-  
-  // Profit targets (after fees)
-  PROFIT_TARGET_SPOT: parseFloat(process.env.PROFIT_TARGET_SPOT) || 1.00,
-  PROFIT_TARGET_LEVERAGE: parseFloat(process.env.PROFIT_TARGET_LEVERAGE) || 3.00,
-  
-  // AI Trading settings
-  MAX_CONCURRENT_POSITIONS: 8,  // Maximum 8 concurrent positions
-  AI_FETCH_INTERVAL: 1000,      // Fetch AI signals every 1 second
-  
-  // Trading settings - CRITICAL: NO FALLBACK CREDENTIALS
-  ENABLED: process.env.STRATEGY_ENABLED === 'true',
-  SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY, // Use service role for secure access
-  
-  // Telegram alerts (optional)
-  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || null,
-  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || null,
-  
-  // Data paths
-  STATE_FILE: '/app/data/strategy-state.json',
-  TRADES_FILE: '/app/data/trades.json',
-  CONFIG_FILE: '/app/config/.env',
-};
-
-// CRITICAL: Validate required credentials at startup
-if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_KEY) {
-  console.error('[🐟 PIRANHA] ❌ FATAL: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment');
-  console.error('[🐟 PIRANHA] Cannot start without proper Supabase credentials');
-  process.exit(1);
+if (process.env.OKX_API_KEY && process.env.OKX_API_SECRET && process.env.OKX_API_PASSPHRASE) {
+  try {
+    const { RestClient } = require('okx-api');
+    okxClient = new RestClient(
+      process.env.OKX_API_KEY,
+      process.env.OKX_API_SECRET,
+      process.env.OKX_API_PASSPHRASE
+    );
+    console.log('[🐟 PIRANHA] ✅ OKX client initialized');
+  } catch (error) {
+    console.error('[🐟 PIRANHA] ❌ OKX client init failed:', error.message);
+  }
 }
 
-// Exchange fees (maker/taker as decimal)
-const EXCHANGE_FEES = {
-  binance: { maker: 0.001, taker: 0.001, type: 'spot' },
-  binanceFutures: { maker: 0.0002, taker: 0.0004, type: 'futures' },
-  bybit: { maker: 0.0001, taker: 0.0006, type: 'futures' },
-  okx: { maker: 0.0002, taker: 0.0005, type: 'both' },
-  bitget: { maker: 0.0002, taker: 0.0006, type: 'both' },
-  kucoin: { maker: 0.001, taker: 0.001, type: 'spot' },
-  mexc: { maker: 0.0, taker: 0.001, type: 'spot' },
-  gateio: { maker: 0.002, taker: 0.002, type: 'spot' },
-  hyperliquid: { maker: 0.0001, taker: 0.00035, type: 'futures' },
-};
-
-// Rate limits per exchange (requests per minute)
-const RATE_LIMITS = {
-  binance: { rpm: 1200, delay: 50 },
-  bybit: { rpm: 120, delay: 500 },
-  okx: { rpm: 60, delay: 1000 },
-  kucoin: { rpm: 100, delay: 600 },
-  bitget: { rpm: 100, delay: 600 },
-  mexc: { rpm: 100, delay: 600 },
-  gateio: { rpm: 100, delay: 600 },
-  hyperliquid: { rpm: 120, delay: 500 },
-};
-
-// ============== RATE LIMITER (TOKEN BUCKET) ==============
-class RateLimiter {
-  constructor(requestsPerMinute) {
-    this.tokens = requestsPerMinute;
-    this.maxTokens = requestsPerMinute;
-    this.lastRefill = Date.now();
-    this.queue = [];
-  }
+// Normalize symbol: "BTC" -> "BTCUSDT" for Binance, "BTC-USDT" for OKX
+function normalizeSymbol(symbol, exchange) {
+  let normalized = symbol.toUpperCase().replace(/[-_\/]/g, '');
   
-  async acquire() {
-    this.refill();
-    if (this.tokens > 0) {
-      this.tokens--;
-      return true;
+  if (normalized.endsWith('USDT') || normalized.endsWith('USD')) {
+    if (exchange.toLowerCase() === 'okx') {
+      return normalized.replace('USDT', '-USDT').replace('USD', '-USD');
     }
-    // Wait for next token if none available
-    return new Promise(resolve => {
-      const waitTime = 60000 / this.maxTokens;
-      console.log('[🐟 PIRANHA] ⏳ Rate limit reached, waiting ' + waitTime + 'ms for next token');
-      setTimeout(() => {
-        this.refill();
-        if (this.tokens > 0) this.tokens--;
-        resolve(true);
-      }, waitTime);
-    });
+    return normalized;
   }
   
-  refill() {
-    const now = Date.now();
-    const elapsed = (now - this.lastRefill) / 60000; // minutes
-    const tokensToAdd = elapsed * this.maxTokens;
-    this.tokens = Math.min(this.maxTokens, this.tokens + tokensToAdd);
-    this.lastRefill = now;
+  if (exchange.toLowerCase() === 'binance') {
+    return normalized + 'USDT';
+  } else if (exchange.toLowerCase() === 'okx') {
+    return normalized + '-USDT';
   }
   
-  getStatus() {
-    this.refill();
-    return { tokens: Math.floor(this.tokens), max: this.maxTokens };
+  return normalized + 'USDT';
+}
+
+// Execute trade on Binance
+async function executeBinanceTrade(symbol, side, quantity) {
+  if (!binanceClient) {
+    return { success: false, error: 'Binance client not initialized' };
   }
-}
-
-// Initialize rate limiters for each exchange
-const rateLimiters = {
-  binance: new RateLimiter(RATE_LIMITS.binance.rpm),
-  bybit: new RateLimiter(RATE_LIMITS.bybit.rpm),
-  okx: new RateLimiter(RATE_LIMITS.okx.rpm),
-  kucoin: new RateLimiter(RATE_LIMITS.kucoin.rpm),
-  bitget: new RateLimiter(RATE_LIMITS.bitget.rpm),
-  mexc: new RateLimiter(RATE_LIMITS.mexc.rpm),
-  gateio: new RateLimiter(RATE_LIMITS.gateio.rpm),
-  hyperliquid: new RateLimiter(RATE_LIMITS.hyperliquid.rpm),
-};
-
-// Get rate limiter for exchange (with fallback)
-function getRateLimiter(exchange) {
-  return rateLimiters[exchange.toLowerCase()] || rateLimiters.binance;
-}
-
-// ============== TELEGRAM ALERTS ==============
-async function sendTelegramAlert(message) {
-  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) return;
   
   try {
-    const payload = JSON.stringify({
-      chat_id: CONFIG.TELEGRAM_CHAT_ID,
-      text: '🐟 PROFIT PIRANHA\\n\\n' + message,
-      parse_mode: 'HTML'
-    });
-    
-    const urlParts = new URL('https://api.telegram.org/bot' + CONFIG.TELEGRAM_BOT_TOKEN + '/sendMessage');
-    
-    return new Promise((resolve) => {
-      const options = {
-        hostname: urlParts.hostname,
-        path: urlParts.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
-      };
-      
-      const req = https.request(options, (res) => {
-        console.log('[🐟 PIRANHA] 📱 Telegram alert sent:', res.statusCode);
-        resolve(res.statusCode === 200);
-      });
-      req.on('error', (e) => {
-        console.log('[🐟 PIRANHA] Telegram alert failed:', e.message);
-        resolve(false);
-      });
-      req.write(payload);
-      req.end();
-    });
-  } catch (err) {
-    console.log('[🐟 PIRANHA] Telegram error:', err.message);
-  }
-}
-
-// ============== STATE MANAGEMENT ==============
-let state = {
-  active: false,
-  positions: [],
-  totalTrades: 0,
-  totalPnL: 0,
-  startTime: null,
-  lastUpdate: null,
-  errors: [],
-};
-
-function loadState() {
-  try {
-    if (fs.existsSync(CONFIG.STATE_FILE)) {
-      state = JSON.parse(fs.readFileSync(CONFIG.STATE_FILE, 'utf8'));
-      console.log('[🐟 PIRANHA] Loaded state:', state.positions.length, 'open positions');
-    }
-  } catch (err) {
-    console.error('[🐟 PIRANHA] Failed to load state:', err.message);
-  }
-}
-
-// ATOMIC STATE WRITES - Prevents corruption on crash
-function saveState() {
-  try {
-    state.lastUpdate = new Date().toISOString();
-    const tempFile = CONFIG.STATE_FILE + '.tmp';
-    fs.writeFileSync(tempFile, JSON.stringify(state, null, 2));
-    fs.renameSync(tempFile, CONFIG.STATE_FILE); // Atomic on POSIX systems
-  } catch (err) {
-    console.error('[🐟 PIRANHA] Failed to save state:', err.message);
-  }
-}
-
-// CRITICAL: Reload runtime environment after /control writes credentials
-function reloadRuntimeEnv() {
-  const RUNTIME_ENV_FILE = '/app/data/.env.runtime';
-  if (fs.existsSync(RUNTIME_ENV_FILE)) {
-    try {
-      const envContent = fs.readFileSync(RUNTIME_ENV_FILE, 'utf8');
-      // Split on actual newlines (LF or CRLF) using replace + split for bash heredoc compat
-      envContent.replace(/\x0D/g, '').split(String.fromCharCode(10)).forEach(line => {
-        const idx = line.indexOf('=');
-        if (idx > 0) {
-          const key = line.substring(0, idx);
-          const value = line.substring(idx + 1);
-          process.env[key] = value;
-        }
-      });
-      console.log('[🐟 PIRANHA] ✅ Reloaded runtime environment from .env.runtime');
-      return true;
-    } catch (err) {
-      console.error('[🐟 PIRANHA] Failed to reload runtime env:', err.message);
-      return false;
-    }
-  }
-  console.log('[🐟 PIRANHA] ⚠️ No .env.runtime file found');
-  return false;
-}
-
-function logTrade(trade) {
-  try {
-    let trades = [];
-    if (fs.existsSync(CONFIG.TRADES_FILE)) {
-      trades = JSON.parse(fs.readFileSync(CONFIG.TRADES_FILE, 'utf8'));
-    }
-    trades.push(trade);
-    // Keep last 1000 trades
-    if (trades.length > 1000) trades = trades.slice(-1000);
-    fs.writeFileSync(CONFIG.TRADES_FILE, JSON.stringify(trades, null, 2));
-  } catch (err) {
-    console.error('[🐟 PIRANHA] Failed to log trade:', err.message);
-  }
-}
-
-// ============== UTILITY FUNCTIONS ==============
-function calculatePositionSize(availableBalance) {
-  if (availableBalance < CONFIG.MIN_POSITION_SIZE) {
-    return null; // Insufficient balance
-  }
-  // Use 95% of balance, capped at max position size
-  return Math.min(availableBalance * 0.95, CONFIG.MAX_POSITION_SIZE);
-}
-
-function calculateNetPnL(entryPrice, currentPrice, size, side, exchange, isLeverage = false) {
-  const fees = EXCHANGE_FEES[exchange] || { maker: 0.001, taker: 0.001 };
-  const roundTripFeePercent = fees.maker + fees.taker;
-  const roundTripFee = size * roundTripFeePercent;
-  
-  // Calculate gross P&L based on price movement
-  let grossPnL;
-  if (side === 'long') {
-    grossPnL = ((currentPrice - entryPrice) / entryPrice) * size;
-  } else {
-    grossPnL = ((entryPrice - currentPrice) / entryPrice) * size;
-  }
-  
-  return grossPnL - roundTripFee;
-}
-
-function isProfitTargetReached(netPnL, isLeverage) {
-  const target = isLeverage ? CONFIG.PROFIT_TARGET_LEVERAGE : CONFIG.PROFIT_TARGET_SPOT;
-  return netPnL >= target;
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// ============== EXCHANGE API HELPERS ==============
-function signBinance(query, secret) {
-  return crypto.createHmac('sha256', secret).update(query).digest('hex');
-}
-
-function signOKX(timestamp, method, path, body, secret) {
-  const message = timestamp + method + path + body;
-  return crypto.createHmac('sha256', secret).update(message).digest('base64');
-}
-
-// Simple price fetcher with RATE LIMIT ENFORCEMENT
-async function fetchPrice(exchange, symbol) {
-  // Acquire rate limit token before making request
-  const limiter = getRateLimiter(exchange);
-  await limiter.acquire();
-  
-  return new Promise((resolve, reject) => {
-    let url;
-    switch (exchange) {
-      case 'binance':
-        url = 'https://api.binance.com/api/v3/ticker/price?symbol=' + symbol.replace('/', '');
-        break;
-      case 'okx':
-        url = 'https://www.okx.com/api/v5/market/ticker?instId=' + symbol.replace('/', '-');
-        break;
-      case 'bybit':
-        url = 'https://api.bybit.com/v5/market/tickers?category=spot&symbol=' + symbol.replace('/', '');
-        break;
-      default:
-        resolve(null);
-        return;
-    }
-    
-    https.get(url, { timeout: 5000 }, (res) => {
-      // Check for rate limit response (429)
-      if (res.statusCode === 429) {
-        console.log('[🐟 PIRANHA] ⚠️ Exchange rate limit hit for ' + exchange + ', backing off...');
-        resolve(null);
-        return;
-      }
-      
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          let price;
-          if (exchange === 'binance') {
-            price = parseFloat(json.price);
-          } else if (exchange === 'okx') {
-            price = parseFloat(json.data?.[0]?.last);
-          } else if (exchange === 'bybit') {
-            price = parseFloat(json.result?.list?.[0]?.lastPrice);
-          }
-          resolve(price || null);
-        } catch {
-          resolve(null);
-        }
-      });
-    }).on('error', () => resolve(null));
-  });
-}
-
-// ============== STATISTICAL FALLBACK STRATEGY ==============
-// Used when AI signals are unavailable or empty
-async function getStatisticalFallbackSignal() {
-  console.log('[🐟 PIRANHA] 🔄 AI signals empty, using statistical momentum fallback');
-  
-  const pairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
-  for (const symbol of pairs) {
-    // Skip if already in position for this symbol
-    if (state.positions.some(p => p.symbol === symbol)) continue;
-    
-    // Collect price samples
-    const prices = [];
-    for (let i = 0; i < 5; i++) {
-      await sleep(200);
-      const price = await fetchPrice('binance', symbol.replace('USDT', '/USDT'));
-      if (price) prices.push(price);
-    }
-    
-    if (prices.length >= 3) {
-      const first = prices[0];
-      const last = prices[prices.length - 1];
-      const pctChange = ((last - first) / first) * 100;
-      
-      // Only trade if movement exceeds 0.1% threshold
-      if (Math.abs(pctChange) > 0.1) {
-        console.log('[🐟 PIRANHA] 📊 Momentum signal found: ' + symbol + ' ' + (pctChange > 0 ? '📈' : '📉') + ' ' + pctChange.toFixed(3) + '%');
-        return {
-          id: 'fallback-' + Date.now(),
-          symbol: symbol,
-          exchange_name: 'binance',
-          recommended_side: pctChange > 0 ? 'long' : 'short',
-          confidence: 65,
-          current_price: last,
-          profit_timeframe_minutes: 3,
-          source: 'statistical_momentum'
-        };
-      }
-    }
-  }
-  
-  console.log('[🐟 PIRANHA] No statistical signal found, waiting for AI...');
-  return null;
-}
-
-// ============== AI SIGNAL FUNCTIONS ==============
-
-// Fetch high-confidence AI signals from Supabase (5-minute window for HFT)
-async function fetchAIRecommendations() {
-  return new Promise((resolve) => {
-    const cutoffTime = new Date(Date.now() - 300 * 1000).toISOString(); // 5 minutes = 300 seconds
-    const url = CONFIG.SUPABASE_URL + '/rest/v1/ai_market_updates?' +
-      'select=id,symbol,exchange_name,sentiment,confidence,current_price,' +
-      'profit_timeframe_minutes,recommended_side,expected_move_percent&' +
-      'confidence=gte.70&' +
-      'created_at=gte.' + encodeURIComponent(cutoffTime) +
-      '&order=confidence.desc&limit=10';
-    
-    https.get(url, {
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY
-      }
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const signals = JSON.parse(data);
-          if (signals?.length > 0) {
-            console.log('[🐟 PIRANHA] Fetched ' + signals.length + ' AI signals (>=70% confidence)');
-          }
-          resolve(Array.isArray(signals) ? signals : []);
-        } catch { resolve([]); }
-      });
-    }).on('error', () => resolve([]));
-  });
-}
-
-// Sync trade to Supabase trading_journal - LIVE MODE ONLY
-async function recordTradeToSupabase(trade, status) {
-  return new Promise((resolve) => {
-    // STRICT RULE: In SPOT mode, all trades are LONG - enforce consistency
-    // This ensures correct recording even if internal state has incorrect side
-    const validatedSide = 'long'; // SPOT MODE ONLY - always long for buy/sell pairs
-    
-    const payload = JSON.stringify({
-      exchange: trade.exchange,
-      symbol: trade.symbol,
-      side: validatedSide, // FIXED: Use validated side for SPOT mode consistency
-      quantity: trade.quantity,
-      entry_price: trade.entryPrice,
-      exit_price: trade.exitPrice || null,
-      pnl: trade.netPnL || null,
-      status: status,
-      execution_latency_ms: trade.latencyMs || 0,
-      ai_reasoning: 'AI Signal: ' + (trade.aiConfidence || 0) + '% confidence | LIVE TRADE',
-      // CRITICAL FIX: Set closed_at when status is closed
-      closed_at: status === 'closed' ? (trade.exitTime || new Date().toISOString()) : null
-    });
-    
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/trading_journal',
-      method: 'POST',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      console.log('[🐟 PIRANHA] Trade synced to Supabase:', status, res.statusCode);
-      resolve(res.statusCode === 201);
-    });
-    req.on('error', (e) => {
-      console.log('[🐟 PIRANHA] Trade sync error:', e.message);
-      resolve(false);
-    });
-    req.write(payload);
-    req.end();
-  });
-}
-
-// Update position P&L in Supabase for dashboard visibility (underwater positions)
-async function updatePositionPnL(positionId, pnl, currentPrice) {
-  if (!positionId) return false;
-  return new Promise((resolve) => {
-    const payload = JSON.stringify({
-      unrealized_pnl: pnl,
-      current_price: currentPrice,
-      updated_at: new Date().toISOString()
-    });
-    
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/positions?id=eq.' + positionId,
-      method: 'PATCH',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      resolve(res.statusCode === 200 || res.statusCode === 204);
-    });
-    req.on('error', () => resolve(false));
-    req.write(payload);
-    req.end();
-  });
-}
-
-
-// Increment live trade counter when LIVE trade closes successfully
-async function incrementLiveTradeProgress() {
-  return new Promise((resolve) => {
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/rpc/increment_live_trade',
-      method: 'POST',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      console.log('[🐟 PIRANHA] 💰 Live trade counter incremented, status:', res.statusCode);
-      resolve(res.statusCode === 200 || res.statusCode === 204);
-    });
-    req.on('error', (e) => {
-      console.log('[🐟 PIRANHA] Live trade increment error:', e.message);
-      resolve(false);
-    });
-    req.write('{}');
-    req.end();
-  });
-}
-
-// ============== EXCHANGE CREDENTIALS LOADER ==============
-function loadExchangeCredentials() {
-  return {
-    binance: {
-      apiKey: process.env.BINANCE_API_KEY || '',
-      apiSecret: process.env.BINANCE_API_SECRET || ''
-    },
-    okx: {
-      apiKey: process.env.OKX_API_KEY || '',
-      apiSecret: process.env.OKX_API_SECRET || '',
-      passphrase: process.env.OKX_PASSPHRASE || ''
-    }
-  };
-}
-
-// Check if credentials are configured for an exchange
-function hasCredentials(exchange) {
-  const creds = loadExchangeCredentials();
-  if (exchange === 'binance') {
-    return creds.binance.apiKey && creds.binance.apiSecret;
-  }
-  if (exchange === 'okx') {
-    return creds.okx.apiKey && creds.okx.apiSecret && creds.okx.passphrase;
-  }
-  return false;
-}
-
-// ============== REAL BALANCE FETCH FOR RISK MANAGEMENT ==============
-// CRITICAL FIX: Replace hardcoded $1000 balance with actual exchange balance
-async function getActualBalance() {
-  const creds = loadExchangeCredentials();
-  let totalBalance = 0;
-  
-  // Fetch from Binance
-  if (creds.binance.apiKey && creds.binance.apiSecret) {
-    try {
-      const balance = await fetchExchangeBalanceInternal('binance', creds.binance);
-      totalBalance += balance;
-      console.log('[🐟 PIRANHA] Binance balance: $' + balance.toFixed(2));
-    } catch (err) {
-      console.log('[🐟 PIRANHA] Binance balance fetch error:', err.message);
-    }
-  }
-  
-  // Fetch from OKX
-  if (creds.okx.apiKey && creds.okx.apiSecret) {
-    try {
-      const balance = await fetchExchangeBalanceInternal('okx', creds.okx);
-      totalBalance += balance;
-      console.log('[🐟 PIRANHA] OKX balance: $' + balance.toFixed(2));
-    } catch (err) {
-      console.log('[🐟 PIRANHA] OKX balance fetch error:', err.message);
-    }
-  }
-  
-  // Return actual balance only - no fake fallback
-  if (totalBalance <= 0) {
-    console.log('[🐟 PIRANHA] WARNING: No balance found from exchanges. Check API credentials.');
-  }
-  console.log('[🐟 PIRANHA] Total balance for risk calc: $' + totalBalance.toFixed(2));
-  return totalBalance;
-}
-
-async function fetchExchangeBalanceInternal(exchange, creds) {
-  return new Promise((resolve) => {
-    if (exchange === 'binance') {
-      const timestamp = Date.now();
-      const query = 'timestamp=' + timestamp;
-      const signature = signBinance(query, creds.apiSecret);
-      
-      const options = {
-        hostname: 'api.binance.com',
-        path: '/api/v3/account?' + query + '&signature=' + signature,
-        method: 'GET',
-        headers: { 'X-MBX-APIKEY': creds.apiKey }
-      };
-      
-      https.get(options, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            if (json.balances) {
-              const usdt = json.balances.find(b => b.asset === 'USDT');
-              const balance = parseFloat(usdt?.free || 0) + parseFloat(usdt?.locked || 0);
-              resolve(balance);
-            } else {
-              resolve(0);
-            }
-          } catch { resolve(0); }
-        });
-      }).on('error', () => resolve(0));
-      
-    } else if (exchange === 'okx') {
-      const timestamp = new Date().toISOString();
-      const path = '/api/v5/account/balance';
-      const sign = signOKX(timestamp, 'GET', path, '', creds.apiSecret);
-      
-      const options = {
-        hostname: 'www.okx.com',
-        path: path,
-        method: 'GET',
-        headers: {
-          'OK-ACCESS-KEY': creds.apiKey,
-          'OK-ACCESS-SIGN': sign,
-          'OK-ACCESS-TIMESTAMP': timestamp,
-          'OK-ACCESS-PASSPHRASE': creds.passphrase || ''
-        }
-      };
-      
-      https.get(options, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            if (json.code === '0' && json.data?.[0]?.details) {
-              const details = json.data[0].details;
-              const usdt = details.find(d => d.ccy === 'USDT');
-              const balance = parseFloat(usdt?.availBal || 0) + parseFloat(usdt?.frozenBal || 0);
-              resolve(balance);
-            } else {
-              resolve(0);
-            }
-          } catch { resolve(0); }
-        });
-      }).on('error', () => resolve(0));
-      
-    } else {
-      resolve(0);
-    }
-  });
-}
-
-// ============== REAL ORDER EXECUTION ==============
-async function executeOrder(exchange, symbol, side, quantity, orderType, creds) {
-  const startTime = Date.now();
-  console.log('[🐟 PIRANHA] 📤 Executing REAL order: ' + exchange + ' ' + symbol + ' ' + side + ' qty=' + quantity);
-  
-  return new Promise((resolve) => {
-    if (exchange === 'binance') {
-      // Binance order execution with HMAC-SHA256 signing
-      const timestamp = Date.now();
-      const binanceSymbol = symbol.replace('/', '').replace('-', '');
-      let queryString = 'symbol=' + binanceSymbol + '&side=' + side.toUpperCase() + '&type=' + orderType.toUpperCase() + '&quantity=' + quantity.toFixed(6) + '&timestamp=' + timestamp;
-      
-      const signature = signBinance(queryString, creds.apiSecret);
-      const fullQuery = queryString + '&signature=' + signature;
-      
-      const options = {
-        hostname: 'api.binance.com',
-        path: '/api/v3/order',
-        method: 'POST',
-        headers: {
-          'X-MBX-APIKEY': creds.apiKey,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Content-Length': Buffer.byteLength(fullQuery)
-        }
-      };
-      
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            const latency = Date.now() - startTime;
-            console.log('[🐟 PIRANHA] Binance response: status=' + json.status + ' orderId=' + json.orderId + ' latency=' + latency + 'ms');
-            
-            if (json.orderId) {
-              resolve({
-                success: true,
-                orderId: json.orderId.toString(),
-                executedPrice: parseFloat(json.price || json.fills?.[0]?.price || 0),
-                executedQty: parseFloat(json.executedQty || quantity),
-                status: json.status,
-                latencyMs: latency
-              });
-            } else {
-              console.error('[🐟 PIRANHA] ❌ Binance order failed:', json.msg || json.code);
-              resolve({ success: false, error: json.msg || 'Order failed', latencyMs: latency });
-            }
-          } catch (e) {
-            resolve({ success: false, error: 'Parse error: ' + data, latencyMs: Date.now() - startTime });
-          }
-        });
-      });
-      req.on('error', (e) => resolve({ success: false, error: e.message, latencyMs: Date.now() - startTime }));
-      req.setTimeout(10000, () => { req.destroy(); resolve({ success: false, error: 'Timeout', latencyMs: Date.now() - startTime }); });
-      req.write(fullQuery);
-      req.end();
-      
-    } else if (exchange === 'okx') {
-      // OKX order execution
-      const timestamp = new Date().toISOString();
-      const instId = symbol.includes('-') ? symbol : symbol.replace('USDT', '-USDT');
-      const orderBody = JSON.stringify({
-        instId,
-        tdMode: 'cash',
-        side: side.toLowerCase(),
-        ordType: orderType.toLowerCase() === 'market' ? 'market' : 'limit',
-        sz: quantity.toFixed(6)
-      });
-      
-      const sign = signOKX(timestamp, 'POST', '/api/v5/trade/order', orderBody, creds.apiSecret);
-      
-      const options = {
-        hostname: 'www.okx.com',
-        path: '/api/v5/trade/order',
-        method: 'POST',
-        headers: {
-          'OK-ACCESS-KEY': creds.apiKey,
-          'OK-ACCESS-SIGN': sign,
-          'OK-ACCESS-TIMESTAMP': timestamp,
-          'OK-ACCESS-PASSPHRASE': creds.passphrase || '',
-          'Content-Type': 'application/json'
-        }
-      };
-      
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            const latency = Date.now() - startTime;
-            console.log('[🐟 PIRANHA] OKX response: code=' + json.code + ' orderId=' + json.data?.[0]?.ordId + ' latency=' + latency + 'ms');
-            
-            if (json.code === '0' && json.data?.[0]?.ordId) {
-              resolve({
-                success: true,
-                orderId: json.data[0].ordId,
-                executedPrice: 0, // OKX doesn't return price immediately for market orders
-                executedQty: parseFloat(quantity),
-                latencyMs: latency
-              });
-            } else {
-              console.error('[🐟 PIRANHA] ❌ OKX order failed:', json.msg || json.data?.[0]?.sMsg);
-              resolve({ success: false, error: json.msg || json.data?.[0]?.sMsg || 'Order failed', latencyMs: latency });
-            }
-          } catch (e) {
-            resolve({ success: false, error: 'Parse error: ' + data, latencyMs: Date.now() - startTime });
-          }
-        });
-      });
-      req.on('error', (e) => resolve({ success: false, error: e.message, latencyMs: Date.now() - startTime }));
-      req.setTimeout(10000, () => { req.destroy(); resolve({ success: false, error: 'Timeout', latencyMs: Date.now() - startTime }); });
-      req.write(orderBody);
-      req.end();
-      
-    } else {
-      resolve({ success: false, error: 'Unsupported exchange: ' + exchange, latencyMs: 0 });
-    }
-  });
-}
-
-// ============== SUPABASE ORDER/POSITION SYNC ==============
-async function recordOrderToSupabase(order) {
-  return new Promise((resolve) => {
-    const payload = JSON.stringify({
-      exchange_name: order.exchange,
-      symbol: order.symbol,
-      side: order.side,
-      amount: order.quantity,
-      type: order.orderType || 'market',
-      price: order.executedPrice || null,
-      status: order.status || 'filled',
-      exchange_order_id: order.orderId,
-      client_order_id: order.clientOrderId || null
-    });
-    
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/orders',
-      method: 'POST',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        console.log('[🐟 PIRANHA] Order synced to Supabase: ' + res.statusCode);
-        try {
-          const result = JSON.parse(data);
-          resolve(result?.[0]?.id || null);
-        } catch {
-          resolve(null);
-        }
-      });
-    });
-    req.on('error', (e) => { console.log('[🐟 PIRANHA] Order sync error:', e.message); resolve(null); });
-    req.write(payload);
-    req.end();
-  });
-}
-
-async function recordPositionToSupabase(position, status) {
-  return new Promise((resolve) => {
-    const payload = JSON.stringify({
-      exchange_name: position.exchange,
-      symbol: position.symbol,
-      side: position.side,
-      size: position.quantity,
-      entry_price: position.entryPrice,
-      current_price: position.currentPrice || position.entryPrice,
-      unrealized_pnl: position.unrealizedPnL || 0,
-      realized_pnl: position.netPnL || null,
-      status: status,
-      leverage: position.isLeverage ? (position.leverage || 1) : null
-    });
-    
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/positions',
-      method: 'POST',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        console.log('[🐟 PIRANHA] Position synced to Supabase: ' + res.statusCode);
-        try {
-          const result = JSON.parse(data);
-          resolve(result?.[0]?.id || null);
-        } catch {
-          resolve(null);
-        }
-      });
-    });
-    req.on('error', (e) => { console.log('[🐟 PIRANHA] Position sync error:', e.message); resolve(null); });
-    req.write(payload);
-    req.end();
-  });
-}
-
-async function closePositionInSupabase(positionId, exitPrice, realizedPnL) {
-  return new Promise((resolve) => {
-    const payload = JSON.stringify({
-      status: 'closed',
-      current_price: exitPrice,
-      realized_pnl: realizedPnL
-    });
-    
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/positions?id=eq.' + positionId,
-      method: 'PATCH',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    const req = https.request(options, (res) => {
-      console.log('[🐟 PIRANHA] Position closed in Supabase: ' + res.statusCode);
-      resolve(res.statusCode === 200 || res.statusCode === 204);
-    });
-    req.on('error', (e) => { console.log('[🐟 PIRANHA] Position close error:', e.message); resolve(false); });
-    req.write(payload);
-    req.end();
-  });
-}
-
-// Check risk limits from trading_config
-async function checkRiskLimits() {
-  return new Promise((resolve) => {
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/trading_config?select=global_kill_switch_enabled,max_daily_drawdown_percent,max_position_size&limit=1',
-      method: 'GET',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    https.get(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const configs = JSON.parse(data);
-          const config = configs?.[0] || {};
-          resolve({
-            killSwitchEnabled: config.global_kill_switch_enabled === true,
-            maxDailyDrawdown: config.max_daily_drawdown_percent || 10,
-            maxPositionSize: config.max_position_size || 500
-          });
-        } catch {
-          resolve({ killSwitchEnabled: false, maxDailyDrawdown: 10, maxPositionSize: 500 });
-        }
-      });
-    }).on('error', () => resolve({ killSwitchEnabled: false, maxDailyDrawdown: 10, maxPositionSize: 500 }));
-  });
-}
-
-// Get today's total PnL for daily loss check
-async function getTodaysPnL() {
-  return new Promise((resolve) => {
-    const today = new Date().toISOString().split('T')[0];
-    const urlParts = new URL(CONFIG.SUPABASE_URL);
-    const options = {
-      hostname: urlParts.hostname,
-      path: '/rest/v1/trading_journal?select=pnl&closed_at=gte.' + today + 'T00:00:00Z',
-      method: 'GET',
-      headers: {
-        'apikey': CONFIG.SUPABASE_KEY,
-        'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    };
-    
-    https.get(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const trades = JSON.parse(data);
-          const totalPnL = trades.reduce((sum, t) => sum + (parseFloat(t.pnl) || 0), 0);
-          resolve(totalPnL);
-        } catch {
-          resolve(0);
-        }
-      });
-    }).on('error', () => resolve(0));
-  });
-}
-
-// Open position based on AI signal - WITH REAL ORDER EXECUTION AND RISK MANAGEMENT
-async function openPosition(signal, credentials) {
-  const symbol = signal.symbol.includes('USDT') ? signal.symbol : signal.symbol + 'USDT';
-  
-  // ============== RISK MANAGEMENT CHECKS ==============
-  const riskConfig = await checkRiskLimits();
-  
-  // Check global kill switch
-  if (riskConfig.killSwitchEnabled) {
-    console.log('[🐟 PIRANHA] ⛔ KILL SWITCH ENABLED - All trading suspended');
-    return null;
-  }
-  
-  // Check daily drawdown limit - FIXED: Use actual exchange balance
-  const todaysPnL = await getTodaysPnL();
-  if (todaysPnL < 0) {
-    const currentBalance = await getActualBalance(); // FIXED: Fetch real balance from exchanges
-    const drawdownPercent = Math.abs(todaysPnL) / currentBalance * 100;
-    console.log('[🐟 PIRANHA] 📊 Drawdown check: $' + Math.abs(todaysPnL).toFixed(2) + ' / $' + currentBalance.toFixed(2) + ' = ' + drawdownPercent.toFixed(1) + '%');
-    if (drawdownPercent >= riskConfig.maxDailyDrawdown) {
-      console.log('[🐟 PIRANHA] ⛔ DAILY DRAWDOWN LIMIT HIT: ' + drawdownPercent.toFixed(1) + '% >= ' + riskConfig.maxDailyDrawdown + '%');
-      console.log('[🐟 PIRANHA]   Today\\'s PnL: $' + todaysPnL.toFixed(2));
-      console.log('[🐟 PIRANHA]   Current Balance: $' + currentBalance.toFixed(2));
-      return null;
-    }
-  }
-  
-  // ============== ORIGINAL LOGIC CONTINUES ==============
-  
-  // SPOT MODE: Skip short signals (user configured spot-only)
-  if (signal.recommended_side === 'short') {
-    console.log('[🐟 PIRANHA] ⏭️ Skipping SHORT signal - SPOT MODE ONLY');
-    console.log('[🐟 PIRANHA]   Symbol: ' + symbol + ' | Confidence: ' + signal.confidence + '%');
-    return null;
-  }
-  
-  // Only proceed with LONG signals (BUY for spot)
-  const side = 'long';
-  const orderSide = 'buy'; // For spot, long = buy
-  
-  // Check for duplicate position on ANY exchange
-  const existingPosition = state.positions.find(p => p.symbol === symbol);
-  if (existingPosition) {
-    console.log('[🐟 PIRANHA] Already have position in', symbol);
-    return null;
-  }
-  
-  // Load credentials
-  const creds = loadExchangeCredentials();
-  
-  // Determine which exchanges to trade on (user selected: BOTH)
-  const exchangesToTrade = [];
-  if (hasCredentials('binance')) exchangesToTrade.push('binance');
-  if (hasCredentials('okx')) exchangesToTrade.push('okx');
-  
-  if (exchangesToTrade.length === 0) {
-    console.log('[🐟 PIRANHA] ❌ No exchange credentials configured! Skipping trade.');
-    return null;
-  }
-  
-  // Calculate position size: $350-$500
-  const positionSize = Math.min(
-    Math.max(CONFIG.MIN_POSITION_SIZE, 500 * 0.95),
-    CONFIG.MAX_POSITION_SIZE
-  );
-  
-  // Get current price
-  const currentPrice = signal.current_price || await fetchPrice('binance', symbol);
-  if (!currentPrice) {
-    console.log('[🐟 PIRANHA] Could not get price for', symbol);
-    return null;
-  }
-  
-  // Split position across configured exchanges
-  const sizePerExchange = positionSize / exchangesToTrade.length;
-  const quantityPerExchange = sizePerExchange / currentPrice;
-  
-  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-  console.log('[🐟 PIRANHA] 🎯 EXECUTING REAL ENTRY ORDER');
-  console.log('[🐟 PIRANHA]   Symbol: ' + symbol);
-  console.log('[🐟 PIRANHA]   Side: ' + side.toUpperCase() + ' (BUY)');
-  console.log('[🐟 PIRANHA]   Exchanges: ' + exchangesToTrade.join(', ').toUpperCase());
-  console.log('[🐟 PIRANHA]   Total Size: $' + positionSize.toFixed(2));
-  console.log('[🐟 PIRANHA]   Size/Exchange: $' + sizePerExchange.toFixed(2));
-  console.log('[🐟 PIRANHA]   Entry Price: $' + currentPrice.toFixed(4));
-  console.log('[🐟 PIRANHA]   Quantity/Exchange: ' + quantityPerExchange.toFixed(6));
-  console.log('[🐟 PIRANHA]   AI Confidence: ' + signal.confidence + '%');
-  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-  
-  // Execute orders on ALL configured exchanges CONCURRENTLY
-  const orderPromises = exchangesToTrade.map(async (exchange) => {
-    const exchangeCreds = creds[exchange];
-    const result = await executeOrder(exchange, symbol, orderSide, quantityPerExchange, 'market', exchangeCreds);
-    return { exchange, ...result };
-  });
-  
-  const orderResults = await Promise.all(orderPromises);
-  
-  // Process results
-  const successfulOrders = orderResults.filter(r => r.success);
-  const failedOrders = orderResults.filter(r => !r.success);
-  
-  if (failedOrders.length > 0) {
-    for (const failed of failedOrders) {
-      console.error('[🐟 PIRANHA] ❌ Order failed on ' + failed.exchange + ': ' + failed.error);
-    }
-  }
-  
-  if (successfulOrders.length === 0) {
-    console.error('[🐟 PIRANHA] ❌ ALL ORDERS FAILED - No position opened');
-    return null;
-  }
-  
-  // Create positions for successful orders
-  const positions = [];
-  for (const order of successfulOrders) {
-    const position = {
-      id: crypto.randomUUID(),
-      exchange: order.exchange,
+    const order = await binanceClient.order({
       symbol: symbol,
       side: side,
-      size: sizePerExchange,
-      quantity: quantityPerExchange,
-      entryPrice: order.executedPrice || currentPrice,
-      entryTime: new Date().toISOString(),
-      isLeverage: false,
-      aiSignalId: signal.id,
-      aiConfidence: signal.confidence,
-      aiTimeframe: signal.profit_timeframe_minutes,
-      orderId: order.orderId,
-      latencyMs: order.latencyMs
-    };
-    
-    state.positions.push(position);
-    positions.push(position);
-    
-    // Record to Supabase orders table
-    await recordOrderToSupabase({
-      exchange: order.exchange,
-      symbol: symbol,
-      side: orderSide,
-      quantity: quantityPerExchange,
-      orderType: 'market',
-      executedPrice: order.executedPrice || currentPrice,
-      status: 'filled',
-      orderId: order.orderId,
-      clientOrderId: position.id
+      type: 'MARKET',
+      quantity: quantity.toString()
     });
     
-    // Record position to Supabase
-    const supabasePositionId = await recordPositionToSupabase(position, 'open');
-    if (supabasePositionId) {
-      position.supabaseId = supabasePositionId;
-    }
-    
-    console.log('[🐟 PIRANHA] ✅ Position opened on ' + order.exchange.toUpperCase() + ' | OrderId: ' + order.orderId + ' | Latency: ' + order.latencyMs + 'ms');
+    return {
+      success: true,
+      orderId: order.orderId,
+      status: order.status,
+      executedQty: parseFloat(order.executedQty || 0),
+      price: parseFloat(order.price || order.fills?.[0]?.price || 0)
+    };
+  } catch (error) {
+    console.error('[🐟 PIRANHA] Binance trade error:', error);
+    return {
+      success: false,
+      error: error.message || 'Unknown error'
+    };
   }
-  
-  saveState();
-  
-  // Send Telegram alert
-  await sendTelegramAlert('🎯 <b>POSITION OPENED</b>\\n' +
-    '📊 ' + symbol + '\\n' +
-    '📈 Side: LONG (BUY)\\n' +
-    '💰 Size: $' + (sizePerExchange * successfulOrders.length).toFixed(2) + '\\n' +
-    '🏦 Exchanges: ' + successfulOrders.map(o => o.exchange.toUpperCase()).join(', ') + '\\n' +
-    '🎯 Entry: $' + currentPrice.toFixed(4) + '\\n' +
-    '🤖 AI: ' + signal.confidence + '% confidence');
-  
-  console.log('[🐟 PIRANHA] ✅ ' + successfulOrders.length + '/' + exchangesToTrade.length + ' orders filled! Total positions: ' + state.positions.length + '/' + CONFIG.MAX_CONCURRENT_POSITIONS);
-  
-  return positions.length > 0 ? positions[0] : null;
 }
 
-// ============== MAIN STRATEGY LOOP ==============
-async function runPiranha() {
-  console.log('');
-  console.log('╔════════════════════════════════════════════════════════════╗');
-  console.log('║          🐟 PROFIT PIRANHA - Starting Strategy             ║');
-  console.log('║          Position Size: $' + CONFIG.MIN_POSITION_SIZE + '-$' + CONFIG.MAX_POSITION_SIZE + '                        ║');
-  console.log('║          Profit Target: $' + CONFIG.PROFIT_TARGET_SPOT + ' (spot) / $' + CONFIG.PROFIT_TARGET_LEVERAGE + ' (leverage)     ║');
-  console.log('╚════════════════════════════════════════════════════════════╝');
-  console.log('');
+// Execute trade on OKX
+async function executeOKXTrade(symbol, side, size) {
+  if (!okxClient) {
+    return { success: false, error: 'OKX client not initialized' };
+  }
   
-  // CRITICAL: Bot NEVER starts automatically. Must wait for explicit start signal.
-  console.log('[🐟 PIRANHA] ⚠️  Bot is in STANDBY mode. Awaiting manual start command.');
-  console.log('[🐟 PIRANHA] Start the bot from the dashboard to begin trading.');
-  
-  // Wait for START_SIGNAL file to be created (by bot-control edge function)
-  // ═══════════════════════════════════════════════════════════════════════
-  // STRICT RULE: Bot NEVER starts by itself. ONLY START_SIGNAL file works.
-  // Environment variable STRATEGY_ENABLED is IGNORED for safety.
-  // The START_SIGNAL file must be created by the user via the dashboard.
-  // ═══════════════════════════════════════════════════════════════════════
-  const START_SIGNAL_FILE = '/app/data/START_SIGNAL';
-  
-  while (true) {
-    // ONLY check for START_SIGNAL file - NO environment variable bypass
-    const startSignalExists = fs.existsSync(START_SIGNAL_FILE);
+  try {
+    const orderSide = side === 'BUY' ? 'buy' : 'sell';
+    const order = await okxClient.submitOrder({
+      instId: symbol,
+      tdMode: 'cash',
+      side: orderSide,
+      ordType: 'market',
+      sz: size.toString()
+    });
     
-    if (startSignalExists) {
-      console.log('[🐟 PIRANHA] ✅ START SIGNAL RECEIVED from dashboard! Beginning trading...');
-      break;
+    if (order.code === '0' && order.data && order.data.length > 0) {
+      const orderData = order.data[0];
+      return {
+        success: true,
+        orderId: orderData.ordId,
+        status: orderData.state || 'filled',
+        executedQty: parseFloat(orderData.accFillSz || size),
+        price: parseFloat(orderData.avgPx || 0)
+      };
+    } else {
+      return {
+        success: false,
+        error: order.msg || 'OKX order failed'
+      };
+    }
+  } catch (error) {
+    console.error('[🐟 PIRANHA] OKX trade error:', error);
+    return {
+      success: false,
+      error: error.message || 'Unknown OKX error'
+    };
+  }
+}
+
+// Check if trading is enabled
+async function isTradingEnabled() {
+  try {
+    const { data, error } = await supabase
+      .from('trading_config')
+      .select('trading_enabled, global_kill_switch_enabled, bot_status')
+      .neq('id', '00000000-0000-0000-0000-000000000000')
+      .single();
+    
+    if (error || !data) {
+      console.warn('[🐟 PIRANHA] ⚠️  Failed to fetch trading config, defaulting to enabled');
+      return true;
     }
     
-    // Log waiting status every 30 seconds
-    console.log('[🐟 PIRANHA] ⏳ STANDBY: Waiting for manual start from dashboard... (check every 10s)');
-    await sleep(10000);
+    const enabled = data.trading_enabled && 
+                   !data.global_kill_switch_enabled && 
+                   data.bot_status === 'running';
+    
+    if (!enabled) {
+      console.log('[🐟 PIRANHA] Trading disabled: enabled=' + data.trading_enabled + ', kill_switch=' + data.global_kill_switch_enabled + ', bot_status=' + data.bot_status);
+    }
+    
+    return enabled;
+  } catch (error) {
+    console.error('[🐟 PIRANHA] Error checking trading config:', error);
+    return true;
+  }
+}
+
+// Check deployment status
+async function isBotRunning() {
+  try {
+    const { data, error } = await supabase
+      .from('hft_deployments')
+      .select('bot_status, status')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (error || !data) {
+      console.warn('[🐟 PIRANHA] ⚠️  Failed to fetch deployment status');
+      return false;
+    }
+    
+    const running = data.bot_status === 'running' && data.status === 'running';
+    
+    if (!running) {
+      console.log('[🐟 PIRANHA] Bot not running: bot_status=' + data.bot_status + ', status=' + data.status);
+    }
+    
+    return running;
+  } catch (error) {
+    console.error('[🐟 PIRANHA] Error checking deployment status:', error);
+    return false;
+  }
+}
+
+// Process and execute trades on BOTH exchanges simultaneously
+async function processSignals() {
+  const tradingEnabled = await isTradingEnabled();
+  const botRunning = await isBotRunning();
+  
+  if (!tradingEnabled || !botRunning) {
+    return;
   }
   
-  // CRITICAL: Reload credentials that were written by /control endpoint
-  console.log('[🐟 PIRANHA] 🔄 Reloading credentials from .env.runtime...');
-  reloadRuntimeEnv();
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   
-  // Verify credentials are loaded
-  const creds = loadExchangeCredentials();
-  const binanceReady = creds.binance?.apiKey && creds.binance?.apiSecret;
-  const okxReady = creds.okx?.apiKey && creds.okx?.apiSecret;
-  console.log('[🐟 PIRANHA] ════════════════════════════════════════════');
-  console.log('[🐟 PIRANHA] 🔐 CREDENTIALS STATUS:');
-  console.log('[🐟 PIRANHA]    Binance: ' + (binanceReady ? '✅ READY' : '❌ MISSING'));
-  console.log('[🐟 PIRANHA]    OKX: ' + (okxReady ? '✅ READY' : '❌ MISSING'));
-  console.log('[🐟 PIRANHA] ════════════════════════════════════════════');
+  const { data: signals, error: signalsError } = await supabase
+    .from('ai_market_updates')
+    .select('*')
+    .gte('confidence', 70)
+    .gte('created_at', fiveMinutesAgo)
+    .order('confidence', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(20);
   
-  if (!binanceReady && !okxReady) {
-    console.error('[🐟 PIRANHA] ❌ NO EXCHANGE CREDENTIALS LOADED!');
-    console.error('[🐟 PIRANHA] Bot will wait for credentials via /control endpoint...');
+  if (signalsError) {
+    console.error('[🐟 PIRANHA] ❌ Error fetching signals:', signalsError);
+    return;
   }
   
-  loadState();
-  state.active = true;
-  state.startTime = state.startTime || new Date().toISOString();
-  saveState();
+  if (!signals || signals.length === 0) {
+    return;
+  }
   
-  // LIVE MODE ONLY - All trades are real
-  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-  console.log('[🐟 PIRANHA] 🎮 TRADING MODE: LIVE');
-  console.log('[🐟 PIRANHA] 💰 Real Exchange Orders: YES');
-  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+  // Filter for BUY/LONG signals only
+  const buySignals = signals.filter(s => {
+    const recSide = (s.recommended_side || '').toUpperCase();
+    const sentiment = (s.sentiment || '').toUpperCase();
+    return recSide === 'BUY' || recSide === 'LONG' || sentiment === 'BULLISH';
+  });
   
-  console.log('[🐟 PIRANHA] Strategy is now ACTIVE');
-  console.log('[🐟 PIRANHA] Monitoring positions and AI signals...');
-  console.log('[🐟 PIRANHA] Max concurrent positions: ' + CONFIG.MAX_CONCURRENT_POSITIONS);
-  console.log('[🐟 PIRANHA] AI signal check: every ' + CONFIG.AI_FETCH_INTERVAL + 'ms');
+  if (buySignals.length === 0) {
+    return;
+  }
   
-  // AI signal tracking
-  let lastAIFetch = 0;
+  const signalIds = buySignals.map(s => s.id);
+  const { data: existingTrades } = await supabase
+    .from('trading_journal')
+    .select('ai_reasoning')
+    .in('ai_reasoning', signalIds.map(id => 'signal_' + id));
   
-  // Main loop - runs forever (24/7)
-  let loopCount = 0;
+  const tradedSignalIds = new Set((existingTrades || []).map(t => t.ai_reasoning?.replace('signal_', '')));
+  const newSignals = buySignals.filter(s => !tradedSignalIds.has(s.id));
+  
+  if (newSignals.length === 0) {
+    return;
+  }
+  
+  console.log('[🐟 PIRANHA] 📊 Processing ' + newSignals.length + ' new signals...');
+  
+  for (const signal of newSignals) {
+    try {
+      const side = 'BUY';
+      const baseQuantity = 0.001;
+      const confidenceMultiplier = Math.max(0.5, signal.confidence / 100);
+      const quantity = baseQuantity * confidenceMultiplier;
+      
+      // Execute trades on BOTH exchanges simultaneously
+      const binanceSymbol = normalizeSymbol(signal.symbol, 'binance');
+      const okxSymbol = normalizeSymbol(signal.symbol, 'okx');
+      
+      const tradePromises = [];
+      
+      // Add Binance trade if client is available
+      if (binanceClient) {
+        tradePromises.push(
+          executeBinanceTrade(binanceSymbol, side, quantity)
+            .then(result => ({ exchange: 'binance', symbol: binanceSymbol, result }))
+            .catch(error => ({ exchange: 'binance', symbol: binanceSymbol, result: { success: false, error: error.message } }))
+        );
+      }
+      
+      // Add OKX trade if client is available
+      if (okxClient) {
+        tradePromises.push(
+          executeOKXTrade(okxSymbol, side, quantity)
+            .then(result => ({ exchange: 'okx', symbol: okxSymbol, result }))
+            .catch(error => ({ exchange: 'okx', symbol: okxSymbol, result: { success: false, error: error.message } }))
+        );
+      }
+      
+      if (tradePromises.length === 0) {
+        console.warn('[🐟 PIRANHA] ⚠️  No exchange clients available for signal ' + signal.id);
+        continue;
+      }
+      
+      // Execute all trades in parallel
+      const tradeResults = await Promise.all(tradePromises);
+      
+      // Log each trade result to trading_journal
+      for (const { exchange, symbol, result } of tradeResults) {
+        if (result.success) {
+          const { error: logError } = await supabase
+            .from('trading_journal')
+            .insert({
+              exchange: exchange,
+              symbol: symbol,
+              side: side.toLowerCase(),
+              entry_price: result.price || signal.current_price || 0,
+              quantity: result.executedQty || quantity,
+              status: 'open',
+              ai_reasoning: 'signal_' + signal.id,
+              execution_latency_ms: 0
+            });
+          
+          if (logError) {
+            console.error('[🐟 PIRANHA] ❌ Failed to log ' + exchange + ' trade:', logError);
+          } else {
+            console.log('[🐟 PIRANHA] ✅ EXECUTED: ' + side + ' ' + quantity + ' ' + symbol + ' on ' + exchange + ' | Order: ' + result.orderId);
+          }
+        } else {
+          console.error('[🐟 PIRANHA] ❌ FAILED: ' + side + ' ' + symbol + ' on ' + exchange + ' - ' + result.error);
+        }
+      }
+      
+      // Small delay between signals for HFT rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+    } catch (error) {
+      console.error('[🐟 PIRANHA] ❌ Error processing signal ' + signal.id + ':', error);
+    }
+  }
+}
+
+// Main trading loop
+async function tradingLoop() {
+  console.log('[🐟 PIRANHA] 🚀 Trading loop started');
+  
+  let iterationCount = 0;
+  
   while (true) {
     try {
-      loopCount++;
-      const now = Date.now();
+      const startSignalPath = '/app/data/START_SIGNAL';
+      const stopSignalPath = '/app/data/STOP_SIGNAL';
       
-      // ═══════════════════════════════════════════════════════════
-      // AI SIGNAL FETCH - Every 1 second (aggressive signal detection)
-      // ═══════════════════════════════════════════════════════════
-      if (now - lastAIFetch > CONFIG.AI_FETCH_INTERVAL) {
-        lastAIFetch = now;
-        
-        // Only fetch if we have room for more positions
-        if (state.positions.length < CONFIG.MAX_CONCURRENT_POSITIONS) {
-          let signals = await fetchAIRecommendations();
-          
-          // Filter: 70%+ confidence, 1/3/5 min timeframe, not already in position
-          let tradableSignals = signals.filter(s => 
-            s.confidence >= 70 && 
-            [1, 3, 5].includes(s.profit_timeframe_minutes) &&
-            !state.positions.some(p => p.symbol === (s.symbol.includes('USDT') ? s.symbol : s.symbol + 'USDT'))
-          );
-          
-          // FALLBACK: Use statistical signal if no AI signals available
-          if (tradableSignals.length === 0) {
-            const fallbackSignal = await getStatisticalFallbackSignal();
-            if (fallbackSignal) {
-              tradableSignals = [fallbackSignal];
-            }
-          }
-          
-          // Open positions up to max limit
-          for (const signal of tradableSignals) {
-            if (state.positions.length >= CONFIG.MAX_CONCURRENT_POSITIONS) {
-              console.log('[🐟 PIRANHA] Max positions reached (' + CONFIG.MAX_CONCURRENT_POSITIONS + '), waiting for closes...');
-              break;
-            }
-            await openPosition(signal, {});
-          }
+      const startSignalExists = fs.existsSync(startSignalPath);
+      const stopSignalExists = fs.existsSync(stopSignalPath);
+      
+      if (!startSignalExists || stopSignalExists) {
+        if (iterationCount % 10 === 0) {
+          console.log('[🐟 PIRANHA] ⏸️  Paused: START_SIGNAL missing or STOP_SIGNAL present');
         }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        iterationCount++;
+        continue;
       }
       
-      // ═══════════════════════════════════════════════════════════
-      // POSITION MONITORING - Check profit targets AND STOP-LOSS (100ms interval)
-      // ═══════════════════════════════════════════════════════════
-      for (const position of state.positions) {
-        const currentPrice = await fetchPrice(position.exchange, position.symbol);
-        if (!currentPrice) continue;
-        
-        const netPnL = calculateNetPnL(
-          position.entryPrice,
-          currentPrice,
-          position.size,
-          position.side,
-          position.exchange,
-          position.isLeverage
-        );
-        
-        position.currentPrice = currentPrice;
-        position.unrealizedPnL = netPnL;
-        
-        // ═══════════════════════════════════════════════════════════
-        // STRICT RULE: ONLY CLOSE ON PROFIT TARGET - NEVER ON LOSS
-        // The bot holds positions indefinitely until profit target is reached
-        // ═══════════════════════════════════════════════════════════
-        
-        // Log underwater positions for monitoring (NO ACTION - just visibility)
-        if (netPnL < 0) {
-          const holdTime = Date.now() - new Date(position.entryTime).getTime();
-          const holdMinutes = Math.floor(holdTime / 60000);
-          console.log('[🐟 PIRANHA] 📊 UNDERWATER: ' + position.symbol + ' | P&L: $' + netPnL.toFixed(2) + ' | Held: ' + holdMinutes + 'm | HOLDING (waiting for profit target)');
-          
-          // Update position P&L in Supabase for dashboard visibility
-          if (position.supabaseId) {
-            await updatePositionPnL(position.supabaseId, netPnL, currentPrice);
-          }
-        }
-        
-        // STRICT RULE: Only close when profit target is reached - NO STOP-LOSS
-        const profitTargetHit = isProfitTargetReached(netPnL, position.isLeverage);
-        const shouldClose = profitTargetHit; // PROFIT ONLY - NO STOP-LOSS
-        
-        if (shouldClose) {
-          const exitReason = 'PROFIT TARGET';
-          const emoji = '💰';
-          
-          console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-          console.log('[🐟 PIRANHA] ' + emoji + ' ' + exitReason + ' HIT - EXECUTING EXIT ORDER');
-          console.log('[🐟 PIRANHA]   Symbol: ' + position.symbol);
-          console.log('[🐟 PIRANHA]   Exchange: ' + position.exchange.toUpperCase());
-          console.log('[🐟 PIRANHA]   Side: ' + position.side.toUpperCase());
-          console.log('[🐟 PIRANHA]   Entry: $' + position.entryPrice);
-          console.log('[🐟 PIRANHA]   Exit: $' + currentPrice);
-          console.log('[🐟 PIRANHA]   Net P&L: $' + netPnL.toFixed(2));
-          console.log('[🐟 PIRANHA]   Exit Reason: ' + exitReason);
-          console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-          
-          // EXECUTE REAL SELL ORDER TO CLOSE POSITION
-          const creds = loadExchangeCredentials();
-          const exchangeCreds = creds[position.exchange];
-          
-          if (!exchangeCreds || !exchangeCreds.apiKey) {
-            console.error('[🐟 PIRANHA] ❌ No credentials for ' + position.exchange + ' - cannot close position!');
-            continue;
-          }
-          
-          // Execute sell order (spot mode: long positions close with SELL)
-          const exitResult = await executeOrder(
-            position.exchange,
-            position.symbol,
-            'sell',
-            position.quantity,
-            'market',
-            exchangeCreds
-          );
-          
-          if (!exitResult.success) {
-            console.error('[🐟 PIRANHA] ❌ EXIT ORDER FAILED: ' + exitResult.error);
-            console.error('[🐟 PIRANHA] Position remains open - will retry on next loop');
-            continue; // Don't remove position, try again later
-          }
-          
-          console.log('[🐟 PIRANHA] ✅ EXIT ORDER FILLED | OrderId: ' + exitResult.orderId + ' | Latency: ' + exitResult.latencyMs + 'ms');
-          
-          // Record exit order to Supabase
-          await recordOrderToSupabase({
-            exchange: position.exchange,
-            symbol: position.symbol,
-            side: 'sell',
-            quantity: position.quantity,
-            orderType: 'market',
-            executedPrice: exitResult.executedPrice || currentPrice,
-            status: 'filled',
-            orderId: exitResult.orderId,
-            clientOrderId: position.id + '-exit'
-          });
-          
-          // Log the completed trade - CRITICAL: Record ALL trades including losses
-          const completedTrade = {
-            ...position,
-            exitPrice: exitResult.executedPrice || currentPrice,
-            exitTime: new Date().toISOString(),
-            netPnL: netPnL,
-            status: 'closed',
-            exitReason: exitReason.toLowerCase().replace(' ', '_'),
-            exitOrderId: exitResult.orderId,
-            exitLatencyMs: exitResult.latencyMs
-          };
-          logTrade(completedTrade);
-          
-          // STRICT RULE: Sync ALL closed trades to Supabase trading_journal (wins AND losses)
-          await recordTradeToSupabase(completedTrade, 'closed');
-          
-          // Close position in Supabase positions table
-          if (position.supabaseId) {
-            await closePositionInSupabase(position.supabaseId, currentPrice, netPnL);
-          }
-          
-          // Track live trade progress
-          await incrementLiveTradeProgress();
-          console.log('[🐟 PIRANHA] ' + (profitTargetHit ? '💰' : '🛑') + ' Trade closed and synced to dashboard');
-          
-          // Update totals
-          state.totalTrades++;
-          state.totalPnL += netPnL;
-          
-          // Remove from positions
-          state.positions = state.positions.filter(p => p.id !== position.id);
-          
-          console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-          console.log('[🐟 PIRANHA] 📊 TRADE COMPLETE');
-          console.log('[🐟 PIRANHA]   Exit Reason: ' + exitReason);
-          console.log('[🐟 PIRANHA]   Total trades: ' + state.totalTrades);
-          console.log('[🐟 PIRANHA]   Total P&L: $' + state.totalPnL.toFixed(2));
-          console.log('[🐟 PIRANHA]   Open positions: ' + state.positions.length);
-          console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-          
-          // Send Telegram alert - ONLY PROFIT (no stop-loss anymore)
-          const telegramMessage = '💰 <b>TRADE CLOSED - PROFIT!</b>\\n' +
-            '📊 ' + position.symbol + '\\n' +
-            '🏦 Exchange: ' + position.exchange.toUpperCase() + '\\n' +
-            '📈 Side: ' + position.side.toUpperCase() + '\\n' +
-            '💵 P&L: +$' + netPnL.toFixed(2) + '\\n' +
-            '🎯 Entry: $' + position.entryPrice.toFixed(4) + '\\n' +
-            '✅ Exit: $' + currentPrice.toFixed(4) + '\\n' +
-            '⚡ Latency: ' + exitResult.latencyMs + 'ms';
-          
-          await sendTelegramAlert(telegramMessage);
-          
-          // ═══════════════════════════════════════════════════════════
-          // INSTANT REDEPLOY - Only after profitable trades
-          // ═══════════════════════════════════════════════════════════
-          if (profitTargetHit && state.positions.length < CONFIG.MAX_CONCURRENT_POSITIONS) {
-            console.log('[🐟 PIRANHA] 🔄 Searching for instant redeploy opportunity...');
-            const redeploySignals = await fetchAIRecommendations();
-            let bestSignal = redeploySignals.find(s => 
-              s.confidence >= 70 && 
-              [1, 3, 5].includes(s.profit_timeframe_minutes) &&
-              s.recommended_side !== 'short' && // SPOT MODE: Skip shorts
-              !state.positions.some(p => p.symbol === (s.symbol.includes('USDT') ? s.symbol : s.symbol + 'USDT'))
-            );
-            
-            // Use statistical fallback if no AI signal available
-            if (!bestSignal) {
-              const fallback = await getStatisticalFallbackSignal();
-              if (fallback && fallback.recommended_side !== 'short') {
-                bestSignal = fallback;
-              }
-            }
-            
-            if (bestSignal) {
-              console.log('[🐟 PIRANHA] ⚡ INSTANT REDEPLOY with ' + bestSignal.symbol + ' (' + bestSignal.confidence + '% confidence)');
-              await openPosition(bestSignal, {});
-            }
-          }
-        }
-      }
+      await processSignals();
       
-      saveState();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      iterationCount++;
       
-      // STRICT RULE: 100ms monitoring interval for fast profit capture
-      await sleep(100);
-      
-      // Log status every 600 loops (every minute at 100ms)
-      if (loopCount % 600 === 0) {
-        // Log rate limiter status
-        const binanceStatus = rateLimiters.binance.getStatus();
-        console.log('[🐟 PIRANHA] 📊 Status: ' + state.positions.length + '/' + CONFIG.MAX_CONCURRENT_POSITIONS + ' positions | ' + state.totalTrades + ' trades | $' + state.totalPnL.toFixed(2) + ' P&L | Rate: ' + binanceStatus.tokens + '/' + binanceStatus.max);
-      }
-      
-    } catch (err) {
-      console.error('[🐟 PIRANHA] ⚠️ Loop error:', err.message);
-      
-      // CRITICAL FIX: Persist crash to file for diagnosis
-      const crashEntry = {
-        timestamp: new Date().toISOString(),
-        error: err.message,
-        stack: err.stack ? err.stack.substring(0, 500) : 'No stack',
-        positions: state.positions?.length || 0,
-        loopCount: loopCount
-      };
-      
-      try {
-        const crashLogPath = '/app/logs/crashes.json';
-        let crashes = [];
-        if (fs.existsSync(crashLogPath)) {
-          try {
-            crashes = JSON.parse(fs.readFileSync(crashLogPath, 'utf8'));
-          } catch { crashes = []; }
-        }
-        crashes.push(crashEntry);
-        // Keep last 100 crashes only
-        if (crashes.length > 100) crashes = crashes.slice(-100);
-        fs.writeFileSync(crashLogPath, JSON.stringify(crashes, null, 2));
-        console.log('[🐟 PIRANHA] Crash logged to /app/logs/crashes.json');
-      } catch (logErr) {
-        console.error('[🐟 PIRANHA] Could not log crash:', logErr.message);
-      }
-      
-      state.errors.push({ time: crashEntry.timestamp, error: err.message });
-      if (state.errors.length > 100) state.errors = state.errors.slice(-100);
-      saveState();
-      
-      // Send Telegram alert for errors (every 10 errors)
-      if (state.errors.length % 10 === 0) {
-        await sendTelegramAlert('⚠️ <b>ERROR ALERT</b>\\n' +
-          '❌ ' + err.message + '\\n' +
-          '📊 Total errors: ' + state.errors.length);
-      }
-      
-      await sleep(5000); // Wait 5s on error
+    } catch (error) {
+      console.error('[🐟 PIRANHA] ❌ Trading loop error:', error);
+      await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
 }
 
-// ============== POSITION RECONCILIATION ==============
-// Sync local state with actual exchange positions on startup
-async function reconcilePositionsOnStartup() {
-  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
-  console.log('[🐟 PIRANHA] 🔄 RECONCILING POSITIONS WITH EXCHANGE');
-  console.log('[🐟 PIRANHA] ═══════════════════════════════════════');
+// Start trading loop
+if (require.main === module) {
+  console.log('[🐟 PIRANHA] 🐟 PIRANHA HFT Strategy Starting...');
+  console.log('[🐟 PIRANHA] ✅ Credentials loaded');
+  console.log('[🐟 PIRANHA] ✅ Supabase connected');
+  console.log('[🐟 PIRANHA] 📍 Supabase URL: ' + supabaseUrl);
+  console.log('[🐟 PIRANHA] 🔐 Binance: ' + (binanceClient ? '✅ Ready' : '❌ Not available'));
+  console.log('[🐟 PIRANHA] 🔐 OKX: ' + (okxClient ? '✅ Ready' : '❌ Not available'));
+  console.log('[🐟 PIRANHA] 🚀 DUAL-EXCHANGE MODE: Trading on ' + (binanceClient && okxClient ? 'BOTH Binance & OKX' : binanceClient ? 'Binance only' : okxClient ? 'OKX only' : 'NO EXCHANGES'));
   
-  // Get unique exchanges from open positions
-  const exchanges = [...new Set(state.positions.map(p => p.exchange))];
-  
-  for (const exchange of exchanges) {
-    console.log('[🐟 PIRANHA] Checking ' + exchange + ' positions...');
-    
-    // Verify prices are still accessible (basic connectivity check)
-    for (const position of state.positions.filter(p => p.exchange === exchange)) {
-      const currentPrice = await fetchPrice(exchange, position.symbol);
-      
-      if (!currentPrice) {
-        console.log('[🐟 PIRANHA] ⚠️ Cannot get price for ' + position.symbol + ' - may be closed externally');
-        // Mark for manual review but don't auto-close
-        position.needsReconciliation = true;
-      } else {
-        // Update current price and P&L
-        const netPnL = calculateNetPnL(
-          position.entryPrice,
-          currentPrice,
-          position.size,
-          position.side,
-          position.exchange,
-          position.isLeverage
-        );
-        position.currentPrice = currentPrice;
-        position.unrealizedPnL = netPnL;
-        position.lastReconciled = new Date().toISOString();
-        console.log('[🐟 PIRANHA] ✅ ' + position.symbol + ': $' + currentPrice.toFixed(4) + ' (P&L: $' + netPnL.toFixed(2) + ')');
-      }
-    }
-  }
-  
-  // Remove orphaned positions that need manual review
-  const orphanedCount = state.positions.filter(p => p.needsReconciliation).length;
-  if (orphanedCount > 0) {
-    console.log('[🐟 PIRANHA] ⚠️ ' + orphanedCount + ' positions need manual review');
-    await sendTelegramAlert('⚠️ <b>RECONCILIATION ALERT</b>\\n' +
-      orphanedCount + ' positions could not be verified.\\n' +
-      'Please check exchange manually.');
-  }
-  
-  saveState();
-  console.log('[🐟 PIRANHA] Reconciliation complete. Active positions: ' + state.positions.length);
-}
-
-// ============== STARTUP ==============
-console.log('[🐟 PIRANHA] Strategy Runner initializing...');
-console.log('[🐟 PIRANHA] Config:', {
-  minPosition: CONFIG.MIN_POSITION_SIZE,
-  maxPosition: CONFIG.MAX_POSITION_SIZE,
-  profitSpot: CONFIG.PROFIT_TARGET_SPOT,
-  profitLeverage: CONFIG.PROFIT_TARGET_LEVERAGE,
-  enabled: CONFIG.ENABLED,
-  supabaseConfigured: !!CONFIG.SUPABASE_URL && !!CONFIG.SUPABASE_KEY,
-  telegramConfigured: !!CONFIG.TELEGRAM_BOT_TOKEN && !!CONFIG.TELEGRAM_CHAT_ID
-});
-
-// Run position reconciliation before starting
-loadState();
-reconcilePositionsOnStartup().then(() => {
-  // Start the strategy after reconciliation
-  runPiranha().catch(err => {
-    console.error('[🐟 PIRANHA] Fatal error:', err);
-    sendTelegramAlert('❌ <b>FATAL ERROR</b>\\n' + err.message);
+  tradingLoop().catch(error => {
+    console.error('[🐟 PIRANHA] 💥 Fatal error:', error);
     process.exit(1);
   });
-});
+}
 
-// Handle shutdown gracefully
-process.on('SIGTERM', () => {
-  console.log('[🐟 PIRANHA] Received SIGTERM, saving state...');
-  state.active = false;
-  saveState();
-  sendTelegramAlert('🛑 Bot shutting down (SIGTERM)').then(() => process.exit(0));
-});
-
-process.on('SIGINT', () => {
-  console.log('[🐟 PIRANHA] Received SIGINT, saving state...');
-  state.active = false;
-  saveState();
-  sendTelegramAlert('🛑 Bot shutting down (SIGINT)').then(() => process.exit(0));
-});
+module.exports = { tradingLoop, processSignals };
 STRATEGY_EOF
 
 # ============================================================================
