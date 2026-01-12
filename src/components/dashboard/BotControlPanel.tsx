@@ -58,14 +58,11 @@ export function BotControlPanel() {
   useEffect(() => {
     const fetchStatus = async () => {
       setIsLoading(true);
-      const { data, error } = await supabase
-        .from('trading_config')
-        .select('bot_status, trading_enabled')
-        .maybeSingle();
+      // Use dashboard-state edge function to bypass RLS
+      const { data, error } = await supabase.functions.invoke('dashboard-state');
 
-      if (!error && data) {
-        const config = data as TradingConfig;
-        const dbStatus = (config.bot_status as BotStatus) || 'idle';
+      if (!error && data?.bot?.status) {
+        const dbStatus = data.bot.status as BotStatus;
         setBotStatus(dbStatus);
       }
       setIsLoading(false);
@@ -128,74 +125,38 @@ export function BotControlPanel() {
   const handleStartBot = async () => {
     setIsStarting(true);
     try {
-      console.log('[BotControl] Calling start-live-now for immediate trade...');
+      console.log('[BotControl] Calling bot-lifecycle start...');
       setBotStatus('starting');
 
-      // Call the new start-live-now orchestrator for immediate trading
-      const { data, error: startError } = await supabase.functions.invoke('start-live-now', {});
+      // Call the new bot-lifecycle function for pure bot control
+      const { data, error: startError } = await supabase.functions.invoke('bot-lifecycle', {
+        body: { action: 'start' }
+      });
 
       if (startError) {
-        console.error('[BotControl] start-live-now error:', startError);
+        console.error('[BotControl] bot-lifecycle error:', startError);
         toast.error('Failed to start: ' + startError.message);
         setBotStatus('error');
         return;
       }
 
-      console.log('[BotControl] start-live-now result:', data);
+      console.log('[BotControl] bot-lifecycle result:', data);
 
-      // Handle blocking reason
-      if (!data?.success && data?.blockingReason) {
-        toast.error('Cannot start trading', {
-          description: data.blockingReason,
+      if (!data?.success) {
+        toast.error('Failed to start bot', {
+          description: data?.message || 'Unknown error',
           duration: 8000,
         });
-        setBotStatus('stopped');
+        setBotStatus(data?.botStatus || 'error');
         return;
       }
 
-      // Handle order results
-      if (data?.orderAttempted && data?.orders?.length > 0) {
-        const successOrders = data.orders.filter((o: any) => o.status === 'filled');
-        const failedOrders = data.orders.filter((o: any) => o.status === 'failed');
-
-        if (successOrders.length > 0) {
-          setBotStatus('running');
-          const orderSummary = successOrders.map((o: any) => 
-            `${o.exchange.toUpperCase()}: ${o.symbol} ${o.side} ${o.quantity.toFixed(6)} @ $${o.price.toFixed(2)}`
-          ).join('\n');
-          
-          toast.success(`✅ Trade executed on ${successOrders.length} exchange(s)`, {
-            description: orderSummary,
-            duration: 10000,
-          });
-        }
-
-        if (failedOrders.length > 0 && successOrders.length === 0) {
-          setBotStatus('error');
-          const errorSummary = failedOrders.map((o: any) => 
-            `${o.exchange}: ${o.error}`
-          ).join('\n');
-          
-          toast.error('All orders failed', {
-            description: errorSummary,
-            duration: 8000,
-          });
-        } else if (failedOrders.length > 0) {
-          // Some succeeded, some failed
-          toast.warning(`${failedOrders.length} order(s) failed`, {
-            description: failedOrders.map((o: any) => `${o.exchange}: ${o.error}`).join(', '),
-          });
-        }
-      } else if (data?.botStarted) {
-        // Bot started but no order was placed (shouldn't happen with new flow)
-        setBotStatus('running');
-        toast.info('Bot started, waiting for trade execution...');
-      }
-
-      // Show signal used
-      if (data?.signalUsed) {
-        console.log('[BotControl] Signal used:', data.signalUsed);
-      }
+      // Bot started successfully
+      setBotStatus(data.botStatus || 'running');
+      toast.success('✅ Bot started successfully', {
+        description: data.message || 'Bot is now running',
+        duration: 5000,
+      });
 
       // Refresh health after start
       setTimeout(() => refreshHealth(), 3000);
