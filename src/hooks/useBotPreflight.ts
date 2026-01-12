@@ -14,6 +14,12 @@ export interface PreflightResult {
   exchangeCount: number;
   signalCount: number;
   vpsReady: boolean;
+  topSignal?: {
+    symbol: string;
+    confidence: number;
+    recommended_side: string;
+  } | null;
+  reasons: string[];
 }
 
 export function useBotPreflight() {
@@ -25,70 +31,120 @@ export function useBotPreflight() {
     const checks: PreflightCheck[] = [];
 
     try {
-      // Check 1: VPS Deployment exists
-      const { data: deployment, error: deploymentError } = await supabase
-        .from('hft_deployments')
-        .select('id, server_id, ip_address, status, bot_status')
-        .in('status', ['active', 'running'])
-        .limit(1)
-        .single();
+      // Call the comprehensive trade-preflight edge function
+      console.log('[Preflight] Calling trade-preflight edge function...');
+      const { data: preflight, error: preflightError } = await supabase.functions.invoke('trade-preflight');
 
-      if (deploymentError || !deployment) {
+      if (preflightError) {
+        console.error('[Preflight] Edge function error:', preflightError);
+        checks.push({
+          name: 'System Check',
+          status: 'fail',
+          message: `Preflight check failed: ${preflightError.message}`,
+          critical: true
+        });
+
+        const errorResult: PreflightResult = {
+          canStart: false,
+          checks,
+          exchangeCount: 0,
+          signalCount: 0,
+          vpsReady: false,
+          reasons: [preflightError.message]
+        };
+        setResult(errorResult);
+        return errorResult;
+      }
+
+      // Parse preflight response
+      console.log('[Preflight] Response:', JSON.stringify(preflight));
+
+      // VPS Check
+      if (preflight.vps?.reachable && preflight.vps?.ipAddress) {
+        checks.push({
+          name: 'VPS Deployment',
+          status: 'pass',
+          message: `VPS ready at ${preflight.vps.ipAddress}${preflight.vps.dockerRunning ? ' (Docker running)' : ''}`,
+          critical: true
+        });
+      } else if (preflight.vps?.ipAddress) {
+        checks.push({
+          name: 'VPS Deployment',
+          status: 'fail',
+          message: preflight.vps.error || `VPS at ${preflight.vps.ipAddress} is not responding`,
+          critical: true
+        });
+      } else {
         checks.push({
           name: 'VPS Deployment',
           status: 'fail',
           message: 'No active VPS deployment found. Deploy a VPS first.',
           critical: true
         });
-      } else if (!deployment.ip_address) {
-        checks.push({
-          name: 'VPS Deployment',
-          status: 'fail',
-          message: 'VPS has no IP address assigned.',
-          critical: true
-        });
-      } else {
-        checks.push({
-          name: 'VPS Deployment',
-          status: 'pass',
-          message: `VPS ready at ${deployment.ip_address}`,
-          critical: true
-        });
       }
 
-      // Check 2: Exchange Connections
-      const { data: exchanges, error: exchangeError } = await supabase
-        .from('exchange_connections')
-        .select('exchange_name, is_connected, api_key, api_secret')
-        .eq('is_connected', true);
-
-      const connectedExchanges = exchanges?.filter(e => e.api_key && e.api_secret) || [];
+      // Exchange Connections Check
+      const exchanges = preflight.exchanges || [];
+      const workingExchanges = exchanges.filter((e: any) => e.hasCredentials && (!e.error || e.error.includes('timeout')));
       
-      if (exchangeError || connectedExchanges.length === 0) {
+      if (workingExchanges.length === 0) {
         checks.push({
           name: 'Exchange Connections',
           status: 'fail',
-          message: 'No exchanges connected. Add exchange API keys first.',
+          message: exchanges.length > 0 
+            ? `${exchanges.length} exchange(s) found but none are ready: ${exchanges.map((e: any) => e.error || 'unknown').join(', ')}`
+            : 'No exchanges connected. Add exchange API keys first.',
           critical: true
         });
       } else {
-        const names = connectedExchanges.map(e => e.exchange_name).join(', ');
+        const names = workingExchanges.map((e: any) => {
+          const balanceStr = e.balanceUSDT !== null ? ` ($${e.balanceUSDT.toFixed(0)})` : '';
+          return `${e.name}${balanceStr}`;
+        }).join(', ');
         checks.push({
           name: 'Exchange Connections',
           status: 'pass',
-          message: `${connectedExchanges.length} exchange(s) ready: ${names}`,
+          message: `${workingExchanges.length} exchange(s) ready: ${names}`,
           critical: true
         });
       }
 
-      // Check 3: Kill switch
-      const { data: config } = await supabase
-        .from('trading_config')
-        .select('global_kill_switch_enabled')
-        .limit(1)
-        .single();
+      // Check for exchange errors that need attention
+      const exchangeErrors = exchanges.filter((e: any) => e.error && !e.error.includes('timeout'));
+      if (exchangeErrors.length > 0) {
+        for (const ex of exchangeErrors) {
+          if (ex.error.includes('IP') || ex.error.includes('whitelist')) {
+            checks.push({
+              name: `${ex.name} IP Whitelist`,
+              status: 'warn',
+              message: `Add VPS IP to ${ex.name} API whitelist`,
+              critical: false
+            });
+          }
+        }
+      }
 
-      if (config?.global_kill_switch_enabled) {
+      // AI Signals Check (from ai_market_updates - what the bot actually reads)
+      const aiSignals = preflight.ai || {};
+      if (aiSignals.hasTradableSignal && aiSignals.signalCount > 0) {
+        const topSignal = aiSignals.topSignal;
+        checks.push({
+          name: 'AI Trading Signals',
+          status: 'pass',
+          message: `${aiSignals.signalCount} signal(s) ready | Top: ${topSignal?.symbol} ${topSignal?.recommended_side?.toUpperCase()} (${topSignal?.confidence}%)`,
+          critical: false
+        });
+      } else {
+        checks.push({
+          name: 'AI Trading Signals',
+          status: 'warn',
+          message: 'No recent AI signals. Bot will wait for signals after start.',
+          critical: false
+        });
+      }
+
+      // Kill Switch Check
+      if (preflight.risk?.killSwitch) {
         checks.push({
           name: 'Kill Switch',
           status: 'warn',
@@ -104,43 +160,14 @@ export function useBotPreflight() {
         });
       }
 
-      // Check 4: Recent signals (informational)
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      const { data: recentSignals, count: signalCount } = await supabase
-        .from('bot_signals')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', fiveMinutesAgo);
-
-      const totalSignals = signalCount || 0;
-
-      if (totalSignals === 0) {
-        checks.push({
-          name: 'Trade Signals',
-          status: 'warn',
-          message: 'No signals in last 5 min. Bot will wait for signals after start.',
-          critical: false
-        });
-      } else {
-        checks.push({
-          name: 'Trade Signals',
-          status: 'pass',
-          message: `${totalSignals} signal(s) received in last 5 minutes`,
-          critical: false
-        });
-      }
-
-      // Check 5: SSH Key availability (for control)
+      // SSH Key check (quick local check)
       const { data: sshKey } = await supabase
         .from('hft_ssh_keys')
         .select('id')
         .limit(1)
         .single();
 
-      const vultrKey = await supabase.functions.invoke('manage-secrets', {
-        body: { action: 'check', secretName: 'VULTR_SSH_PRIVATE_KEY' }
-      }).then(r => r.data?.exists).catch(() => false);
-
-      if (!sshKey && !vultrKey) {
+      if (!sshKey) {
         checks.push({
           name: 'SSH Access',
           status: 'warn',
@@ -163,9 +190,11 @@ export function useBotPreflight() {
       const preflightResult: PreflightResult = {
         canStart,
         checks,
-        exchangeCount: connectedExchanges.length,
-        signalCount: totalSignals,
-        vpsReady: !!deployment?.ip_address
+        exchangeCount: workingExchanges.length,
+        signalCount: aiSignals.signalCount || 0,
+        vpsReady: preflight.vps?.reachable === true,
+        topSignal: aiSignals.topSignal || null,
+        reasons: preflight.reasons || []
       };
 
       setResult(preflightResult);
@@ -185,7 +214,8 @@ export function useBotPreflight() {
         checks,
         exchangeCount: 0,
         signalCount: 0,
-        vpsReady: false
+        vpsReady: false,
+        reasons: [error instanceof Error ? error.message : 'Unknown error']
       };
 
       setResult(errorResult);
@@ -198,6 +228,7 @@ export function useBotPreflight() {
 
   const sendTestSignal = useCallback(async (): Promise<{ success: boolean; signalId?: string; error?: string }> => {
     try {
+      // Send a test signal via bot-signal-receiver which writes to BOTH bot_signals AND ai_market_updates
       const { data, error } = await supabase.functions.invoke('bot-signal-receiver', {
         body: {
           bot_name: 'test',
@@ -220,9 +251,27 @@ export function useBotPreflight() {
     }
   }, []);
 
+  // Trigger AI scan to generate fresh signals
+  const triggerAIScan = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { error } = await supabase.functions.invoke('ai-analyze', {
+        body: { action: 'scan', symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'] }
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  }, []);
+
   return {
     runPreflight,
     sendTestSignal,
+    triggerAIScan,
     isRunning,
     result,
     clearResult: () => setResult(null)
