@@ -1,4 +1,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { 
+  healthUrl, 
+  pingExchangesUrl, 
+  botStatusUrl, 
+  positionsUrl, 
+  tradesUrl, 
+  balancesUrl,
+  controlUrl,
+  fetchWithTimeout,
+  VPS_API_TIMEOUT_MS 
+} from "../_shared/vpsControl.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -144,22 +155,14 @@ async function handleHealthCheck(
   vpsConfigId: string | null,
   supabase: any
 ) {
-  const healthUrl = `http://${targetIp}/health`;
-  console.log(`[check-vps-health] Checking health at: ${healthUrl}`);
+  const vpsHealthUrl = healthUrl(targetIp);
+  console.log(`[check-vps-health] Checking health at: ${vpsHealthUrl}`);
 
   let healthData: any = null;
   let isHealthy = false;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(healthUrl, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(vpsHealthUrl, { method: 'GET' }, VPS_API_TIMEOUT_MS);
     const latencyMs = Date.now() - startTime;
 
     if (response.ok) {
@@ -306,19 +309,11 @@ async function handlePingExchanges(
   provider: string | null,
   supabase: any
 ) {
-  const pingUrl = `http://${targetIp}/ping-exchanges`;
+  const pingUrl = pingExchangesUrl(targetIp);
   console.log(`[check-vps-health] Pinging exchanges at: ${pingUrl}`);
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    const response = await fetch(pingUrl, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(pingUrl, { method: 'GET' }, 15000);
     const latencyMs = Date.now() - startTime;
 
     if (response.ok) {
@@ -383,19 +378,11 @@ async function handleBotStatus(
   startTime: number,
   provider: string | null
 ) {
-  const statusUrl = `http://${targetIp}/bot/status`;
+  const statusUrl = botStatusUrl(targetIp);
   console.log(`[check-vps-health] Checking bot status at: ${statusUrl}`);
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(statusUrl, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(statusUrl, { method: 'GET' }, VPS_API_TIMEOUT_MS);
     const latencyMs = Date.now() - startTime;
 
     if (response.ok) {
@@ -439,22 +426,18 @@ async function handleBotStatus(
   }
 }
 
-// ===== NEW VPS DATA HANDLERS =====
+// ===== VPS DATA HANDLERS =====
 
 async function handlePositions(
   targetIp: string,
   startTime: number,
   provider: string | null
 ) {
-  const url = `http://${targetIp}/positions`;
+  const url = positionsUrl(targetIp);
   console.log(`[check-vps-health] Fetching positions at: ${url}`);
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(url, { method: 'GET', signal: controller.signal });
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(url, { method: 'GET' }, VPS_API_TIMEOUT_MS);
     const latencyMs = Date.now() - startTime;
 
     if (response.ok) {
@@ -487,15 +470,11 @@ async function handleTrades(
   startTime: number,
   provider: string | null
 ) {
-  const url = `http://${targetIp}/trades`;
+  const url = tradesUrl(targetIp);
   console.log(`[check-vps-health] Fetching trades at: ${url}`);
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(url, { method: 'GET', signal: controller.signal });
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(url, { method: 'GET' }, VPS_API_TIMEOUT_MS);
     const latencyMs = Date.now() - startTime;
 
     if (response.ok) {
@@ -528,15 +507,11 @@ async function handleBalances(
   startTime: number,
   provider: string | null
 ) {
-  const url = `http://${targetIp}/balances`;
+  const url = balancesUrl(targetIp);
   console.log(`[check-vps-health] Fetching balances at: ${url}`);
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(url, { method: 'GET', signal: controller.signal });
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(url, { method: 'GET' }, VPS_API_TIMEOUT_MS);
     const latencyMs = Date.now() - startTime;
 
     if (response.ok) {
@@ -570,15 +545,15 @@ async function handleBotControl(
   startTime: number,
   action: 'start' | 'stop'
 ) {
-  const url = `http://${targetIp}/bot/${action}`;
+  const url = controlUrl(targetIp);
   console.log(`[check-vps-health] Bot control (${action}) at: ${url}`);
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    const response = await fetch(url, { method: 'POST', signal: controller.signal });
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(url, { 
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action })
+    }, 15000);
     const latencyMs = Date.now() - startTime;
 
     if (response.ok) {

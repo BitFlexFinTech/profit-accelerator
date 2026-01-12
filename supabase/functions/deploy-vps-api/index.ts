@@ -1,5 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { 
+  healthUrl, 
+  signalCheckUrl, 
+  checkEndpoint,
+  VPS_API_TIMEOUT_MS,
+  type VpsEndpointResult 
+} from "../_shared/vpsControl.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,16 +15,8 @@ const corsHeaders = {
 
 interface VerificationResult {
   success: boolean;
-  healthCheck: {
-    ok: boolean;
-    version?: string;
-    error?: string;
-  };
-  signalCheck: {
-    ok: boolean;
-    hasEndpoint: boolean;
-    error?: string;
-  };
+  healthCheck: VpsEndpointResult;
+  signalCheck: VpsEndpointResult;
   vpsIp?: string;
   provider?: string;
   manualFixCommands?: string;
@@ -65,77 +64,54 @@ async function getVPSDetails(supabase: any): Promise<{ ip: string; provider: str
   return null;
 }
 
-const MANUAL_FIX_SCRIPT = `# SSH to your VPS and run these commands:
+const MANUAL_FIX_SCRIPT = `# ========================================
+# VPS Bot Control API - PERMANENT FIX
+# Option A: Nginx Reverse Proxy (Recommended)
+# ========================================
 
-cat > /opt/bot-control-api/index.js << 'ENDOFFILE'
-const http = require('http');
-const fs = require('fs');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
-const PORT = 3000;
-const VERSION = '2.0.0';
+# Step 1: Install Nginx
+sudo apt-get update && sudo apt-get install -y nginx
 
-function sendJSON(res, code, data) {
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' });
-  res.end(JSON.stringify(data));
-}
+# Step 2: Configure Nginx to proxy port 80 -> localhost:3000
+sudo tee /etc/nginx/sites-available/bot-api << 'NGINX_CONF'
+server {
+    listen 80;
+    server_name _;
 
-async function handleSignalCheck(req, res) {
-  const SIGNAL_FILE = '/opt/hft-bot/app/data/START_SIGNAL';
-  try {
-    const signalExists = fs.existsSync(SIGNAL_FILE);
-    let signalData = null, signalAge = null;
-    if (signalExists) {
-      try { signalData = JSON.parse(fs.readFileSync(SIGNAL_FILE, 'utf8')); signalAge = Math.floor((Date.now() - fs.statSync(SIGNAL_FILE).mtimeMs) / 1000); } catch (e) {}
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_cache_bypass $http_upgrade;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
     }
-    let dockerRunning = false;
-    try { const { stdout } = await execAsync('docker ps --filter name=hft --format "{{.Status}}" 2>/dev/null | head -1'); dockerRunning = stdout.trim().toLowerCase().includes('up'); } catch (e) {}
-    sendJSON(res, 200, { signalExists, signalData, signalAgeSeconds: signalAge, dockerRunning, timestamp: new Date().toISOString() });
-  } catch (err) { sendJSON(res, 500, { success: false, error: err.message }); }
 }
+NGINX_CONF
 
-async function handleControl(req, res) {
-  let body = '';
-  req.on('data', chunk => body += chunk);
-  req.on('end', async () => {
-    try {
-      const { action } = body ? JSON.parse(body) : {};
-      if (!['start', 'stop', 'restart'].includes(action)) return sendJSON(res, 400, { success: false, error: 'Invalid action' });
-      const SIGNAL_FILE = '/opt/hft-bot/app/data/START_SIGNAL';
-      const BOT_DIR = '/opt/hft-bot';
-      if (action === 'start' || action === 'restart') {
-        try { await execAsync('mkdir -p /opt/hft-bot/app/data'); } catch (e) {}
-        fs.writeFileSync(SIGNAL_FILE, JSON.stringify({ started_at: new Date().toISOString(), source: 'dashboard', action }));
-        try { if (action === 'restart') await execAsync('cd ' + BOT_DIR + ' && docker compose down 2>/dev/null || true'); await execAsync('cd ' + BOT_DIR + ' && docker compose up -d --remove-orphans'); } catch (e) {}
-        return sendJSON(res, 200, { success: true, action, signalCreated: fs.existsSync(SIGNAL_FILE), status: 'active', timestamp: new Date().toISOString() });
-      }
-      if (action === 'stop') {
-        try { if (fs.existsSync(SIGNAL_FILE)) fs.unlinkSync(SIGNAL_FILE); } catch (e) {}
-        try { await execAsync('cd ' + BOT_DIR + ' && docker compose down 2>/dev/null || true'); } catch (e) {}
-        return sendJSON(res, 200, { success: true, action: 'stop', signalCreated: false, status: 'stopped', timestamp: new Date().toISOString() });
-      }
-    } catch (err) { sendJSON(res, 500, { success: false, error: err.message }); }
-  });
-}
+# Step 3: Enable the site and disable default
+sudo ln -sf /etc/nginx/sites-available/bot-api /etc/nginx/sites-enabled/bot-api
+sudo rm -f /etc/nginx/sites-enabled/default
 
-const server = http.createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') { res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }); return res.end(); }
-  const url = new URL(req.url, 'http://' + req.headers.host);
-  console.log('[' + new Date().toISOString() + '] ' + req.method + ' ' + url.pathname);
-  if (url.pathname === '/health') return sendJSON(res, 200, { ok: true, version: VERSION, uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
-  if (url.pathname === '/signal-check') return handleSignalCheck(req, res);
-  if (url.pathname === '/status') { try { const { stdout } = await execAsync('docker ps --format "{{.Names}}: {{.Status}}"').catch(() => ({ stdout: '' })); sendJSON(res, 200, { success: true, version: VERSION, docker: { containers: stdout.trim().split('\\n').filter(Boolean) }, timestamp: new Date().toISOString() }); } catch (e) { sendJSON(res, 500, { error: e.message }); } return; }
-  if (url.pathname === '/control' && req.method === 'POST') return handleControl(req, res);
-  if (url.pathname === '/logs') { try { const { stdout } = await execAsync('journalctl -u hft-bot -n 50 --no-pager 2>/dev/null || echo "No logs"'); sendJSON(res, 200, { success: true, logs: stdout.trim().split('\\n') }); } catch (e) { sendJSON(res, 500, { error: e.message }); } return; }
-  sendJSON(res, 404, { error: 'Not found', endpoints: ['/health', '/signal-check', '/status', '/control', '/logs'], version: VERSION });
-});
+# Step 4: Test and reload Nginx
+sudo nginx -t && sudo systemctl reload nginx
 
-server.listen(PORT, '0.0.0.0', () => console.log('VPS Bot Control API v' + VERSION + ' on port ' + PORT));
-ENDOFFILE
+# Step 5: Ensure firewall allows port 80
+sudo ufw allow 80/tcp 2>/dev/null || true
 
-systemctl restart bot-control-api
-curl -sS http://localhost:3000/signal-check`;
+# Step 6: Verify the API is accessible on port 80
+curl -sS http://127.0.0.1/health && echo ""
+curl -sS http://127.0.0.1/signal-check && echo ""
+
+# ========================================
+# Done! The VPS API is now on port 80.
+# Re-click "Verify VPS API" in the dashboard.
+# ========================================`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -151,103 +127,49 @@ serve(async (req) => {
     const vpsDetails = await getVPSDetails(supabase);
     
     if (!vpsDetails) {
-      return new Response(JSON.stringify({
+      const emptyResult: VerificationResult = {
         success: false,
-        error: 'No active VPS found in database',
-        healthCheck: { ok: false, error: 'No VPS configured' },
-        signalCheck: { ok: false, hasEndpoint: false, error: 'No VPS configured' },
-      } as VerificationResult), {
+        healthCheck: { ok: false, url: '', timeoutMs: 0, error: 'No VPS configured' },
+        signalCheck: { ok: false, url: '', timeoutMs: 0, error: 'No VPS configured' },
+      };
+      return new Response(JSON.stringify(emptyResult), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
     }
 
     const { ip, provider } = vpsDetails;
+    
+    // Use shared helpers for URL construction
+    const healthEndpoint = healthUrl(ip);
+    const signalEndpoint = signalCheckUrl(ip);
+
+    console.log(`[deploy-vps-api] Verifying VPS at ${ip} (${provider})`);
+    console.log(`[deploy-vps-api] Health URL: ${healthEndpoint}`);
+    console.log(`[deploy-vps-api] Signal URL: ${signalEndpoint}`);
+
+    // Check both endpoints in parallel using shared helper
+    const [healthResult, signalResult] = await Promise.all([
+      checkEndpoint(healthEndpoint, VPS_API_TIMEOUT_MS),
+      checkEndpoint(signalEndpoint, VPS_API_TIMEOUT_MS),
+    ]);
+
+    // Validate signal check response has required field
+    if (signalResult.ok && signalResult.data) {
+      const data = signalResult.data as Record<string, unknown>;
+      if (!('signalExists' in data)) {
+        signalResult.ok = false;
+        signalResult.error = 'Endpoint returns invalid response (missing signalExists)';
+      }
+    }
+
     const result: VerificationResult = {
-      success: false,
+      success: healthResult.ok && signalResult.ok,
       vpsIp: ip,
       provider,
-      healthCheck: { ok: false },
-      signalCheck: { ok: false, hasEndpoint: false },
+      healthCheck: healthResult,
+      signalCheck: signalResult,
     };
-
-    // Check /health endpoint via HTTP
-    try {
-      const healthController = new AbortController();
-      const healthTimeout = setTimeout(() => healthController.abort(), 10000);
-      
-      const healthResponse = await fetch(`http://${ip}:3000/health`, {
-        signal: healthController.signal,
-      });
-      clearTimeout(healthTimeout);
-      
-      if (healthResponse.ok) {
-        const healthData = await healthResponse.json();
-        result.healthCheck = {
-          ok: true,
-          version: healthData.version || 'unknown',
-        };
-      } else {
-        result.healthCheck = {
-          ok: false,
-          error: `HTTP ${healthResponse.status}`,
-        };
-      }
-    } catch (error) {
-      result.healthCheck = {
-        ok: false,
-        error: error instanceof Error ? error.message : 'Connection failed',
-      };
-    }
-
-    // Check /signal-check endpoint via HTTP
-    try {
-      const signalController = new AbortController();
-      const signalTimeout = setTimeout(() => signalController.abort(), 10000);
-      
-      const signalResponse = await fetch(`http://${ip}:3000/signal-check`, {
-        signal: signalController.signal,
-      });
-      clearTimeout(signalTimeout);
-      
-      if (signalResponse.ok) {
-        const signalData = await signalResponse.json();
-        // Check if it's a proper response (has signalExists field) vs 404-like response
-        if ('signalExists' in signalData) {
-          result.signalCheck = {
-            ok: true,
-            hasEndpoint: true,
-          };
-        } else {
-          result.signalCheck = {
-            ok: false,
-            hasEndpoint: false,
-            error: 'Endpoint exists but returns invalid response',
-          };
-        }
-      } else if (signalResponse.status === 404) {
-        result.signalCheck = {
-          ok: false,
-          hasEndpoint: false,
-          error: 'Endpoint not found (404) - API needs update',
-        };
-      } else {
-        result.signalCheck = {
-          ok: false,
-          hasEndpoint: false,
-          error: `HTTP ${signalResponse.status}`,
-        };
-      }
-    } catch (error) {
-      result.signalCheck = {
-        ok: false,
-        hasEndpoint: false,
-        error: error instanceof Error ? error.message : 'Connection failed',
-      };
-    }
-
-    // Determine overall success
-    result.success = result.healthCheck.ok && result.signalCheck.ok;
 
     // If not successful, include manual fix commands
     if (!result.success) {
@@ -264,8 +186,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      healthCheck: { ok: false, error: 'Verification failed' },
-      signalCheck: { ok: false, hasEndpoint: false, error: 'Verification failed' },
+      healthCheck: { ok: false, url: '', timeoutMs: 0, error: 'Verification failed' },
+      signalCheck: { ok: false, url: '', timeoutMs: 0, error: 'Verification failed' },
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

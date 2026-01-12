@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { healthUrl, fetchWithTimeout, VPS_API_TIMEOUT_MS } from "../_shared/vpsControl.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,14 +37,13 @@ serve(async (req) => {
       });
     }
 
-    console.log(`[push-strategy-fix] Checking VPS at ${vps.ip_address}...`);
+    const vpsHealthUrl = healthUrl(vps.ip_address);
+    console.log(`[push-strategy-fix] Checking VPS at ${vpsHealthUrl}...`);
 
-    // First, check VPS health
+    // First, check VPS health using shared helper
     let healthStatus;
     try {
-      const healthResponse = await fetch(`http://${vps.ip_address}:8080/health`, {
-        signal: AbortSignal.timeout(10000)
-      });
+      const healthResponse = await fetchWithTimeout(vpsHealthUrl, {}, VPS_API_TIMEOUT_MS);
       healthStatus = await healthResponse.json();
       console.log(`[push-strategy-fix] VPS health: v${healthStatus.version}, uptime: ${healthStatus.uptime}s`);
     } catch (err) {
@@ -52,6 +52,7 @@ serve(async (req) => {
         success: false, 
         error: 'VPS health check failed - bot may not be running',
         vps_ip: vps.ip_address,
+        attempted_url: vpsHealthUrl,
         solution: 'SSH into the VPS and run: curl -fsSL https://iibdlazwkossyelyroap.supabase.co/functions/v1/install-hft-bot | sudo bash'
       }), {
         status: 503,
