@@ -3,26 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Provider, VPSInstance } from '@/types/cloudCredentials';
 import { toast } from 'sonner';
 
-interface VPSInstanceRow {
-  id: string;
-  deployment_id: string | null;
-  provider: string;
-  provider_instance_id: string | null;
-  nickname: string | null;
-  ip_address: string | null;
-  region: string | null;
-  instance_size: string | null;
-  status: string | null;
-  bot_status: string | null;
-  bot_pid: number | null;
-  config: Record<string, unknown> | null;
-  monthly_cost: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-  last_health_check: string | null;
-  uptime_seconds: number | null;
-  ssh_private_key: string | null;
-}
+import type { Database } from '@/integrations/supabase/types';
+
+type VPSInstanceRow = Database['public']['Tables']['vps_instances']['Row'];
 
 export interface ProviderStats {
   instanceCount: number;
@@ -47,7 +30,7 @@ export function useVPSInstances() {
     status: (row.status as VPSInstance['status']) || 'creating',
     botStatus: (row.bot_status as VPSInstance['botStatus']) || 'pending',
     botPid: row.bot_pid || undefined,
-    config: row.config as unknown as VPSInstance['config'],
+    config: (row.config || {}) as unknown as VPSInstance['config'],
     monthlyCost: row.monthly_cost || 0,
     createdAt: row.created_at ? new Date(row.created_at) : new Date(),
     updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),

@@ -303,8 +303,8 @@ export class OrderManager {
 
     if (existing) {
       // Update existing position
-      const currentSize = parseFloat(existing.size) || 0;
-      const currentEntryPrice = parseFloat(existing.entry_price) || 0;
+      const currentSize = existing.size || 0;
+      const currentEntryPrice = existing.entry_price || 0;
       const newSize = currentSize + filledAmount;
       const newEntryPrice = (currentEntryPrice * currentSize + fillPrice * filledAmount) / newSize;
 
@@ -354,13 +354,13 @@ export class OrderManager {
       symbol: position.symbol,
       side: closeSide,
       type: 'market',
-      amount: parseFloat(position.size)
+      amount: position.size
     });
 
     // Calculate realized PnL
-    const entryPrice = parseFloat(position.entry_price);
-    const currentPrice = parseFloat(position.current_price) || entryPrice;
-    const size = parseFloat(position.size);
+    const entryPrice = position.entry_price;
+    const currentPrice = position.current_price || entryPrice;
+    const size = position.size;
     const pnl = position.side === 'long' 
       ? (currentPrice - entryPrice) * size
       : (entryPrice - currentPrice) * size;
