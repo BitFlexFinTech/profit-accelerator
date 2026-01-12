@@ -161,15 +161,32 @@ export function BotControlPanel() {
       // SUCCESS: VPS confirmed bot started
       console.log('[BotControl] Bot start result:', data);
       
+      // Build detailed toast with verification info
+      const method = data.method || 'ssh';
+      const ip = data.ipAddress || 'VPS';
+      const signalOk = data.signalVerified ? '✓' : '?';
+      const healthOk = data.healthVerified ? '✓' : '⏳';
+      
       if (data.healthVerified) {
         setBotStatus('running');
-        toast.success(`Bot started and verified on ${data.ipAddress}`);
-      } else {
-        // Bot container started but health not verified yet
+        toast.success(`Bot started on ${ip}`, {
+          description: `Method: ${method.toUpperCase()} | Signal: ${signalOk} | Health: ${healthOk}`,
+        });
+      } else if (data.signalVerified) {
+        // Signal created but health not yet confirmed
         setBotStatus('running');
-        toast.success(`Bot started on ${data.ipAddress} (health check pending)`);
-        
+        toast.success(`Bot starting on ${ip}`, {
+          description: `Method: ${method.toUpperCase()} | Signal: ${signalOk} | Health: pending...`,
+        });
         // Trigger health refresh after a delay
+        setTimeout(() => refreshHealth(), 3000);
+        setTimeout(() => refreshHealth(), 8000);
+      } else {
+        // Partial success
+        setBotStatus('starting');
+        toast.info(`Bot command sent to ${ip}`, {
+          description: `Method: ${method.toUpperCase()} | Verification pending...`,
+        });
         setTimeout(() => refreshHealth(), 5000);
       }
 
