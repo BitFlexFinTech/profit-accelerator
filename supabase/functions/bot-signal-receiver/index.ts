@@ -105,7 +105,8 @@ serve(async (req) => {
     }
 
     // Also create an ai_market_updates entry for dashboard visibility
-    const recommendedSide = signal.side === 'long' ? 'buy' : 'sell';
+    // Use 'long'/'short' consistently (not 'buy'/'sell') for SPOT mode filtering
+    const recommendedSide = signal.side; // Keep as 'long' or 'short'
     const { error: updateError } = await supabase
       .from('ai_market_updates')
       .insert({

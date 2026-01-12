@@ -192,3 +192,9 @@ verify_jwt = false
 
 [functions.vps-debug]
 verify_jwt = false
+
+[functions.start-live-now]
+verify_jwt = false
+
+[functions.trade-preflight]
+verify_jwt = false

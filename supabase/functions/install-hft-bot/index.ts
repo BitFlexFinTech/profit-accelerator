@@ -1581,10 +1581,10 @@ async function getStatisticalFallbackSignal() {
 
 // ============== AI SIGNAL FUNCTIONS ==============
 
-// Fetch high-confidence AI signals from Supabase
+// Fetch high-confidence AI signals from Supabase (5-minute window for HFT)
 async function fetchAIRecommendations() {
   return new Promise((resolve) => {
-    const cutoffTime = new Date(Date.now() - 60 * 1000).toISOString();
+    const cutoffTime = new Date(Date.now() - 300 * 1000).toISOString(); // 5 minutes = 300 seconds
     const url = CONFIG.SUPABASE_URL + '/rest/v1/ai_market_updates?' +
       'select=id,symbol,exchange_name,sentiment,confidence,current_price,' +
       'profit_timeframe_minutes,recommended_side,expected_move_percent&' +
