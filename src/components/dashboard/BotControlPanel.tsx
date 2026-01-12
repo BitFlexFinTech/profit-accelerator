@@ -71,13 +71,15 @@ export function BotControlPanel() {
       setIsLoading(false);
     };
 
-    // Also check for recent signals
+    // Also check for recent LONG signals from ai_market_updates (what bot actually uses)
     const checkSignals = async () => {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const { count } = await supabase
-        .from('bot_signals')
+        .from('ai_market_updates')
         .select('*', { count: 'exact', head: true })
-        .gte('created_at', fiveMinutesAgo);
+        .gte('created_at', fiveMinutesAgo)
+        .gte('confidence', 70)
+        .in('recommended_side', ['long', 'buy']); // SPOT mode: LONG only
       setRecentSignalCount(count || 0);
     };
 
@@ -126,100 +128,77 @@ export function BotControlPanel() {
   const handleStartBot = async () => {
     setIsStarting(true);
     try {
-      // CRITICAL: Disable kill switch FIRST before starting bot
-      console.log('[BotControl] Disabling kill switch...');
-      await supabase.from('trading_config')
-        .update({ 
-          global_kill_switch_enabled: false,
-          updated_at: new Date().toISOString()
-        })
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      // Get deployment from hft_deployments
-      const { data: deployment } = await supabase
-        .from('hft_deployments')
-        .select('id, server_id, ip_address, provider')
-        .in('status', ['active', 'running'])
-        .limit(1)
-        .single();
-
-      // Also check vps_instances as backup
-      const { data: vpsInstance } = await supabase
-        .from('vps_instances')
-        .select('id, deployment_id, ip_address, provider')
-        .eq('status', 'running')
-        .limit(1)
-        .single();
-
-      const deploymentId = deployment?.id || deployment?.server_id || vpsInstance?.deployment_id || vpsInstance?.id;
-      const provider = deployment?.provider || vpsInstance?.provider;
-
-      if (!deploymentId) {
-        toast.error('No VPS deployment found. Please deploy a VPS first.');
-        setIsStarting(false);
-        return;
-      }
-
-      // Set status to 'starting' immediately for UI feedback
+      console.log('[BotControl] Calling start-live-now for immediate trade...');
       setBotStatus('starting');
 
-      // Call bot-control edge function
-      const { data, error: vpsError } = await supabase.functions.invoke('bot-control', {
-        body: { action: 'start', deploymentId }
-      });
+      // Call the new start-live-now orchestrator for immediate trading
+      const { data, error: startError } = await supabase.functions.invoke('start-live-now', {});
 
-      if (vpsError) {
-        console.error('[BotControl] VPS signal error:', vpsError);
-        toast.error('Failed to start VPS bot: ' + vpsError.message);
+      if (startError) {
+        console.error('[BotControl] start-live-now error:', startError);
+        toast.error('Failed to start: ' + startError.message);
         setBotStatus('error');
         return;
       }
 
-      if (!data?.success) {
-        console.error('[BotControl] Bot start failed:', data?.error);
-        toast.error('Bot start failed: ' + (data?.error || 'Unknown error'));
-        setBotStatus('error');
+      console.log('[BotControl] start-live-now result:', data);
+
+      // Handle blocking reason
+      if (!data?.success && data?.blockingReason) {
+        toast.error('Cannot start trading', {
+          description: data.blockingReason,
+          duration: 8000,
+        });
+        setBotStatus('stopped');
         return;
       }
 
-      // SUCCESS: VPS confirmed bot started
-      console.log('[BotControl] Bot start result:', data);
-      
-      // Build detailed toast with verification info
-      const method = data.method || 'ssh';
-      const ip = data.ipAddress || 'VPS';
-      const signalOk = data.signalVerified ? '✓' : '?';
-      const healthOk = data.healthVerified ? '✓' : '⏳';
-      
-      if (data.healthVerified) {
+      // Handle order results
+      if (data?.orderAttempted && data?.orders?.length > 0) {
+        const successOrders = data.orders.filter((o: any) => o.status === 'filled');
+        const failedOrders = data.orders.filter((o: any) => o.status === 'failed');
+
+        if (successOrders.length > 0) {
+          setBotStatus('running');
+          const orderSummary = successOrders.map((o: any) => 
+            `${o.exchange.toUpperCase()}: ${o.symbol} ${o.side} ${o.quantity.toFixed(6)} @ $${o.price.toFixed(2)}`
+          ).join('\n');
+          
+          toast.success(`✅ Trade executed on ${successOrders.length} exchange(s)`, {
+            description: orderSummary,
+            duration: 10000,
+          });
+        }
+
+        if (failedOrders.length > 0 && successOrders.length === 0) {
+          setBotStatus('error');
+          const errorSummary = failedOrders.map((o: any) => 
+            `${o.exchange}: ${o.error}`
+          ).join('\n');
+          
+          toast.error('All orders failed', {
+            description: errorSummary,
+            duration: 8000,
+          });
+        } else if (failedOrders.length > 0) {
+          // Some succeeded, some failed
+          toast.warning(`${failedOrders.length} order(s) failed`, {
+            description: failedOrders.map((o: any) => `${o.exchange}: ${o.error}`).join(', '),
+          });
+        }
+      } else if (data?.botStarted) {
+        // Bot started but no order was placed (shouldn't happen with new flow)
         setBotStatus('running');
-        toast.success(`Bot started on ${ip}`, {
-          description: `Method: ${method.toUpperCase()} | Signal: ${signalOk} | Health: ${healthOk}`,
-        });
-      } else if (data.signalVerified) {
-        // Signal created but health not yet confirmed
-        setBotStatus('running');
-        toast.success(`Bot starting on ${ip}`, {
-          description: `Method: ${method.toUpperCase()} | Signal: ${signalOk} | Health: pending...`,
-        });
-        // Trigger health refresh after a delay
-        setTimeout(() => refreshHealth(), 3000);
-        setTimeout(() => refreshHealth(), 8000);
-      } else {
-        // Partial success
-        setBotStatus('starting');
-        toast.info(`Bot command sent to ${ip}`, {
-          description: `Method: ${method.toUpperCase()} | Verification pending...`,
-        });
-        setTimeout(() => refreshHealth(), 5000);
+        toast.info('Bot started, waiting for trade execution...');
       }
 
-      // Update vps_config if we have a provider
-      if (provider) {
-        await supabase.from('vps_config')
-          .update({ status: 'running' })
-          .eq('provider', provider);
+      // Show signal used
+      if (data?.signalUsed) {
+        console.log('[BotControl] Signal used:', data.signalUsed);
       }
+
+      // Refresh health after start
+      setTimeout(() => refreshHealth(), 3000);
 
     } catch (error) {
       console.error('[BotControl] Start error:', error);

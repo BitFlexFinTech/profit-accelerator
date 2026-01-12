@@ -190,14 +190,14 @@ serve(async (req) => {
 
     // ========== CHECK 3: AI SIGNALS (from ai_market_updates - what the bot ACTUALLY reads) ==========
     console.log('[trade-preflight] Check 3: AI signals...');
-    const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5-minute window
     
     const { data: aiSignals } = await supabase
       .from('ai_market_updates')
       .select('id, symbol, exchange_name, confidence, recommended_side, profit_timeframe_minutes, created_at')
       .gte('confidence', 70)
-      .gte('created_at', sixtySecondsAgo)
-      .in('profit_timeframe_minutes', [1, 3, 5])
+      .gte('created_at', fiveMinutesAgo)
+      .in('recommended_side', ['long', 'buy']) // SPOT mode: LONG only
       .order('confidence', { ascending: false })
       .limit(10);
 
