@@ -1,281 +1,228 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-/**
- * Bot Lifecycle Edge Function
- * 
- * Pure bot lifecycle management - start/stop/restart/status
- * Does NOT attempt any trades - that's separate functionality
- * 
- * Actions:
- * - start: Start bot container, create START_SIGNAL, update DB
- * - stop: Stop bot container, remove START_SIGNAL, update DB
- * - restart: Restart bot container
- * - status: Get current bot status from VPS and DB
- */
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders });
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  const result = {
-    success: false,
-    action: '',
-    botStatus: 'unknown' as 'running' | 'stopped' | 'starting' | 'error' | 'unknown',
-    vpsReachable: false,
-    vpsIp: null as string | null,
-    message: '',
-    timestamp: new Date().toISOString()
-  };
-
   try {
-    const body = await req.json();
-    const action = body.action || 'status';
-    result.action = action;
-    
-    console.log(`[bot-lifecycle] Action: ${action}`);
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Step 1: Get VPS deployment
-    const { data: deployment } = await supabase
-      .from('hft_deployments')
-      .select('id, ip_address, bot_status, provider, server_id')
-      .in('status', ['active', 'running'])
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .single();
+    const { action, deploymentId: providedDeploymentId } = await req.json();
 
-    if (!deployment?.ip_address) {
-      result.message = 'No active VPS deployment found';
-      console.log('[bot-lifecycle] No VPS found');
-      return new Response(JSON.stringify(result), { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+    if (!action) {
+      return new Response(
+        JSON.stringify({ error: 'Missing action' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    result.vpsIp = deployment.ip_address;
-    console.log(`[bot-lifecycle] VPS: ${deployment.ip_address}`);
+    // Support both deploymentId provided OR auto-discovery
+    let deployment;
+    if (providedDeploymentId) {
+      const { data, error: deployError } = await supabase
+        .from('hft_deployments')
+        .select('*')
+        .eq('id', providedDeploymentId)
+        .single();
 
-    // Step 2: Check VPS reachability
+      if (deployError || !data) {
+        return new Response(
+          JSON.stringify({ error: 'Deployment not found', details: deployError }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      deployment = data;
+    } else {
+      // Auto-discovery: find latest active/running deployment
+      const { data: deployments, error: deployError } = await supabase
+        .from('hft_deployments')
+        .select('*')
+        .in('status', ['active', 'running'])
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (deployError || !deployments || deployments.length === 0) {
+        return new Response(
+          JSON.stringify({ error: 'No active deployment found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      deployment = deployments[0];
+    }
+
+    if (!deployment.ip_address) {
+      return new Response(
+        JSON.stringify({ error: 'Deployment has no IP address' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const headers = { ...corsHeaders, 'Content-Type': 'application/json' };
+    const result: any = {
+      success: false,
+      message: '',
+      botStatus: deployment.status || 'unknown',
+      deploymentId: deployment.id
+    };
+
+    // Build environment object with credentials
+    let envObj: Record<string, string> = {
+      'STRATEGY_ENABLED': 'true',
+      'TRADE_MODE': 'LIVE',
+      'SUPABASE_URL': supabaseUrl,
+      'SUPABASE_SERVICE_ROLE_KEY': supabaseKey
+    };
+
+    // Fetch exchange credentials
+    const { data: exchanges, error: exchangeError } = await supabase
+      .from('exchange_connections')
+      .select('exchange_name, api_key, api_secret, api_passphrase')
+      .eq('is_connected', true);
+
+    if (exchangeError) {
+      console.error('[bot-lifecycle] Error fetching exchanges:', exchangeError);
+    } else if (exchanges && exchanges.length > 0) {
+      for (const ex of exchanges) {
+        const name = ex.exchange_name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+        if (ex.api_key) envObj[`${name}_API_KEY`] = ex.api_key;
+        if (ex.api_secret) envObj[`${name}_API_SECRET`] = ex.api_secret;
+        if (ex.api_passphrase) envObj[`${name}_PASSPHRASE`] = ex.api_passphrase;
+      }
+      console.log(`[bot-lifecycle] Prepared credentials for ${exchanges.length} exchange(s)`);
+    } else {
+      console.warn('[bot-lifecycle] No connected exchanges found');
+    }
+
+    // Handle restart action
+    if (action === 'restart') {
+      const stopResp = await fetch(`http://${deployment.ip_address}/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'stop', 
+          createSignal: false,
+          env: envObj
+        }),
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!stopResp.ok) {
+        result.message = 'Failed to stop bot during restart';
+        result.botStatus = 'error';
+        return new Response(JSON.stringify(result), { headers });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // Call VPS /control endpoint
     try {
-      const healthResp = await fetch(`http://${deployment.ip_address}/health`, {
-        signal: AbortSignal.timeout(5000)
+      const controlResp = await fetch(`http://${deployment.ip_address}/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: action === 'restart' ? 'start' : action, 
+          createSignal: action === 'start' || action === 'restart',
+          env: envObj
+        }),
+        signal: AbortSignal.timeout(10000)
       });
-      result.vpsReachable = healthResp.ok;
-    } catch {
-      result.vpsReachable = false;
-    }
 
-    if (!result.vpsReachable) {
-      result.message = 'VPS is not reachable';
-      result.botStatus = 'error';
-      console.log('[bot-lifecycle] VPS unreachable');
-      return new Response(JSON.stringify(result), { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
-    }
-
-    const now = new Date().toISOString();
-
-    // Handle actions
-    switch (action) {
-      case 'start': {
-        console.log('[bot-lifecycle] Starting bot...');
-        
-        // Try HTTP /control endpoint first
-        try {
-          const controlResp = await fetch(`http://${deployment.ip_address}/control`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'start', createSignal: true }),
-            signal: AbortSignal.timeout(10000)
-          });
-
-          if (controlResp.ok) {
-            const controlData = await controlResp.json();
-            console.log('[bot-lifecycle] VPS /control response:', controlData);
-
-            if (controlData.success || controlData.signalCreated) {
-              // Update database
-              await supabase.from('hft_deployments')
-                .update({ bot_status: 'running', updated_at: now })
-                .eq('id', deployment.id);
-
-              await supabase.from('trading_config')
-                .update({ bot_status: 'running', trading_enabled: true, updated_at: now })
-                .neq('id', '00000000-0000-0000-0000-000000000000');
-
-              result.success = true;
-              result.botStatus = 'running';
-              result.message = 'Bot started successfully';
-              
-              console.log('[bot-lifecycle] ✅ Bot started via HTTP');
-            } else {
-              result.message = controlData.error || 'VPS did not confirm start';
-              result.botStatus = 'error';
-            }
-          }
-        } catch (httpErr) {
-          console.log('[bot-lifecycle] HTTP control failed, will use bot-control fallback');
-          
-          // Fallback to bot-control function (which uses SSH)
-          const { data: sshResult, error: sshErr } = await supabase.functions.invoke('bot-control', {
-            body: { action: 'start', deploymentId: deployment.id }
-          });
-
-          if (sshErr || !sshResult?.success) {
-            result.message = sshErr?.message || sshResult?.error || 'Failed to start bot';
-            result.botStatus = 'error';
-          } else {
-            result.success = true;
-            result.botStatus = 'running';
-            result.message = 'Bot started successfully (via SSH)';
-          }
-        }
-        break;
+      if (!controlResp.ok) {
+        const errorText = await controlResp.text();
+        result.message = `VPS /control failed: ${controlResp.status} - ${errorText}`;
+        result.botStatus = 'error';
+        return new Response(JSON.stringify(result), { headers });
       }
 
-      case 'stop': {
-        console.log('[bot-lifecycle] Stopping bot...');
-        
+      const controlData = await controlResp.json();
+      console.log('[bot-lifecycle] VPS /control response:', controlData);
+
+      // Verify signal file was created (for start/restart actions)
+      if (action === 'start' || action === 'restart') {
         try {
-          const controlResp = await fetch(`http://${deployment.ip_address}/control`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'stop' }),
-            signal: AbortSignal.timeout(10000)
-          });
-
-          if (controlResp.ok) {
-            // Update database
-            await supabase.from('hft_deployments')
-              .update({ bot_status: 'stopped', updated_at: now })
-              .eq('id', deployment.id);
-
-            await supabase.from('trading_config')
-              .update({ bot_status: 'stopped', trading_enabled: false, updated_at: now })
-              .neq('id', '00000000-0000-0000-0000-000000000000');
-
-            result.success = true;
-            result.botStatus = 'stopped';
-            result.message = 'Bot stopped successfully';
-            
-            console.log('[bot-lifecycle] ✅ Bot stopped via HTTP');
-          }
-        } catch {
-          // Fallback to bot-control
-          const { data: sshResult, error: sshErr } = await supabase.functions.invoke('bot-control', {
-            body: { action: 'stop', deploymentId: deployment.id }
-          });
-
-          if (sshErr || !sshResult?.success) {
-            result.message = sshErr?.message || sshResult?.error || 'Failed to stop bot';
-            result.botStatus = 'error';
-          } else {
-            result.success = true;
-            result.botStatus = 'stopped';
-            result.message = 'Bot stopped successfully (via SSH)';
-          }
-        }
-        break;
-      }
-
-      case 'restart': {
-        console.log('[bot-lifecycle] Restarting bot...');
-        
-        try {
-          const controlResp = await fetch(`http://${deployment.ip_address}/control`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'restart', createSignal: true }),
-            signal: AbortSignal.timeout(15000)
-          });
-
-          if (controlResp.ok) {
-            await supabase.from('hft_deployments')
-              .update({ bot_status: 'running', updated_at: now })
-              .eq('id', deployment.id);
-
-            await supabase.from('trading_config')
-              .update({ bot_status: 'running', trading_enabled: true, updated_at: now })
-              .neq('id', '00000000-0000-0000-0000-000000000000');
-
-            result.success = true;
-            result.botStatus = 'running';
-            result.message = 'Bot restarted successfully';
-          }
-        } catch {
-          const { data: sshResult, error: sshErr } = await supabase.functions.invoke('bot-control', {
-            body: { action: 'restart', deploymentId: deployment.id }
-          });
-
-          if (sshErr || !sshResult?.success) {
-            result.message = sshErr?.message || sshResult?.error || 'Failed to restart bot';
-            result.botStatus = 'error';
-          } else {
-            result.success = true;
-            result.botStatus = 'running';
-            result.message = 'Bot restarted successfully (via SSH)';
-          }
-        }
-        break;
-      }
-
-      case 'status':
-      default: {
-        // Get status from VPS
-        try {
-          const statusResp = await fetch(`http://${deployment.ip_address}/status`, {
+          const signalCheckResp = await fetch(`http://${deployment.ip_address}/signal-check`, {
             signal: AbortSignal.timeout(5000)
           });
 
-          if (statusResp.ok) {
-            const statusData = await statusResp.json();
-            result.botStatus = statusData.botActive ? 'running' : 'stopped';
-            result.success = true;
-            result.message = statusData.botActive ? 'Bot is running' : 'Bot is stopped';
-          } else {
-            // Fallback to signal-check
-            const signalResp = await fetch(`http://${deployment.ip_address}/signal-check`, {
-              signal: AbortSignal.timeout(5000)
-            });
-            
-            if (signalResp.ok) {
-              const signalData = await signalResp.json();
-              result.botStatus = signalData.signalExists ? 'running' : 'stopped';
-              result.success = true;
-            } else {
-              result.botStatus = deployment.bot_status || 'unknown';
-              result.success = true;
+          if (signalCheckResp.ok) {
+            const signalData = await signalCheckResp.json();
+            if (!signalData.signalExists) {
+              result.message = 'VPS failed to create START_SIGNAL file';
+              result.botStatus = 'error';
+              return new Response(JSON.stringify(result), { headers });
             }
+            console.log('[bot-lifecycle] Signal file verified:', signalData);
+          } else {
+            console.warn('[bot-lifecycle] Signal check endpoint not available, skipping verification');
           }
-        } catch {
-          result.botStatus = deployment.bot_status || 'unknown';
-          result.message = 'Could not get live status, using cached';
-          result.success = true;
+        } catch (signalError) {
+          console.warn('[bot-lifecycle] Signal verification failed (non-critical):', signalError);
         }
-        break;
       }
+
+      // Update database status
+      const newStatus = action === 'start' || action === 'restart' ? 'running' : action === 'stop' ? 'stopped' : deployment.status;
+      const now = new Date().toISOString();
+      
+      // Update hft_deployments with correct column name
+      const { error: updateError } = await supabase
+        .from('hft_deployments')
+        .update({ 
+          status: newStatus,
+          updated_at: now
+        })
+        .eq('id', deployment.id);
+
+      if (updateError) {
+        console.error('[bot-lifecycle] Database update error:', updateError);
+      }
+
+      // Also update trading_config for dashboard state
+      const { error: configError } = await supabase
+        .from('trading_config')
+        .update({ 
+          bot_status: newStatus,
+          trading_enabled: action === 'start' || action === 'restart',
+          updated_at: now
+        })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (configError) {
+        console.error('[bot-lifecycle] Trading config update error:', configError);
+      }
+
+      result.success = controlData.success || controlData.signalCreated || false;
+      result.message = controlData.message || `Bot ${action} command sent successfully`;
+      result.botStatus = newStatus;
+      result.vpsResponse = controlData;
+
+    } catch (fetchError: any) {
+      console.error('[bot-lifecycle] VPS fetch error:', fetchError);
+      result.message = `Failed to communicate with VPS: ${fetchError.message}`;
+      result.botStatus = 'error';
+      return new Response(JSON.stringify(result), { headers });
     }
 
-    console.log(`[bot-lifecycle] Result: ${result.success ? '✅' : '❌'} ${result.botStatus} - ${result.message}`);
-    return new Response(JSON.stringify(result), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    });
+    return new Response(JSON.stringify(result), { headers });
 
-  } catch (error) {
-    result.message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[bot-lifecycle] Error:', result.message);
-    return new Response(JSON.stringify(result), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    });
+  } catch (error: any) {
+    console.error('[bot-lifecycle] Error:', error);
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
   }
 });
