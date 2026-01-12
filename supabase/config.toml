@@ -201,3 +201,6 @@ verify_jwt = false
 
 [functions.push-bot-api-update]
 verify_jwt = false
+
+[functions.serve-bot-api-code]
+verify_jwt = false
