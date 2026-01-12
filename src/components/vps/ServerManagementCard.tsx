@@ -46,6 +46,7 @@ import { useVPSMetrics } from '@/hooks/useVPSMetrics';
 import { cn } from '@/lib/utils';
 import { ActionButton } from '@/components/ui/ActionButton';
 import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
+import { UpdateVPSApiButton } from './UpdateVPSApiButton';
 
 interface ServerManagementCardProps {
   instance: VPSInstance;
@@ -257,6 +258,12 @@ export function ServerManagementCard({ instance, onViewLogs, onSSH }: ServerMana
               <DropdownMenuItem onClick={handleRebootServer} disabled={isRebooting}>
                 <Power className={cn("h-4 w-4 mr-2", isRebooting && "animate-spin")} />
                 Reboot Server
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <div className="p-0">
+                  <UpdateVPSApiButton ip={instance.ipAddress} className="w-full justify-start border-0 h-8" />
+                </div>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem 
