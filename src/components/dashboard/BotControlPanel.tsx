@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { StatusDot } from '@/components/ui/StatusDot';
-import { Play, Square, AlertTriangle, Loader2, RefreshCw, Zap, CheckCircle2, XCircle, AlertCircle, Upload } from 'lucide-react';
+import { Play, Square, AlertTriangle, Loader2, RefreshCw, Zap, CheckCircle2, XCircle, AlertCircle, Upload, Send } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -10,16 +10,7 @@ import { ActionButton } from '@/components/ui/ActionButton';
 import { BUTTON_TOOLTIPS } from '@/config/buttonTooltips';
 import { useVPSHealthPolling } from '@/hooks/useVPSHealthPolling';
 import { DeployVPSApiButton } from '@/components/vps/DeployVPSApiButton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { BotPreflightDialog } from '@/components/dashboard/BotPreflightDialog';
 import {
   Tooltip,
   TooltipContent,
@@ -27,7 +18,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-type BotStatus = 'idle' | 'running' | 'stopped' | 'error' | 'starting' | 'standby';
+type BotStatus = 'idle' | 'running' | 'stopped' | 'error' | 'starting' | 'standby' | 'waiting_signals';
 
 interface TradingConfig {
   bot_status: BotStatus;
@@ -40,7 +31,8 @@ export function BotControlPanel() {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [showLiveConfirm, setShowLiveConfirm] = useState(false);
+  const [showPreflightDialog, setShowPreflightDialog] = useState(false);
+  const [recentSignalCount, setRecentSignalCount] = useState(0);
   
   const { sync } = useExchangeWebSocket();
   const getTotalEquity = useAppStore(state => state.getTotalEquity);
@@ -73,14 +65,26 @@ export function BotControlPanel() {
 
       if (!error && data) {
         const config = data as TradingConfig;
-        setBotStatus((config.bot_status as BotStatus) || 'idle');
+        const dbStatus = (config.bot_status as BotStatus) || 'idle';
+        setBotStatus(dbStatus);
       }
       setIsLoading(false);
     };
 
-    fetchStatus();
+    // Also check for recent signals
+    const checkSignals = async () => {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { count } = await supabase
+        .from('bot_signals')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', fiveMinutesAgo);
+      setRecentSignalCount(count || 0);
+    };
 
-    const channel = supabase
+    fetchStatus();
+    checkSignals();
+
+    const statusChannel = supabase
       .channel('bot-control-changes')
       .on('postgres_changes', {
         event: '*',
@@ -94,10 +98,30 @@ export function BotControlPanel() {
       })
       .subscribe();
 
+    // Also listen for new signals
+    const signalChannel = supabase
+      .channel('signal-updates')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'bot_signals'
+      }, () => {
+        checkSignals();
+        // If bot is waiting for signals and a signal arrives, notify user
+        if (botStatus === 'running' || botStatus === 'waiting_signals') {
+          toast.info('New trade signal received! Bot is processing...');
+        }
+      })
+      .subscribe();
+
+    const signalInterval = setInterval(checkSignals, 30000);
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(statusChannel);
+      supabase.removeChannel(signalChannel);
+      clearInterval(signalInterval);
     };
-  }, []);
+  }, [botStatus]);
 
   const handleStartBot = async () => {
     setIsStarting(true);
@@ -207,7 +231,46 @@ export function BotControlPanel() {
   };
 
   const handleStartClick = () => {
-    setShowLiveConfirm(true);
+    // Show preflight dialog instead of simple confirm
+    setShowPreflightDialog(true);
+  };
+
+  // Send test signal handler
+  const [isSendingTestSignal, setIsSendingTestSignal] = useState(false);
+  const handleSendTestSignal = async () => {
+    setIsSendingTestSignal(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('bot-signal-receiver', {
+        body: {
+          bot_name: 'test',
+          symbol: 'BTCUSDT',
+          side: 'long',
+          confidence: 85,
+          exchange_name: 'binance',
+          timeframe_minutes: 5,
+          current_price: 0
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success('Test signal sent!', {
+        description: `Signal ID: ${data?.signal_id?.slice(0, 8)}... - Bot should process within 30s`
+      });
+      
+      // Refresh signal count
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { count } = await supabase
+        .from('bot_signals')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', fiveMinutesAgo);
+      setRecentSignalCount(count || 0);
+    } catch (error) {
+      console.error('[BotControl] Test signal failed:', error);
+      toast.error('Failed to send test signal');
+    } finally {
+      setIsSendingTestSignal(false);
+    }
   };
 
   const handleStopBot = async () => {
@@ -313,10 +376,46 @@ export function BotControlPanel() {
   const getStatusBadge = () => {
     switch (botStatus) {
       case 'running':
+        // If running but no recent signals, show "waiting for signals"
+        if (recentSignalCount === 0) {
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge className="bg-warning/20 text-warning border-warning/40 gap-1.5 cursor-help">
+                    <StatusDot color="warning" pulse />
+                    WAITING SIGNALS
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Bot is running but waiting for trade signals.</p>
+                  <p className="text-xs text-muted-foreground">No signals received in last 5 minutes.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        }
         return (
-          <Badge className="bg-success/20 text-success border-success/40 gap-1.5">
-                    <StatusDot color="success" pulse />
-            RUNNING
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge className="bg-success/20 text-success border-success/40 gap-1.5 cursor-help">
+                  <StatusDot color="success" pulse />
+                  RUNNING
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Bot is actively trading.</p>
+                <p className="text-xs text-muted-foreground">{recentSignalCount} signal(s) in last 5 minutes.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      case 'waiting_signals':
+        return (
+          <Badge className="bg-warning/20 text-warning border-warning/40 gap-1.5">
+            <StatusDot color="warning" pulse />
+            WAITING SIGNALS
           </Badge>
         );
       case 'starting':
@@ -329,7 +428,7 @@ export function BotControlPanel() {
       case 'standby':
         return (
           <Badge className="bg-warning/20 text-warning border-warning/40 gap-1.5">
-                    <StatusDot color="warning" pulse />
+            <StatusDot color="warning" pulse />
             STANDBY
           </Badge>
         );
@@ -505,6 +604,25 @@ export function BotControlPanel() {
               Sync
             </ActionButton>
 
+            {/* Test Signal Button - visible when bot is running */}
+            {(botStatus === 'running' || botStatus === 'waiting_signals') && (
+              <ActionButton
+                tooltip="Send a test BTC LONG signal to verify bot is processing signals"
+                variant="outline"
+                size="sm"
+                onClick={handleSendTestSignal}
+                disabled={isSendingTestSignal}
+                className="gap-2"
+              >
+                {isSendingTestSignal ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                Test Signal
+              </ActionButton>
+            )}
+
             {botStatus === 'running' ? (
               <ActionButton 
                 tooltip={BUTTON_TOOLTIPS.stopBot}
@@ -573,8 +691,42 @@ export function BotControlPanel() {
           </div>
         </div>
 
-        {/* Live Mode Warning */}
-        {botStatus !== 'running' && botStatus !== 'starting' && (
+        {/* Status Info - show when running */}
+        {(botStatus === 'running' || botStatus === 'waiting_signals') && (
+          <div className="mt-3 p-2 rounded-lg bg-muted/50 border border-border flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {recentSignalCount > 0 ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-success" />
+                  <span className="text-sm text-muted-foreground">
+                    <span className="text-success font-medium">{recentSignalCount}</span> signal(s) received in last 5 min
+                  </span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-4 h-4 text-warning" />
+                  <span className="text-sm text-muted-foreground">
+                    No signals in last 5 min - bot is waiting for AI/strategy signals
+                  </span>
+                </>
+              )}
+            </div>
+            <ActionButton
+              tooltip="Send a test BTC LONG signal"
+              variant="ghost"
+              size="sm"
+              onClick={handleSendTestSignal}
+              disabled={isSendingTestSignal}
+              className="gap-1 text-xs h-6"
+            >
+              {isSendingTestSignal ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+              Send Test
+            </ActionButton>
+          </div>
+        )}
+
+        {/* Live Mode Warning - only when stopped */}
+        {botStatus !== 'running' && botStatus !== 'starting' && botStatus !== 'waiting_signals' && (
           <div className="mt-3 p-2 rounded-lg bg-destructive/10 border border-destructive/30 flex items-center gap-2 animate-pulse">
             <AlertTriangle className="w-4 h-4 text-destructive" />
             <span className="text-sm text-destructive font-medium">
@@ -584,40 +736,11 @@ export function BotControlPanel() {
         )}
       </div>
 
-      <AlertDialog open={showLiveConfirm} onOpenChange={setShowLiveConfirm}>
-        <AlertDialogContent className="border-destructive">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5" />
-              Confirm LIVE Trading
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p className="font-semibold text-foreground">
-                You are about to start the bot in LIVE MODE.
-              </p>
-              <p>
-                This will execute <span className="text-destructive font-bold">REAL trades</span> with your{' '}
-                <span className="text-destructive font-bold">
-                  ${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>{' '}
-                equity on connected exchanges.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Are you absolutely sure you want to proceed?
-              </p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleStartBot}
-              className="bg-destructive hover:bg-destructive/90"
-            >
-              Yes, Start LIVE Trading
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <BotPreflightDialog 
+        open={showPreflightDialog} 
+        onOpenChange={setShowPreflightDialog}
+        onConfirmStart={handleStartBot}
+      />
     </>
   );
 }
