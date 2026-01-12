@@ -152,12 +152,26 @@ export function VPSMonitorPanel() {
           defaultIp="107.191.61.107"
           defaultProvider="vultr"
         />
-        <SSHTerminalModal
-          open={showSSHTerminal}
-          onOpenChange={setShowSSHTerminal}
-          ipAddress=""
-          provider=""
-        />
+        {showSSHTerminal && (
+          <SSHTerminalModal
+            instance={{
+              id: 'temp-' + Date.now(),
+              deploymentId: '',
+              provider: 'vultr',
+              providerInstanceId: '',
+              ipAddress: '',
+              region: '',
+              instanceSize: '',
+              status: 'running',
+              botStatus: 'stopped',
+              monthlyCost: 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              uptimeSeconds: 0,
+            }}
+            onClose={() => setShowSSHTerminal(false)}
+          />
+        )}
       </TooltipProvider>
     );
   }
@@ -358,12 +372,26 @@ export function VPSMonitorPanel() {
             </TooltipContent>
           </Tooltip>
         </div>
-        <SSHTerminalModal
-          open={showSSHTerminal}
-          onOpenChange={setShowSSHTerminal}
-          ipAddress={vpsConfig?.outbound_ip || ''}
-          provider={vpsConfig?.provider || ''}
-        />
+        {showSSHTerminal && vpsConfig && (
+          <SSHTerminalModal
+            instance={{
+              id: vpsConfig.id,
+              deploymentId: '',
+              provider: (vpsConfig.provider as any) || 'vultr',
+              providerInstanceId: '',
+              ipAddress: vpsConfig.outbound_ip || '',
+              region: vpsConfig.region || '',
+              instanceSize: '',
+              status: vpsConfig.status === 'running' ? 'running' : 'stopped',
+              botStatus: 'stopped',
+              monthlyCost: 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              uptimeSeconds: 0,
+            }}
+            onClose={() => setShowSSHTerminal(false)}
+          />
+        )}
       </div>
     </TooltipProvider>
   );
