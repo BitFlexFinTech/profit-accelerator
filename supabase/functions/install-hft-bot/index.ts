@@ -298,12 +298,17 @@ RUN apk add --no-cache curl
 # Copy version marker for debugging
 COPY VERSION /app/VERSION
 
+# Copy package.json first for npm install layer caching
+COPY app/package.json /app/package.json
+
+# Install dependencies during build (baked into image - no manual npm install needed!)
+RUN npm install --omit=dev --no-audit --no-fund
+
 # Copy application files into image at build time
 # This prevents runtime truncation issues from bind mounts
 COPY app/supervisor.js /app/supervisor.js
 COPY app/health.js /app/health.js
 COPY app/strategy.js /app/strategy.js
-COPY app/package.json /app/package.json
 
 # Create directories that will be bind-mounted at runtime
 RUN mkdir -p /app/logs /app/config /app/data /app/strategies
@@ -1205,15 +1210,19 @@ if (process.env.BINANCE_API_KEY && process.env.BINANCE_API_SECRET) {
   }
 }
 
-if (process.env.OKX_API_KEY && process.env.OKX_API_SECRET && process.env.OKX_API_PASSPHRASE) {
+// OKX client initialization - handles both OKX_PASSPHRASE and OKX_API_PASSPHRASE
+const okxPassphrase = process.env.OKX_PASSPHRASE || process.env.OKX_API_PASSPHRASE;
+const okxPassphraseVarName = process.env.OKX_PASSPHRASE ? 'OKX_PASSPHRASE' : 'OKX_API_PASSPHRASE';
+
+if (process.env.OKX_API_KEY && process.env.OKX_API_SECRET && okxPassphrase) {
   try {
     const { RestClient } = require('okx-api');
     okxClient = new RestClient(
       process.env.OKX_API_KEY,
       process.env.OKX_API_SECRET,
-      process.env.OKX_API_PASSPHRASE
+      okxPassphrase
     );
-    console.log('[🐟 PIRANHA] ✅ OKX client initialized');
+    console.log('[🐟 PIRANHA] ✅ OKX client initialized (using ' + okxPassphraseVarName + ')');
   } catch (error) {
     console.error('[🐟 PIRANHA] ❌ OKX client init failed:', error.message);
   }
@@ -1597,38 +1606,92 @@ validate_js_file "app/health.js" 15000 "ping-exchanges" || {
   exit 1
 }
 
-# Validate strategy.js (should be ~50KB+, must contain the FIXED regex pattern)
-validate_js_file "app/strategy.js" 40000 "replace(/\\\x0D/g" || {
+# Validate strategy.js (should be ~8KB+, must contain dual-exchange code)
+validate_js_file "app/strategy.js" 8000 "DUAL-EXCHANGE MODE" || {
   log_error "FATAL: strategy.js validation failed. Aborting install."
-  log_error "       This is the file that was causing the 'Invalid regular expression: missing /' error."
   exit 1
 }
 
-# Additional check: Ensure the problematic regex line is complete
-if grep -q 'envContent.replace(/$' app/strategy.js; then
-  log_error "❌ CRITICAL: strategy.js contains truncated regex pattern!"
-  log_error "   Found: envContent.replace(/ (incomplete)"
-  log_error "   Expected: envContent.replace(/\\x0D/g, '').split(...)"
-  log_error "   Aborting install to prevent broken container."
+# Validate dual-exchange trading code is present
+log_info "Validating dual-exchange trading code..."
+if ! grep -q "Promise.all" app/strategy.js; then
+  log_error "❌ VALIDATION FAILED: strategy.js missing Promise.all (dual-exchange code)"
   exit 1
 fi
 
+if ! grep -q "okx-api" app/strategy.js; then
+  log_error "❌ VALIDATION FAILED: strategy.js missing okx-api require"
+  exit 1
+fi
+
+if ! grep -q "binance-api-node" app/strategy.js; then
+  log_error "❌ VALIDATION FAILED: strategy.js missing binance-api-node require"
+  exit 1
+fi
+
+# Validate OKX passphrase handles both env var names
+if ! grep -q "OKX_PASSPHRASE" app/strategy.js || ! grep -q "OKX_API_PASSPHRASE" app/strategy.js; then
+  log_error "❌ VALIDATION FAILED: strategy.js must accept both OKX_PASSPHRASE and OKX_API_PASSPHRASE"
+  exit 1
+fi
+
+log_info "✅ Dual-exchange code validated!"
 log_info "✅ All JavaScript files validated successfully!"
 
-# Create package.json
+# Create package.json with ALL required dependencies
 cat > app/package.json << 'PKG_EOF'
 {
   "name": "profit-piranha-hft-bot",
   "version": "2.2.0",
-  "description": "Profit Piranha - 24/7 Micro-Scalping Trading Bot",
-  "main": "health.js",
+  "description": "Profit Piranha - Dual-Exchange HFT Trading Bot",
+  "main": "supervisor.js",
   "scripts": {
-    "start": "node health.js & node strategy.js",
+    "start": "node supervisor.js",
     "health": "node health.js",
     "strategy": "node strategy.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "binance-api-node": "^0.12.8",
+    "dotenv": "^16.3.1",
+    "okx-api": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
 PKG_EOF
+
+# Validate package.json has required dependencies
+log_info "Validating package.json dependencies..."
+if ! grep -q "@supabase/supabase-js" app/package.json; then
+  log_error "❌ VALIDATION FAILED: package.json missing @supabase/supabase-js"
+  exit 1
+fi
+
+if ! grep -q "binance-api-node" app/package.json; then
+  log_error "❌ VALIDATION FAILED: package.json missing binance-api-node"
+  exit 1
+fi
+
+if ! grep -q "okx-api" app/package.json; then
+  log_error "❌ VALIDATION FAILED: package.json missing okx-api"
+  exit 1
+fi
+
+if ! grep -q "dotenv" app/package.json; then
+  log_error "❌ VALIDATION FAILED: package.json missing dotenv"
+  exit 1
+fi
+
+# Validate Dockerfile runs npm install
+if ! grep -q "npm install" Dockerfile; then
+  log_error "❌ VALIDATION FAILED: Dockerfile missing npm install step"
+  exit 1
+fi
+
+log_info "✅ package.json dependencies validated!"
+log_info "✅ Dockerfile npm install validated!"
 
 # Create sample .env config file
 cat > config/.env.example << 'ENV_EOF'
