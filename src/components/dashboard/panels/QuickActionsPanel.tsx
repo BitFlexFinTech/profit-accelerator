@@ -96,10 +96,35 @@ export function QuickActionsPanel() {
   };
 
   const handleStartBot = async () => {
-    if (tokyoDeployment) {
-      await startBot(tokyoDeployment.id);
-    } else {
+    if (!tokyoDeployment) {
       toast.error('No VPS deployment found');
+      return;
+    }
+    
+    setLoadingAction('start-bot');
+    try {
+      // Use start-live-now for immediate trade execution
+      const response = await supabase.functions.invoke('start-live-now', {});
+      
+      if (response.data?.success) {
+        const successOrders = response.data.orders?.filter((o: any) => o.status === 'filled') || [];
+        if (successOrders.length > 0) {
+          const summary = successOrders.map((o: any) => 
+            `${o.exchange}: ${o.symbol} @ $${o.price.toFixed(2)}`
+          ).join(', ');
+          toast.success(`Trade executed: ${summary}`);
+        } else {
+          toast.success('Bot started');
+        }
+      } else if (response.data?.blockingReason) {
+        toast.error('Cannot start', { description: response.data.blockingReason });
+      } else {
+        toast.error('Start failed');
+      }
+    } catch (err) {
+      toast.error('Failed to start bot');
+    } finally {
+      setLoadingAction(null);
     }
   };
 

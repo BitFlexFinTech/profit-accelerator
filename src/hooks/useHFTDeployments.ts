@@ -65,14 +65,26 @@ export function useHFTDeployments() {
   const startBot = async (deploymentId: string) => {
     setActionLoading(deploymentId);
     try {
-      const { data, error } = await supabase.functions.invoke('bot-control', {
-        body: { action: 'start', deploymentId },
-      });
+      // Use start-live-now for immediate trade execution
+      const { data, error } = await supabase.functions.invoke('start-live-now', {});
 
       if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Failed to start bot');
-
-      toast.success('Bot started successfully');
+      
+      if (data?.success) {
+        const successOrders = data.orders?.filter((o: any) => o.status === 'filled') || [];
+        if (successOrders.length > 0) {
+          const summary = successOrders.map((o: any) => 
+            `${o.exchange}: ${o.symbol}`
+          ).join(', ');
+          toast.success(`Trade executed: ${summary}`);
+        } else {
+          toast.success('Bot started successfully');
+        }
+      } else if (data?.blockingReason) {
+        toast.error('Cannot start: ' + data.blockingReason);
+      } else {
+        throw new Error('Start failed');
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to start bot');
     } finally {
