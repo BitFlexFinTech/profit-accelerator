@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Server, RefreshCw, Cpu, HardDrive, Activity, Wifi, Clock, Terminal, Plus } from 'lucide-react';
 import { SSHTerminalModal } from '@/components/vps/SSHTerminalModal';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { RegisterExistingVPS } from '@/components/vps/RegisterExistingVPS';
 import { cn } from '@/lib/utils';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { CHART_COLORS, chartStyles } from '@/lib/chartTheme';
+import { VPSInstance, Provider } from '@/types/cloudCredentials';
 
 interface VPSConfig {
   id: string;
@@ -30,6 +31,40 @@ export function VPSMonitorPanel() {
   const [metricsHistory, setMetricsHistory] = useState<any[]>([]);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [showSSHTerminal, setShowSSHTerminal] = useState(false);
+
+  // Derive terminal instance from instances or vpsConfig - SINGLE SOURCE OF TRUTH
+  const terminalInstance: VPSInstance | null = useMemo(() => {
+    // First priority: use actual instances from useVPSInstances hook
+    if (instances.length > 0) {
+      // Prefer running instance with an IP
+      const running = instances.find(i => i.status === 'running' && i.ipAddress);
+      if (running) return running;
+      // Otherwise any instance with an IP
+      const withIp = instances.find(i => i.ipAddress);
+      if (withIp) return withIp;
+    }
+
+    // Second priority: build from vpsConfig if available
+    if (vpsConfig && vpsConfig.outbound_ip) {
+      return {
+        id: vpsConfig.id,
+        deploymentId: '',
+        provider: (vpsConfig.provider as Provider) || 'vultr',
+        providerInstanceId: '',
+        ipAddress: vpsConfig.outbound_ip,
+        region: vpsConfig.region || '',
+        instanceSize: '',
+        status: vpsConfig.status === 'running' ? 'running' : 'stopped',
+        botStatus: 'stopped',
+        monthlyCost: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        uptimeSeconds: 0,
+      };
+    }
+
+    return null;
+  }, [instances, vpsConfig]);
 
   useEffect(() => {
     fetchVPSConfig();
@@ -107,6 +142,14 @@ export function VPSMonitorPanel() {
     refetchInstances();
   };
 
+  const handleOpenSSHTerminal = () => {
+    if (!terminalInstance || !terminalInstance.ipAddress) {
+      toast.error('No VPS IP available. Register a VPS first.');
+      return;
+    }
+    setShowSSHTerminal(true);
+  };
+
   const currentMetric = metrics.find(m => m.provider === vpsConfig?.provider) || metrics[0];
 
   const formatUptime = (seconds: number | null) => {
@@ -117,6 +160,7 @@ export function VPSMonitorPanel() {
     return `${days}d ${hours}h ${mins}m`;
   };
 
+  // No VPS configured state
   if (!vpsConfig && instances.length === 0) {
     return (
       <TooltipProvider>
@@ -152,26 +196,6 @@ export function VPSMonitorPanel() {
           defaultIp="107.191.61.107"
           defaultProvider="vultr"
         />
-        {showSSHTerminal && (
-          <SSHTerminalModal
-            instance={{
-              id: 'temp-' + Date.now(),
-              deploymentId: '',
-              provider: 'vultr',
-              providerInstanceId: '',
-              ipAddress: '',
-              region: '',
-              instanceSize: '',
-              status: 'running',
-              botStatus: 'stopped',
-              monthlyCost: 0,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              uptimeSeconds: 0,
-            }}
-            onClose={() => setShowSSHTerminal(false)}
-          />
-        )}
       </TooltipProvider>
     );
   }
@@ -351,14 +375,15 @@ export function VPSMonitorPanel() {
                 variant="outline" 
                 size="sm" 
                 className="flex-1 border-orange-400/30 hover:border-orange-400 hover:bg-orange-500/10 transition-all duration-300"
-                onClick={() => setShowSSHTerminal(true)}
+                onClick={handleOpenSSHTerminal}
+                disabled={!terminalInstance || !terminalInstance.ipAddress}
               >
                 <Terminal className="w-4 h-4 mr-2" />
                 SSH Terminal
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Open SSH terminal to VPS</p>
+              <p>{terminalInstance?.ipAddress ? `Open SSH terminal to ${terminalInstance.ipAddress}` : 'No VPS IP available'}</p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -372,23 +397,11 @@ export function VPSMonitorPanel() {
             </TooltipContent>
           </Tooltip>
         </div>
-        {showSSHTerminal && vpsConfig && (
+
+        {/* SSH Terminal Modal - Only rendered when open AND we have a valid instance */}
+        {showSSHTerminal && terminalInstance && terminalInstance.ipAddress && (
           <SSHTerminalModal
-            instance={{
-              id: vpsConfig.id,
-              deploymentId: '',
-              provider: (vpsConfig.provider as any) || 'vultr',
-              providerInstanceId: '',
-              ipAddress: vpsConfig.outbound_ip || '',
-              region: vpsConfig.region || '',
-              instanceSize: '',
-              status: vpsConfig.status === 'running' ? 'running' : 'stopped',
-              botStatus: 'stopped',
-              monthlyCost: 0,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              uptimeSeconds: 0,
-            }}
+            instance={terminalInstance}
             onClose={() => setShowSSHTerminal(false)}
           />
         )}

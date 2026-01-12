@@ -637,7 +637,9 @@ serve(async (req) => {
         success: true, 
         action,
         mode: 'live',
+        method: 'ssh',
         botStatus: newBotStatus,
+        signalVerified,
         healthVerified,
         output: sshResult.output?.substring(0, 500),
         ipAddress 
