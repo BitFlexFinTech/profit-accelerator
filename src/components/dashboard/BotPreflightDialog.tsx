@@ -11,10 +11,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle2, XCircle, AlertTriangle, Send, Zap } from 'lucide-react';
-import { useBotPreflight, PreflightCheck, PreflightResult } from '@/hooks/useBotPreflight';
+import { useBotPreflight, PreflightCheck } from '@/hooks/useBotPreflight';
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, Send, Zap, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 
 interface BotPreflightDialogProps {
   open: boolean;
@@ -23,31 +22,50 @@ interface BotPreflightDialogProps {
 }
 
 export function BotPreflightDialog({ open, onOpenChange, onConfirmStart }: BotPreflightDialogProps) {
-  const { runPreflight, sendTestSignal, isRunning, result } = useBotPreflight();
-  const [isSendingSignal, setIsSendingSignal] = useState(false);
+  const { runPreflight, sendTestSignal, triggerAIScan, isRunning, result, clearResult } = useBotPreflight();
+  const [isSendingTestSignal, setIsSendingTestSignal] = useState(false);
+  const [isTriggeringAI, setIsTriggeringAI] = useState(false);
 
-  // Run preflight when dialog opens
   useEffect(() => {
     if (open) {
+      clearResult();
       runPreflight();
     }
-  }, [open, runPreflight]);
+  }, [open, runPreflight, clearResult]);
 
   const handleSendTestSignal = async () => {
-    setIsSendingSignal(true);
-    const result = await sendTestSignal();
-    setIsSendingSignal(false);
+    setIsSendingTestSignal(true);
+    try {
+      const signalResult = await sendTestSignal();
+      if (signalResult.success) {
+        toast.success('Test signal sent! Check AI Market Analysis panel.');
+        // Re-run preflight to pick up the new signal
+        setTimeout(() => runPreflight(), 1500);
+      } else {
+        toast.error(`Failed to send test signal: ${signalResult.error}`);
+      }
+    } catch (err) {
+      toast.error('Failed to send test signal');
+    } finally {
+      setIsSendingTestSignal(false);
+    }
+  };
 
-    if (result.success) {
-      toast.success('Test signal sent!', {
-        description: `Signal ID: ${result.signalId?.slice(0, 8)}... - Bot should process this within 30 seconds`
-      });
-      // Re-run preflight to update signal count
-      setTimeout(() => runPreflight(), 1000);
-    } else {
-      toast.error('Failed to send test signal', {
-        description: result.error
-      });
+  const handleTriggerAIScan = async () => {
+    setIsTriggeringAI(true);
+    try {
+      const scanResult = await triggerAIScan();
+      if (scanResult.success) {
+        toast.success('AI scan triggered! New signals generating...');
+        // Re-run preflight after a delay to pick up new signals
+        setTimeout(() => runPreflight(), 3000);
+      } else {
+        toast.error(`AI scan failed: ${scanResult.error}`);
+      }
+    } catch (err) {
+      toast.error('Failed to trigger AI scan');
+    } finally {
+      setIsTriggeringAI(false);
     }
   };
 
@@ -56,8 +74,8 @@ export function BotPreflightDialog({ open, onOpenChange, onConfirmStart }: BotPr
     onConfirmStart();
   };
 
-  const getStatusIcon = (check: PreflightCheck) => {
-    switch (check.status) {
+  const getStatusIcon = (status: PreflightCheck['status']) => {
+    switch (status) {
       case 'pass':
         return <CheckCircle2 className="w-4 h-4 text-success" />;
       case 'fail':
@@ -69,118 +87,129 @@ export function BotPreflightDialog({ open, onOpenChange, onConfirmStart }: BotPr
     }
   };
 
-  const getStatusBadge = (check: PreflightCheck) => {
-    switch (check.status) {
+  const getStatusBadge = (status: PreflightCheck['status']) => {
+    switch (status) {
       case 'pass':
-        return <Badge variant="outline" className="bg-success/10 text-success border-success/30">PASS</Badge>;
+        return <Badge variant="default" className="bg-success text-success-foreground text-[10px]">PASS</Badge>;
       case 'fail':
-        return <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">FAIL</Badge>;
+        return <Badge variant="destructive" className="text-[10px]">FAIL</Badge>;
       case 'warn':
-        return <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">WARN</Badge>;
+        return <Badge variant="secondary" className="bg-warning text-warning-foreground text-[10px]">WARN</Badge>;
       default:
-        return <Badge variant="outline">CHECKING</Badge>;
+        return <Badge variant="outline" className="text-[10px]">...</Badge>;
     }
   };
+
+  const criticalFailures = result?.checks.filter(c => c.critical && c.status === 'fail') || [];
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-destructive" />
-            Start Bot in LIVE Mode
+            🐟 Bot Preflight Checks
+            {isRunning && <Loader2 className="w-4 h-4 animate-spin" />}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            Running preflight checks before starting the trading bot with real funds.
+            Verifying system readiness for LIVE trading...
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <div className="space-y-3 my-4">
+        <div className="space-y-2 my-4">
           {isRunning && !result ? (
-            <div className="flex items-center justify-center gap-2 py-8">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span className="text-muted-foreground">Running preflight checks...</span>
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
           ) : result ? (
             <>
-              {result.checks.map((check, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "flex items-start gap-3 p-3 rounded-lg border",
-                    check.status === 'fail' && check.critical ? 'bg-destructive/5 border-destructive/30' :
-                    check.status === 'warn' ? 'bg-warning/5 border-warning/30' :
-                    check.status === 'pass' ? 'bg-success/5 border-success/30' :
-                    'bg-muted/50 border-border'
-                  )}
-                >
-                  {getStatusIcon(check)}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 justify-between">
-                      <span className="font-medium text-sm">{check.name}</span>
-                      {getStatusBadge(check)}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">{check.message}</p>
+              {result.checks.map((check, i) => (
+                <div key={i} className="flex items-center justify-between py-2 px-3 rounded bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    {getStatusIcon(check.status)}
+                    <span className="text-sm font-medium">{check.name}</span>
+                    {check.critical && <Badge variant="outline" className="text-[9px]">Required</Badge>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {getStatusBadge(check.status)}
                   </div>
                 </div>
               ))}
+              
+              {result.checks.map((check, i) => (
+                check.message && (
+                  <div key={`msg-${i}`} className="text-xs text-muted-foreground pl-6">
+                    {check.name}: {check.message}
+                  </div>
+                )
+              ))}
 
-              {/* Test Signal Button - always visible */}
-              <div className="pt-2 border-t border-border">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSendTestSignal}
-                  disabled={isSendingSignal || !result.vpsReady}
-                  className="w-full"
-                >
-                  {isSendingSignal ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4 mr-2" />
-                  )}
-                  Send Test Signal (BTC LONG 85%)
-                </Button>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  This sends a test trade signal to verify the bot processes signals correctly.
-                </p>
-              </div>
-
-              {/* Summary */}
-              {!result.canStart && (
-                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
-                  <p className="text-sm text-destructive font-medium">
-                    Cannot start: Fix the critical issues above first.
-                  </p>
+              {/* Top Signal Display */}
+              {result.topSignal && (
+                <div className="mt-3 p-3 bg-primary/10 rounded border border-primary/20">
+                  <div className="text-xs font-medium text-primary mb-1">🎯 Top AI Signal Ready</div>
+                  <div className="text-sm font-bold">
+                    {result.topSignal.symbol} {result.topSignal.recommended_side?.toUpperCase()} 
+                    <span className="text-muted-foreground ml-2">({result.topSignal.confidence}% confidence)</span>
+                  </div>
                 </div>
               )}
 
-              {result.canStart && result.signalCount === 0 && (
-                <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
-                  <p className="text-sm text-warning font-medium">
-                    Ready to start, but no signals yet. Bot will wait for AI/strategy signals.
-                  </p>
+              {/* Blocking reasons */}
+              {result.reasons.length > 0 && criticalFailures.length > 0 && (
+                <div className="mt-3 p-3 bg-destructive/10 rounded border border-destructive/20">
+                  <div className="text-xs font-medium text-destructive mb-1">Cannot Start - Fix These Issues:</div>
+                  <ul className="text-xs text-destructive/80 list-disc pl-4 space-y-1">
+                    {result.reasons.slice(0, 3).map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </>
           ) : null}
         </div>
 
+        {/* Action buttons for generating signals */}
+        <div className="flex gap-2 mb-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleTriggerAIScan}
+            disabled={isTriggeringAI || isRunning}
+            className="flex-1"
+          >
+            {isTriggeringAI ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Zap className="w-3 h-3 mr-1" />}
+            Generate AI Signals
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSendTestSignal}
+            disabled={isSendingTestSignal || isRunning}
+            className="flex-1"
+          >
+            {isSendingTestSignal ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Send className="w-3 h-3 mr-1" />}
+            Send Test Signal
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => runPreflight()}
+            disabled={isRunning}
+          >
+            <RefreshCw className={`w-3 h-3 ${isRunning ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <Button
+          <AlertDialogAction
             onClick={handleConfirm}
             disabled={isRunning || !result?.canStart}
-            variant="destructive"
-            className="gap-2"
+            className="bg-success hover:bg-success/90"
           >
-            {isRunning ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Zap className="w-4 h-4" />
-            )}
-            Start LIVE Trading
-          </Button>
+            {result?.canStart ? '🚀 Start LIVE Trading' : '❌ Cannot Start'}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
