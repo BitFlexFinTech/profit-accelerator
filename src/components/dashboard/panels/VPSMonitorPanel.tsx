@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Server, RefreshCw, Cpu, HardDrive, Activity, Wifi, Clock, Terminal, Plus } from 'lucide-react';
+import { SSHTerminalModal } from '@/components/vps/SSHTerminalModal';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -28,6 +29,7 @@ export function VPSMonitorPanel() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [metricsHistory, setMetricsHistory] = useState<any[]>([]);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
+  const [showSSHTerminal, setShowSSHTerminal] = useState(false);
 
   useEffect(() => {
     fetchVPSConfig();
@@ -149,6 +151,12 @@ export function VPSMonitorPanel() {
           onSuccess={handleRegisterSuccess}
           defaultIp="107.191.61.107"
           defaultProvider="vultr"
+        />
+        <SSHTerminalModal
+          open={showSSHTerminal}
+          onOpenChange={setShowSSHTerminal}
+          ipAddress=""
+          provider=""
         />
       </TooltipProvider>
     );
@@ -325,7 +333,12 @@ export function VPSMonitorPanel() {
         <div className="flex gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" className="flex-1 border-orange-400/30 hover:border-orange-400 hover:bg-orange-500/10 transition-all duration-300">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex-1 border-orange-400/30 hover:border-orange-400 hover:bg-orange-500/10 transition-all duration-300"
+                onClick={() => setShowSSHTerminal(true)}
+              >
                 <Terminal className="w-4 h-4 mr-2" />
                 SSH Terminal
               </Button>
@@ -345,6 +358,12 @@ export function VPSMonitorPanel() {
             </TooltipContent>
           </Tooltip>
         </div>
+        <SSHTerminalModal
+          open={showSSHTerminal}
+          onOpenChange={setShowSSHTerminal}
+          ipAddress={vpsConfig?.outbound_ip || ''}
+          provider={vpsConfig?.provider || ''}
+        />
       </div>
     </TooltipProvider>
   );

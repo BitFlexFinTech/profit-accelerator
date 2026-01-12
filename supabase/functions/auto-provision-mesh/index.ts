@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { healthUrl, fetchWithTimeout } from "../_shared/vpsControl.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,19 +16,11 @@ interface ProviderResult {
   cost: number;
 }
 
-// Measure latency to a provider's health endpoint
+// Measure latency to a provider's health endpoint (uses port 80 via shared helper)
 async function measureLatency(ip: string): Promise<number> {
   const start = Date.now();
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    
-    await fetch(`http://${ip}:8080/health`, { 
-      signal: controller.signal,
-      method: 'GET'
-    });
-    
-    clearTimeout(timeout);
+    await fetchWithTimeout(healthUrl(ip), { method: 'GET' }, 5000);
     return Date.now() - start;
   } catch {
     return 999;
@@ -130,7 +123,7 @@ serve(async (req) => {
                 throw new Error('Timeout waiting for public IP');
               }
 
-              // Measure latency
+              // Measure latency using shared helper (port 80)
               const latency = await measureLatency(publicIp);
 
               return {

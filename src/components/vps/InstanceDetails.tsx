@@ -347,11 +347,9 @@ export function InstanceDetails({ node, metric, liveStatus, isPrimary, onClose }
                   <p className="text-xs text-muted-foreground mt-1">
                     Connect via VPS Terminal Panel in main dashboard
                   </p>
-                  <Button variant="outline" size="sm" className="mt-4" asChild>
-                    <a href="/" onClick={onClose}>
-                      Open Dashboard Terminal
-                    </a>
-                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Use the SSH Terminal button on the VPS Dashboard
+                  </p>
                 </div>
               </Card>
             </TabsContent>

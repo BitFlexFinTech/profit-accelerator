@@ -1,5 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { 
+  healthUrl, 
+  statusUrl, 
+  signalCheckUrl, 
+  controlUrl,
+  fetchWithTimeout 
+} from "../_shared/vpsControl.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,6 +33,8 @@ interface SSHCommandRequest {
  *    (The actual Docker control should be done via a webhook endpoint on the VPS)
  * 
  * For production: Deploy a small HTTP API on the VPS that accepts commands
+ * 
+ * IMPORTANT: All VPS API calls use port 80 (via Nginx proxy) - see _shared/vpsControl.ts
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -72,25 +81,19 @@ serve(async (req) => {
       throw new Error('Command blocked: destructive rm operation');
     }
 
-    // Strategy: Use HTTP endpoints instead of SSH for VPS control
-    // The VPS should have a control API running on port 8080
+    // Strategy: Use HTTP endpoints via shared helper (port 80 behind Nginx)
     
     // STATUS COMMAND - Composite status check (DOCKER:|SIGNAL:|STATUS:)
     // This must come BEFORE health check to prevent false match
     if (command.includes('DOCKER_UP=') || command.includes('DOCKER:') || 
         command.includes('SIGNAL_EXISTS=') || command.includes('STATUS:')) {
-      console.log(`[ssh-command] Status check via HTTP to ${ipAddress}/status and /signal-check`);
+      console.log(`[ssh-command] Status check via HTTP to ${statusUrl(ipAddress)} and ${signalCheckUrl(ipAddress)}`);
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        
-        // Fetch both status and signal in parallel
+        // Fetch both status and signal in parallel using shared helpers
         const [statusRes, signalRes] = await Promise.all([
-          fetch(`http://${ipAddress}/status`, { signal: controller.signal }).catch(() => null),
-          fetch(`http://${ipAddress}/signal-check`, { signal: controller.signal }).catch(() => null)
+          fetchWithTimeout(statusUrl(ipAddress), {}, 8000).catch(() => null),
+          fetchWithTimeout(signalCheckUrl(ipAddress), {}, 8000).catch(() => null)
         ]);
-        
-        clearTimeout(timeoutId);
         
         let dockerRunning = false;
         let botRunning = false;
@@ -151,17 +154,12 @@ serve(async (req) => {
                                  !command.includes('SIGNAL') &&
                                  !command.includes('STATUS');
     if (isSimpleHealthCheck) {
-      console.log(`[ssh-command] Simple health check via HTTP to ${ipAddress}`);
+      const vpsHealthUrl = healthUrl(ipAddress);
+      console.log(`[ssh-command] Simple health check via HTTP to ${vpsHealthUrl}`);
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-        
-        const response = await fetch(`http://${ipAddress}/health`, {
-          signal: controller.signal,
+        const response = await fetchWithTimeout(vpsHealthUrl, {
           headers: { 'Accept': 'application/json' }
-        });
-        
-        clearTimeout(timeoutId);
+        }, timeout);
         
         if (response.ok) {
           const healthData = await response.text();
@@ -202,16 +200,10 @@ serve(async (req) => {
     
     // Docker container check - try HTTP to control API
     if (command.includes('docker ps')) {
-      console.log(`[ssh-command] Container status check via HTTP to ${ipAddress}/status`);
+      const vpsStatusUrl = statusUrl(ipAddress);
+      console.log(`[ssh-command] Container status check via HTTP to ${vpsStatusUrl}`);
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const response = await fetch(`http://${ipAddress}/status`, {
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
+        const response = await fetchWithTimeout(vpsStatusUrl, {}, 5000);
         
         if (response.ok) {
           const data = await response.text();
@@ -246,7 +238,8 @@ serve(async (req) => {
       const isStop = command.includes('down') || command.includes('rm -f');
       const action = isStart ? 'start' : (isStop ? 'stop' : 'restart');
       
-      console.log(`[ssh-command] Bot ${action} via HTTP to ${ipAddress}/control`);
+      const vpsControlUrl = controlUrl(ipAddress);
+      console.log(`[ssh-command] Bot ${action} via HTTP to ${vpsControlUrl}`);
       
       // Parse environment variables from the command if present
       let env: Record<string, string> = {};
@@ -278,20 +271,14 @@ serve(async (req) => {
       }
       
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-        
-        const response = await fetch(`http://${ipAddress}/control`, {
+        const response = await fetchWithTimeout(vpsControlUrl, {
           method: 'POST',
-          signal: controller.signal,
           headers: { 
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
           body: JSON.stringify({ action, command, env })
-        });
-        
-        clearTimeout(timeoutId);
+        }, timeout);
         
         if (response.ok) {
           const dataText = await response.text();
@@ -351,7 +338,7 @@ serve(async (req) => {
           JSON.stringify({
             success: false,
             exitCode: 1,
-            output: `VPS control API not available at ${ipAddress}/control`,
+            output: `VPS control API not available at ${vpsControlUrl}`,
             error: `Control API failed: ${errMsg}. Redeploy VPS with updated bot code.`
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -361,16 +348,10 @@ serve(async (req) => {
     
     // Signal file check command - verify via dedicated endpoint
     if (command.includes('test -f') && command.includes('START_SIGNAL')) {
-      console.log(`[ssh-command] Signal check via HTTP to ${ipAddress}/signal-check`);
+      const vpsSignalUrl = signalCheckUrl(ipAddress);
+      console.log(`[ssh-command] Signal check via HTTP to ${vpsSignalUrl}`);
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const response = await fetch(`http://${ipAddress}/signal-check`, {
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
+        const response = await fetchWithTimeout(vpsSignalUrl, {}, 5000);
         
         if (response.ok) {
           const data = await response.json();
