@@ -1,5 +1,8 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
+
+type TableName = keyof Database['public']['Tables'];
 
 interface SaveResult<T> {
   success: boolean;
@@ -9,7 +12,7 @@ interface SaveResult<T> {
 }
 
 export function useFormWithSave<T extends Record<string, any>>(
-  table: string,
+  table: TableName,
   initialData?: T
 ) {
   const [data, setData] = useState<T>(initialData || ({} as T));
@@ -66,18 +69,18 @@ export function useFormWithSave<T extends Record<string, any>>(
 
         const { data: saved, error } = await supabase
           .from(table)
-          .upsert(payload)
+          .upsert(payload as any)
           .select()
           .single();
 
         if (error) throw error;
 
-        setOriginalData(saved as T);
-        setData(saved as T);
+        setOriginalData(saved as unknown as T);
+        setData(saved as unknown as T);
         setIsDirty(false);
         setStatus('success');
 
-        return { success: true, data: saved as T };
+        return { success: true, data: saved as unknown as T };
       } catch (error: any) {
         setStatus('error');
         return { success: false, error: error.message };
