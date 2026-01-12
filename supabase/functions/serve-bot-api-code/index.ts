@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+// The bot API code is stored as plain text without template literal embedding
+// to prevent escaping issues with backticks and template placeholders.
+// This code is fetched by VPS instances via: curl <url> > /opt/bot-control-api/index.js
+
 const BOT_API_CODE = `/**
  * VPS Bot Control API - Expanded Implementation
  * 
@@ -180,11 +184,11 @@ async function handleState(req, res) {
 // GET /logs - Recent bot logs
 async function handleLogs(req, res) {
   try {
-    const url = new URL(req.url, \\\`http://\\\${req.headers.host}\\\`);
+    const url = new URL(req.url, ` + "`" + `http://` + "${" + `req.headers.host` + "}" + "`" + `);
     const lines = parseInt(url.searchParams.get('lines') || '50', 10);
     
     // Get journalctl logs for hft-bot service
-    const { stdout: logs } = await execAsync(\\\`journalctl -u hft-bot -n \\\${lines} --no-pager 2>/dev/null || tail -\\\${lines} /var/log/hft-bot.log 2>/dev/null || echo "No logs available"\\\`);
+    const { stdout: logs } = await execAsync(` + "`" + `journalctl -u hft-bot -n ` + "${" + `lines` + "}" + ` --no-pager 2>/dev/null || tail -` + "${" + `lines` + "}" + ` /var/log/hft-bot.log 2>/dev/null || echo "No logs available"` + "`" + `);
     
     sendJSON(res, 200, {
       success: true,
@@ -214,12 +218,12 @@ async function handleControl(req, res) {
     const DATA_DIR = '/opt/hft-bot/app/data';
     const BOT_DIR = '/opt/hft-bot';
     
-    console.log(\\\`[control] Action: \\\${action}, env keys: \\\${env ? Object.keys(env).length : 0}\\\`);
+    console.log(` + "`" + `[control] Action: ` + "${" + `action` + "}" + `, env keys: ` + "${" + `env ? Object.keys(env).length : 0` + "}" + "`" + `);
     
     if (action === 'start' || action === 'restart') {
       // 1. Ensure data directory exists
       try {
-        await execAsync(\\\`mkdir -p \\\${DATA_DIR}\\\`);
+        await execAsync(` + "`" + `mkdir -p ` + "${" + `DATA_DIR` + "}" + "`" + `);
       } catch (e) {
         console.log('[control] mkdir error (may already exist):', e.message);
       }
@@ -227,11 +231,11 @@ async function handleControl(req, res) {
       // 2. Write environment variables if provided
       if (env && typeof env === 'object' && Object.keys(env).length > 0) {
         const envContent = Object.entries(env)
-          .map(([k, v]) => \\\`\\\${k}=\\\${v}\\\`)
+          .map(([k, v]) => ` + "`" + `` + "${" + `k` + "}" + `=` + "${" + `v` + "}" + "`" + `)
           .join('\\n');
         try {
           fs.writeFileSync(ENV_FILE, envContent);
-          console.log(\\\`[control] Wrote \\\${Object.keys(env).length} env vars to \\\${ENV_FILE}\\\`);
+          console.log(` + "`" + `[control] Wrote ` + "${" + `Object.keys(env).length` + "}" + ` env vars to ` + "${" + `ENV_FILE` + "}" + "`" + `);
         } catch (e) {
           console.error('[control] Failed to write env file:', e.message);
         }
@@ -247,12 +251,12 @@ async function handleControl(req, res) {
       
       try {
         fs.writeFileSync(SIGNAL_FILE, signalData);
-        console.log(\\\`[control] ✅ Created START_SIGNAL at \\\${SIGNAL_FILE}\\\`);
+        console.log(` + "`" + `[control] ✅ Created START_SIGNAL at ` + "${" + `SIGNAL_FILE` + "}" + "`" + `);
       } catch (e) {
         console.error('[control] ❌ Failed to create START_SIGNAL:', e.message);
         return sendJSON(res, 500, { 
           success: false, 
-          error: \\\`Failed to create START_SIGNAL: \\\${e.message}\\\`,
+          error: ` + "`" + `Failed to create START_SIGNAL: ` + "${" + `e.message` + "}" + "`" + `,
           signalCreated: false
         });
       }
@@ -260,9 +264,9 @@ async function handleControl(req, res) {
       // 4. Start/restart Docker container
       try {
         if (action === 'restart') {
-          await execAsync(\\\`cd \\\${BOT_DIR} && docker compose down 2>/dev/null || true\\\`);
+          await execAsync(` + "`" + `cd ` + "${" + `BOT_DIR` + "}" + ` && docker compose down 2>/dev/null || true` + "`" + `);
         }
-        await execAsync(\\\`cd \\\${BOT_DIR} && docker compose up -d --remove-orphans\\\`);
+        await execAsync(` + "`" + `cd ` + "${" + `BOT_DIR` + "}" + ` && docker compose up -d --remove-orphans` + "`" + `);
         console.log('[control] Docker compose started');
       } catch (e) {
         console.log('[control] Docker start warning:', e.message);
@@ -290,7 +294,7 @@ async function handleControl(req, res) {
         dockerStatus = 'error';
       }
       
-      console.log(\\\`[control] ✅ Bot started successfully. Signal: true, Docker: \\\${dockerStatus}\\\`);
+      console.log(` + "`" + `[control] ✅ Bot started successfully. Signal: true, Docker: ` + "${" + `dockerStatus` + "}" + "`" + `);
       
       return sendJSON(res, 200, {
         success: true,
@@ -317,7 +321,7 @@ async function handleControl(req, res) {
       
       // 2. Stop Docker container
       try {
-        await execAsync(\\\`cd \\\${BOT_DIR} && docker compose down 2>/dev/null || docker stop hft-bot 2>/dev/null || true\\\`);
+        await execAsync(` + "`" + `cd ` + "${" + `BOT_DIR` + "}" + ` && docker compose down 2>/dev/null || docker stop hft-bot 2>/dev/null || true` + "`" + `);
         console.log('[control] Docker stopped');
       } catch (e) {
         console.log('[control] Docker stop warning:', e.message);
@@ -381,13 +385,13 @@ async function handleBalance(req, res) {
     if (exchangeId === 'binance') {
       // Binance Spot + Futures
       const timestamp = Date.now();
-      const query = \\\`timestamp=\\\${timestamp}\\\`;
+      const query = ` + "`" + `timestamp=` + "${" + `timestamp` + "}" + "`" + `;
       const signature = signBinance(query, apiSecret);
       
       // Spot balance
       const spotRes = await httpsRequest({
         hostname: 'api.binance.com',
-        path: \\\`/api/v3/account?\\\${query}&signature=\\\${signature}\\\`,
+        path: ` + "`" + `/api/v3/account?` + "${" + `query` + "}" + `&signature=` + "${" + `signature` + "}" + "`" + `,
         method: 'GET',
         headers: { 'X-MBX-APIKEY': apiKey }
       });
@@ -408,7 +412,7 @@ async function handleBalance(req, res) {
       // Futures balance
       const futuresRes = await httpsRequest({
         hostname: 'fapi.binance.com',
-        path: \\\`/fapi/v2/balance?\\\${query}&signature=\\\${signature}\\\`,
+        path: ` + "`" + `/fapi/v2/balance?` + "${" + `query` + "}" + `&signature=` + "${" + `signature` + "}" + "`" + `,
         method: 'GET',
         headers: { 'X-MBX-APIKEY': apiKey }
       }).catch(() => null);
@@ -453,7 +457,7 @@ async function handleBalance(req, res) {
       }
       
     } else {
-      return sendJSON(res, 400, { success: false, error: \\\`Exchange \\\${exchange} not supported yet\\\` });
+      return sendJSON(res, 400, { success: false, error: ` + "`" + `Exchange ` + "${" + `exchange` + "}" + ` not supported yet` + "`" + ` });
     }
     
     sendJSON(res, 200, {
@@ -520,7 +524,7 @@ async function handlePlaceOrder(req, res) {
         orderId = orderRes.data.orderId?.toString();
         executedPrice = parseFloat(orderRes.data.fills?.[0]?.price) || parseFloat(orderRes.data.price) || price;
       } else {
-        throw new Error(orderRes.data.msg || \\\`Binance error: \\\${orderRes.statusCode}\\\`);
+        throw new Error(orderRes.data.msg || ` + "`" + `Binance error: ` + "${" + `orderRes.statusCode` + "}" + "`" + `);
       }
       
     } else if (exchangeId === 'okx') {
@@ -554,11 +558,11 @@ async function handlePlaceOrder(req, res) {
         orderId = orderRes.data.data?.[0]?.ordId;
         executedPrice = price; // OKX doesn't return fill price immediately
       } else {
-        throw new Error(orderRes.data.msg || \\\`OKX error: \\\${orderRes.statusCode}\\\`);
+        throw new Error(orderRes.data.msg || ` + "`" + `OKX error: ` + "${" + `orderRes.statusCode` + "}" + "`" + `);
       }
       
     } else {
-      return sendJSON(res, 400, { success: false, error: \\\`Exchange \\\${exchange} not supported for trading yet\\\` });
+      return sendJSON(res, 400, { success: false, error: ` + "`" + `Exchange ` + "${" + `exchange` + "}" + ` not supported for trading yet` + "`" + ` });
     }
     
     const latencyMs = Date.now() - startTime;
@@ -634,10 +638,10 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
   
-  const url = new URL(req.url, \\\`http://\\\${req.headers.host}\\\`);
+  const url = new URL(req.url, ` + "`" + `http://` + "${" + `req.headers.host` + "}" + "`" + `);
   const path = url.pathname;
   
-  console.log(\\\`[\\\${new Date().toISOString()}] \\\${req.method} \\\${path}\\\`);
+  console.log(` + "`" + `[` + "${" + `new Date().toISOString()` + "}" + `] ` + "${" + `req.method` + "}" + ` ` + "${" + `path` + "}" + "`" + `);
   
   try {
     // Route requests
@@ -679,7 +683,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(\\\`Bot Control API listening on port \\\${PORT}\\\`);
+  console.log(` + "`" + `Bot Control API listening on port ` + "${" + `PORT` + "}" + "`" + `);
   console.log('Endpoints:');
   console.log('  GET  /health         - Health check');
   console.log('  GET  /status         - Bot and system status');
@@ -690,15 +694,16 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  GET  /ping-exchanges - Test exchange latency');
   console.log('  POST /balance        - Fetch exchange balance');
   console.log('  POST /place-order    - Execute trade');
-});`;
+});
+`;
 
 serve(async (req) => {
-  // Return raw JavaScript code as plain text
+  // Return the bot API code as plain text JavaScript
   return new Response(BOT_API_CODE, {
-    status: 200,
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "no-cache",
     },
   });
 });
