@@ -284,46 +284,77 @@ export function UnifiedControlBar() {
   };
 
   const handleStopBot = async () => {
+    if (!deploymentId) {
+      toast.error('No deployment selected');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('bot-control', {
-        body: { action: 'stop', deploymentId }
+      const { data, error } = await supabase.functions.invoke('bot-lifecycle', {
+        body: { 
+          action: 'stop',
+          deploymentId: deploymentId
+        }
       });
-      
-      if (error || !data?.success) {
-        throw new Error(error?.message || data?.error || 'Stop failed');
+
+      if (error) {
+        console.error('Stop bot error:', error);
+        toast.error(`Failed to stop bot: ${error.message}`);
+        return;
       }
-      
-      setBotStatus('stopped');
-      setStartupStage('idle');
-      setStartupProgress(0);
-      toast.success('Bot stopped');
-      syncFromDatabase();
-    } catch (err) {
-      console.error('Failed to stop bot:', err);
-      toast.error('Failed to stop bot');
+
+      if (data?.success) {
+        toast.success('Bot stopped successfully');
+        setBotStatus('stopped');
+        setStartupStage('idle');
+        setStartupProgress(0);
+        await fetchBotStatus();
+        syncFromDatabase();
+      } else {
+        toast.error(data?.message || 'Failed to stop bot');
+      }
+    } catch (err: any) {
+      console.error('Stop bot exception:', err);
+      toast.error(`Error stopping bot: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleRestartBot = async () => {
+    if (!deploymentId) {
+      toast.error('No deployment selected');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('bot-control', { 
-        body: { action: 'restart', deploymentId } 
+      const { data, error } = await supabase.functions.invoke('bot-lifecycle', {
+        body: { 
+          action: 'restart',
+          deploymentId: deploymentId
+        }
       });
-      
-      if (error || !data?.success) {
-        throw new Error(error?.message || data?.error || 'Restart failed');
+
+      if (error) {
+        console.error('Restart bot error:', error);
+        toast.error(`Failed to restart bot: ${error.message}`);
+        return;
       }
-      
-      setBotStatus('running');
-      toast.success('Bot restarted');
-      syncFromDatabase();
-    } catch (err) {
-      console.error('Failed to restart bot:', err);
-      toast.error('Failed to restart bot');
+
+      if (data?.success) {
+        toast.success('Bot restarted successfully');
+        setTimeout(async () => {
+          await fetchBotStatus();
+          syncFromDatabase();
+        }, 2000);
+      } else {
+        toast.error(data?.message || 'Failed to restart bot');
+      }
+    } catch (err: any) {
+      console.error('Restart bot exception:', err);
+      toast.error(`Error restarting bot: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
