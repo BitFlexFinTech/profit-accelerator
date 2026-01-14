@@ -44,6 +44,68 @@ export type Database = {
         }
         Relationships: []
       }
+      active_positions: {
+        Row: {
+          current_price: number | null
+          entry_fee: number
+          entry_order_id: string
+          entry_price: number
+          entry_time: string
+          exchange: string
+          id: string
+          position_size_usd: number
+          profit_target_usd: number
+          side: string
+          symbol: string
+          trade_log_id: string
+          trade_type: string
+          unrealized_profit_usd: number | null
+          updated_at: string
+        }
+        Insert: {
+          current_price?: number | null
+          entry_fee: number
+          entry_order_id: string
+          entry_price: number
+          entry_time?: string
+          exchange: string
+          id?: string
+          position_size_usd: number
+          profit_target_usd: number
+          side: string
+          symbol: string
+          trade_log_id: string
+          trade_type: string
+          unrealized_profit_usd?: number | null
+          updated_at?: string
+        }
+        Update: {
+          current_price?: number | null
+          entry_fee?: number
+          entry_order_id?: string
+          entry_price?: number
+          entry_time?: string
+          exchange?: string
+          id?: string
+          position_size_usd?: number
+          profit_target_usd?: number
+          side?: string
+          symbol?: string
+          trade_log_id?: string
+          trade_type?: string
+          unrealized_profit_usd?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "active_positions_trade_log_id_fkey"
+            columns: ["trade_log_id"]
+            isOneToOne: false
+            referencedRelation: "trade_logs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       active_sessions: {
         Row: {
           created_at: string | null
@@ -671,6 +733,42 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_status: {
+        Row: {
+          binance_rate_limit_remaining: number | null
+          id: string
+          is_running: boolean
+          last_heartbeat: string
+          last_trade_time: string | null
+          okx_rate_limit_remaining: number | null
+          total_profit_usd: number
+          trades_today: number
+          updated_at: string
+        }
+        Insert: {
+          binance_rate_limit_remaining?: number | null
+          id?: string
+          is_running?: boolean
+          last_heartbeat?: string
+          last_trade_time?: string | null
+          okx_rate_limit_remaining?: number | null
+          total_profit_usd?: number
+          trades_today?: number
+          updated_at?: string
+        }
+        Update: {
+          binance_rate_limit_remaining?: number | null
+          id?: string
+          is_running?: boolean
+          last_heartbeat?: string
+          last_trade_time?: string | null
+          okx_rate_limit_remaining?: number | null
+          total_profit_usd?: number
+          trades_today?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cloud_config: {
         Row: {
           created_at: string | null
@@ -1058,61 +1156,31 @@ export type Database = {
       }
       exchange_connections: {
         Row: {
-          agent_private_key: string | null
-          api_key: string | null
-          api_passphrase: string | null
-          api_secret: string | null
-          balance_updated_at: string | null
-          balance_usdt: number | null
-          created_at: string | null
+          created_at: string
           exchange_name: string
           id: string
-          is_connected: boolean | null
-          last_error: string | null
-          last_error_at: string | null
+          is_active: boolean
+          is_connected: boolean
           last_ping_at: string | null
-          last_ping_ms: number | null
-          updated_at: string | null
-          version: number | null
-          wallet_address: string | null
+          updated_at: string
         }
         Insert: {
-          agent_private_key?: string | null
-          api_key?: string | null
-          api_passphrase?: string | null
-          api_secret?: string | null
-          balance_updated_at?: string | null
-          balance_usdt?: number | null
-          created_at?: string | null
+          created_at?: string
           exchange_name: string
           id?: string
-          is_connected?: boolean | null
-          last_error?: string | null
-          last_error_at?: string | null
+          is_active?: boolean
+          is_connected?: boolean
           last_ping_at?: string | null
-          last_ping_ms?: number | null
-          updated_at?: string | null
-          version?: number | null
-          wallet_address?: string | null
+          updated_at?: string
         }
         Update: {
-          agent_private_key?: string | null
-          api_key?: string | null
-          api_passphrase?: string | null
-          api_secret?: string | null
-          balance_updated_at?: string | null
-          balance_usdt?: number | null
-          created_at?: string | null
+          created_at?: string
           exchange_name?: string
           id?: string
-          is_connected?: boolean | null
-          last_error?: string | null
-          last_error_at?: string | null
+          is_active?: boolean
+          is_connected?: boolean
           last_ping_at?: string | null
-          last_ping_ms?: number | null
-          updated_at?: string | null
-          version?: number | null
-          wallet_address?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1179,6 +1247,36 @@ export type Database = {
           region?: string | null
           source?: string | null
           status?: string | null
+        }
+        Relationships: []
+      }
+      exchange_secrets: {
+        Row: {
+          api_key_encrypted: string
+          api_passphrase_encrypted: string | null
+          api_secret_encrypted: string
+          created_at: string
+          exchange_name: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          api_key_encrypted: string
+          api_passphrase_encrypted?: string | null
+          api_secret_encrypted: string
+          created_at?: string
+          exchange_name: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          api_key_encrypted?: string
+          api_passphrase_encrypted?: string | null
+          api_secret_encrypted?: string
+          created_at?: string
+          exchange_name?: string
+          id?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -2044,6 +2142,75 @@ export type Database = {
         }
         Relationships: []
       }
+      trade_logs: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          entry_fee: number
+          entry_order_id: string | null
+          entry_price: number
+          entry_time: string
+          exchange: string
+          exit_fee: number | null
+          exit_order_id: string | null
+          exit_price: number | null
+          exit_time: string | null
+          id: string
+          net_profit_usd: number | null
+          position_size_usd: number
+          profit_target_met: boolean | null
+          profit_usd: number | null
+          side: string
+          status: string
+          symbol: string
+          trade_type: string
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          entry_fee: number
+          entry_order_id?: string | null
+          entry_price: number
+          entry_time?: string
+          exchange: string
+          exit_fee?: number | null
+          exit_order_id?: string | null
+          exit_price?: number | null
+          exit_time?: string | null
+          id?: string
+          net_profit_usd?: number | null
+          position_size_usd: number
+          profit_target_met?: boolean | null
+          profit_usd?: number | null
+          side: string
+          status?: string
+          symbol: string
+          trade_type: string
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          entry_fee?: number
+          entry_order_id?: string | null
+          entry_price?: number
+          entry_time?: string
+          exchange?: string
+          exit_fee?: number | null
+          exit_order_id?: string | null
+          exit_price?: number | null
+          exit_time?: string | null
+          id?: string
+          net_profit_usd?: number | null
+          position_size_usd?: number
+          profit_target_met?: boolean | null
+          profit_usd?: number | null
+          side?: string
+          status?: string
+          symbol?: string
+          trade_type?: string
+        }
+        Relationships: []
+      }
       trading_config: {
         Row: {
           bot_status: string | null
@@ -2200,6 +2367,39 @@ export type Database = {
           win_rate?: number | null
           winning_trades?: number | null
           worst_trade_pnl?: number | null
+        }
+        Relationships: []
+      }
+      trading_stats: {
+        Row: {
+          avg_trade_duration_ms: number | null
+          created_at: string
+          date: string
+          exchange: string
+          id: string
+          successful_trades: number
+          total_profit_usd: number
+          total_trades: number
+        }
+        Insert: {
+          avg_trade_duration_ms?: number | null
+          created_at?: string
+          date: string
+          exchange: string
+          id?: string
+          successful_trades?: number
+          total_profit_usd?: number
+          total_trades?: number
+        }
+        Update: {
+          avg_trade_duration_ms?: number | null
+          created_at?: string
+          date?: string
+          exchange?: string
+          id?: string
+          successful_trades?: number
+          total_profit_usd?: number
+          total_trades?: number
         }
         Relationships: []
       }
@@ -2699,45 +2899,17 @@ export type Database = {
         }
         Relationships: []
       }
-      exchange_connections_public: {
-        Row: {
-          balance_updated_at: string | null
-          balance_usdt: number | null
-          exchange_name: string | null
-          id: string | null
-          is_connected: boolean | null
-          last_error: string | null
-          last_error_at: string | null
-          last_ping_at: string | null
-          last_ping_ms: number | null
-        }
-        Insert: {
-          balance_updated_at?: string | null
-          balance_usdt?: number | null
-          exchange_name?: string | null
-          id?: string | null
-          is_connected?: boolean | null
-          last_error?: string | null
-          last_error_at?: string | null
-          last_ping_at?: string | null
-          last_ping_ms?: number | null
-        }
-        Update: {
-          balance_updated_at?: string | null
-          balance_usdt?: number | null
-          exchange_name?: string | null
-          id?: string | null
-          is_connected?: boolean | null
-          last_error?: string | null
-          last_error_at?: string | null
-          last_ping_at?: string | null
-          last_ping_ms?: number | null
-        }
-        Relationships: []
-      }
     }
     Functions: {
       cleanup_expired_sessions: { Args: never; Returns: undefined }
+      get_exchange_secrets: {
+        Args: { exchange_name_param: string }
+        Returns: {
+          api_key: string
+          api_passphrase: string
+          api_secret: string
+        }[]
+      }
       increment_live_trade: { Args: { profit?: number }; Returns: boolean }
       is_service_role: { Args: never; Returns: boolean }
       reset_ai_provider_daily_usage: { Args: never; Returns: undefined }
